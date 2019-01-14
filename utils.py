@@ -77,6 +77,8 @@ class IsingFisherCurvatureMethod1():
         return (solver.solve(C)-self.hJ)/self.eps
 
     def solve_linearized_perturbation(self, iStar,
+                                      p=None,
+                                      sisj=None,
                                       full_output=False,
                                       eps=None,
                                       check_stability=True):
@@ -85,6 +87,8 @@ class IsingFisherCurvatureMethod1():
         Parameters
         ----------
         iStar : int
+        p : ndarray, None
+        sisj : ndarray, None
         full_output : bool, False
         eps : float, None
         check_stability : bool, False
@@ -99,9 +103,14 @@ class IsingFisherCurvatureMethod1():
         
         eps = eps or self.eps
         n = self.n
-        p = self.p
-        si = self.sisj[:n]
-        sisj = self.sisj[n:]
+        if p is None:
+            p = self.p
+        if sisj is None:
+            si = self.sisj[:n]
+            sisj = self.sisj[n:]
+        else:
+            si = sisj[:n]
+            sisj = sisj[n:]
         A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2))
         C = self.observables_after_perturbation(iStar, eps=eps)
         
@@ -135,7 +144,9 @@ class IsingFisherCurvatureMethod1():
             # double epsilon and make sure solution does not change by a large amount
             dJtwiceEps = self.solve_linearized_perturbation(iStar,
                                                             eps=eps/2,
-                                                            check_stability=False)
+                                                            check_stability=False,
+                                                            p=p,
+                                                            sisj=np.concatenate((si,sisj)))
             # print if relative change is more than .1% for any entry
             if ((np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ)))>-3).any():
                 print("Unstable solution. Recommend shrinking eps.")
@@ -143,17 +154,29 @@ class IsingFisherCurvatureMethod1():
             return dJ, (A, C)
         return dJ
 
-    def dkl_curvature(self, epsdJ=1e-4, n_cpus=None, check_stability=False, rtol=1e-3):
+    def dkl_curvature(self,
+                      hJ=None,
+                      dJ=None,
+                      epsdJ=1e-4,
+                      n_cpus=None,
+                      check_stability=False,
+                      rtol=1e-3):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
         the theta_{ij} parameters replacing the spin i by sampling from j.
         
         Parameters
         ----------
+        hJ : ndarray, None
+            Ising model parameters.
+        dJ : ndarray, None
+            Linear perturbations in parameter space corresponding to Hessian at given hJ. These can be
+            calculuated using self.solve_linearized_perturbation().
         epsdJ : float, 1e-2
             Step size for taking linear perturbation wrt parameters.
         n_cpus : int, None
         check_stability : bool, False
-        tol : float, 1e-6
+        rtol : float, 1e-3
+            Relative tolerance for each entry in Hessian when checking stability.
             
         Returns
         -------
@@ -165,11 +188,17 @@ class IsingFisherCurvatureMethod1():
         from itertools import combinations
         
         n_cpus = n_cpus or (cpu_count()-1)
-        log2p = np.log2(self.p)
         n = self.n
+        if hJ is None:
+            hJ = self.hJ
+            log2p = np.log2(self.p)
+        else:
+            log2p = np.log2(self.ising.p(hJ))
+        if dJ is None:
+            dJ = self.dJ
         
         # diagonal entries
-        def diag(i, hJ=self.hJ, ising=self.ising, dJ=self.dJ):
+        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ):
             newhJ = hJ.copy()
             newhJ += 2*dJ[i]*epsdJ
             modp2 = ising.p(newhJ)
@@ -181,7 +210,7 @@ class IsingFisherCurvatureMethod1():
                     2*(np.log2(modp1)-log2p).dot(modp1))/epsdJ**2
             
         # compute off-diagonal entries
-        def off_diag(args, hJ=self.hJ, ising=self.ising, dJ=self.dJ):
+        def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ):
             i, j = args
             newhJ = hJ.copy()
             newhJ += (dJ[i]+dJ[j])*epsdJ
@@ -199,17 +228,17 @@ class IsingFisherCurvatureMethod1():
                      (np.log2(modp10)-log2p).dot(modp10) - 
                      (np.log2(modp01)-log2p).dot(modp01) )/epsdJ**2
         
-        hess = np.zeros((len(self.dJ),len(self.dJ)))
+        hess = np.zeros((len(dJ),len(dJ)))
         if n_cpus<=1:
-            for i in range(len(self.dJ)):
+            for i in range(len(dJ)):
                 hess[i,i] = diag(i)
-            for i,j in combinations(range(len(self.dJ)),2):
+            for i,j in combinations(range(len(dJ)),2):
                 hess[i,j] = off_diag((i,j))
         else:
             pool = Pool(n_cpus)
-            hess[np.triu_indices_from(hess,k=1)] = pool.map(off_diag, combinations(range(len(self.dJ)),2))
+            hess[np.triu_indices_from(hess,k=1)] = pool.map(off_diag, combinations(range(len(dJ)),2))
             hess += hess.T
-            hess[np.eye(len(self.dJ))==1] = pool.map(diag, range(len(self.dJ)))
+            hess[np.eye(len(dJ))==1] = pool.map(diag, range(len(dJ)))
             pool.close()
 
         if check_stability:
@@ -268,12 +297,71 @@ class IsingFisherCurvatureMethod1():
         eigval = eigval[sortix]
         eigvec = eigvec[:,sortix]
         eigvec *= np.sign(eigvec.mean(0))[None,:]
-        assert (eigval[:10]>0).all()
+        if (eigval<0).any():
+            print("Negative eigenvalues.")
+            print(eigval)
+            print()
         
         return eigval, eigvec
 
     def hess_eig2dJ(self, eigvec):
         return self.dJ.T.dot(eigvec)
+
+    def map_trajectory(self, n_steps, step_size, hJ0=None):
+        """Linear perturbations to parameter space to explore info space.
+        
+        Parameters
+        ----------
+        n_steps : int
+        step_size : int
+        hJ0 : ndarray, None
+
+        Returns
+        -------
+        """
+        if hJ0 is None:
+            hJ0 = self.hJ
+
+        dJ = []
+        hess = []
+        eigval = []
+        eigvec = []
+        hJTraj = [hJ0]
+
+        for i in range(n_steps):
+            p = self.ising.p(hJTraj[i])
+            sisj = self.ising.calc_observables(hJTraj[i])
+            dJ.append(np.zeros_like(self.dJ))
+            
+            for iStar in range(self.n):
+                dJ[i][iStar] = self.solve_linearized_perturbation(iStar, p=p, sisj=sisj)
+
+            hess.append( self.dkl_curvature( hJ=hJTraj[i], dJ=dJ[i]) )
+            out = self.hess_eig(hess[i])
+            eigval.append(out[0])
+            eigvec.append(out[1])
+            
+            # take a step in the steepest direction
+            eigix = 0
+            dJcombo = self.hess_eig2dJ(eigvec[i][:,eigix])
+            
+            hJTraj.append(hJTraj[-1] + dJcombo*step_size)
+
+        return dJ, hess, eigval, eigvec, hJTraj
+
+    def find_peak_dkl_curvature(self, hJ0=None):
+        from scipy.optimize import minimize
+
+        if hJ0 is None:
+            hJ0 = self.hJ
+
+        def f(hJ):
+            dJ = np.zeros_like(self.dJ)
+            for i in range(self.n):
+                dJ[i] = self.solve_linearized_perturbation(i)
+            return -np.linalg.norm(self.dkl_curvature(hJ=hJ, dJ=dJ))
+
+        return minimize(f, hJ0)
 #end IsingFisherCurvatureMethod1
 
 
@@ -361,6 +449,8 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         return (solver.solve(C)-self.hJ)/self.eps
 
     def solve_linearized_perturbation(self, iStar, aStar,
+                                      p=None,
+                                      sisj=None,
                                       full_output=False,
                                       eps=None,
                                       check_stability=True):
@@ -370,6 +460,8 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         ----------
         iStar : int
         aStar : int
+        p : ndarray, None
+        sisj : ndarray, None
         full_output : bool, False
         eps : float, None
         check_stability : bool, False
@@ -384,9 +476,14 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         
         eps = eps or self.eps
         n = self.n
-        p = self.p
-        si = self.sisj[:n]
-        sisj = self.sisj[n:]
+        if p is None:
+            p = self.p
+        if sisj is None:
+            si = self.sisj[:n]
+            sisj = self.sisj[n:]
+        else:
+            si = sisj[:n]
+            sisj = sisj[n:]
         A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2))
         C = self.observables_after_perturbation(iStar, aStar, eps=eps)
         
@@ -419,6 +516,8 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
             dJtwiceEps = self.solve_linearized_perturbation(iStar, aStar,
+                                                            p=p,
+                                                            sisj=np.concatenate((si,sisj)),
                                                             eps=eps/2,
                                                             check_stability=False)
             # print if relative change is more than .1% for any entry
@@ -427,6 +526,48 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         if full_output:
             return dJ, (A, C)
         return dJ
+
+    def map_trajectory(self, n_steps, step_size, hJ0=None):
+        """Linear perturbations to parameter space to explore info space.
+        
+        Parameters
+        ----------
+        n_steps : int
+        step_size : int
+        hJ0 : ndarray, None
+
+        Returns
+        -------
+        """
+        if hJ0 is None:
+            hJ0 = self.hJ
+
+        dJ = []
+        hess = []
+        eigval = []
+        eigvec = []
+        hJTraj = [hJ0]
+
+        for i in range(n_steps):
+            p = self.ising.p(hJTraj[i])
+            sisj = self.ising.calc_observables(hJTraj[i])
+            dJ.append(np.zeros_like(self.dJ))
+            
+            for count,(iStar,aStar) in enumerate(combinations(range(self.n),2)):
+                dJ[i][count] = self.solve_linearized_perturbation(iStar, aStar, p=p, sisj=sisj)
+
+            hess.append( self.dkl_curvature( hJ=hJTraj[i], dJ=dJ[i]) )
+            out = self.hess_eig(hess[i])
+            eigval.append(out[0])
+            eigvec.append(out[1])
+            
+            # take a step in the steepest direction
+            eigix = 0
+            dJcombo = self.hess_eig2dJ(eigvec[i][:,eigix])
+            
+            hJTraj.append(hJTraj[-1] + dJcombo*step_size)
+
+        return dJ, hess, eigval, eigvec, hJTraj
 #end IsingFisherCurvatureMethod2
 
 
