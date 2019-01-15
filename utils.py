@@ -36,13 +36,18 @@ class IsingFisherCurvatureMethod1():
             for i in range(n):
                 self.dJ[i] = self.solve_linearized_perturbation(i)
 
-    def observables_after_perturbation(self, i, eps=None):
-        """Perturb spin index i by eps. Perturb the corresponding mean and the correlations with other spins j.
+    def observables_after_perturbation(self, i,
+                                       eps=None,
+                                       perturb_up=True):
+        """Perturb spin index i by forcing it point upwards with probability eps/2.
+        Perturb the corresponding mean and the correlations with other spins j.
         
         Parameters
         ----------
         i : int
         eps : float, None
+        perturb_up : bool, True
+            If True, make the specified spin point up +1. If False, make it point down -1.
 
         Returns
         -------
@@ -54,41 +59,64 @@ class IsingFisherCurvatureMethod1():
         eps = eps or self.eps
         si = self.sisj[:n]
         sisj = self.sisj[n:]
+        
+        if perturb_up:
+            # observables after perturbations
+            siNew = si.copy()
+            sisjNew = sisj.copy()
+            siNew[i]  = (1-eps)*si[i] + eps
 
-        # observables after perturbations
-        siNew = si.copy()
-        sisjNew = sisj.copy()
-        siNew[i]  = (1-eps)*si[i] + eps
+            for j in np.delete(range(n),i):
+                if i<j:
+                    ijix = unravel_index((i,j),n)
+                else:
+                    ijix = unravel_index((j,i),n)
+                sisjNew[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
+        else:
+            # observables after perturbations
+            siNew = si.copy()
+            sisjNew = sisj.copy()
+            siNew[i]  = (1-eps)*si[i] - eps
 
-        for j in np.delete(range(n),i):
-            if i<j:
-                ijix = unravel_index((i,j),n)
-            else:
-                ijix = unravel_index((j,i),n)
-            sisjNew[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
+            for j in np.delete(range(n),i):
+                if i<j:
+                    ijix = unravel_index((i,j),n)
+                else:
+                    ijix = unravel_index((j,i),n)
+                sisjNew[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
         return np.concatenate((siNew, sisjNew))
     
-    def _solve_linearized_perturbation(self, iStar, eps=None):
+    def _solve_linearized_perturbation(self, iStar, eps=None, perturb_up=True):
         """Consider a perturbation to a single spin.
         
         Parameters
         ----------
         iStar : int
-        full_output : bool, False
+        eps : float, None
+        perturb_up : bool, True
 
         Returns
         -------
+        ndarray
+            Linear change in maxent parameters.
         """
         
+        from coniii.solvers import Enumerate
+
         n = self.n
         p = self.p
-        C = self.observables_after_perturbation(iStar, eps=eps)
-        
         if eps is None:
             eps = self.eps
-        from coniii.solvers import Enumerate
+        C = self.observables_after_perturbation(iStar, eps=eps, perturb_up=perturb_up)
+
         solver = Enumerate(n, calc_observables_multipliers=self.ising.calc_observables)
-        return (solver.solve(C)-self.hJ)/eps
+        if perturb_up:
+            return (solver.solve(C)-self.hJ)/eps
+
+        # account for sign of perturbation on fields
+        dJ = (solver.solve(C)-self.hJ)/eps
+        dJ[:self.n] *= -1
+        return dJ
 
     def solve_linearized_perturbation(self, iStar,
                                       p=None,
@@ -126,7 +154,7 @@ class IsingFisherCurvatureMethod1():
             si = sisj[:n]
             sisj = sisj[n:]
         A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2))
-        C = self.observables_after_perturbation(iStar, eps=eps)
+        C = self.observables_after_perturbation(iStar, eps=eps, perturb_up=si[iStar]<0)
         
         # mean constraints
         for i in range(n):
@@ -153,6 +181,8 @@ class IsingFisherCurvatureMethod1():
         C -= self.sisj
         # factor out linear dependence on eps
         dJ = np.linalg.solve(A,C)/eps
+        if si[iStar]>=0:
+            dJ[:n] *= -1
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
@@ -164,6 +194,7 @@ class IsingFisherCurvatureMethod1():
             # print if relative change is more than .1% for any entry
             if ((np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ)))>-3).any():
                 print("Unstable solution. Recommend shrinking eps.")
+                    
         if full_output:
             return dJ, (A, C)
         return dJ
@@ -520,6 +551,10 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         Parameters
         ----------
         i : int
+            Spin being perturbed.
+        a : int
+            Spin to mimic.
+        eps : float, None
 
         Returns
         -------
