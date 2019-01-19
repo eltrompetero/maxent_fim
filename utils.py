@@ -64,9 +64,9 @@ class IsingFisherCurvatureMethod1():
         if not hasattr(i,'__len__'):
             i = (i,)
         if not hasattr(eps,'__len__'):
+            eps = eps or self.eps
             eps = [eps]*len(i)
         n = self.n
-        eps = eps or self.eps
         si = self.sisj[:n]
         sisj = self.sisj[n:]
        
@@ -140,7 +140,7 @@ class IsingFisherCurvatureMethod1():
         Returns
         -------
         ndarray
-            Linear change in maxent parameters.
+            Linear change in maxent parameters for given iStar.
         """
         
         from coniii.solvers import Enumerate
@@ -157,7 +157,8 @@ class IsingFisherCurvatureMethod1():
 
         # account for sign of perturbation on fields
         dJ = (solver.solve(C)-self.hJ)/eps
-        dJ[:self.n] *= -1
+        if not perturb_up:
+            dJ *= -1
         return dJ
 
     def solve_linearized_perturbation(self, iStar,
@@ -230,7 +231,7 @@ class IsingFisherCurvatureMethod1():
         else:
             dJ = np.linalg.lstsq(A,C)[0]/eps
         if si[iStar]>=0:
-            dJ[:n] *= -1
+            dJ *= -1
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
