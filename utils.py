@@ -91,12 +91,7 @@ class IsingFisherCurvatureMethod1():
         si : ndarray
         sisj : ndarray
         i : int
-        eps : float, None
-
-        Returns
-        -------
-        ndarray
-            Observables <si> and <sisj> after perturbation.
+        eps : float
         """
 
         n = self.n
@@ -118,12 +113,7 @@ class IsingFisherCurvatureMethod1():
         si : ndarray
         sisj : ndarray
         i : int
-        eps : float, None
-
-        Returns
-        -------
-        ndarray
-            Observables <si> and <sisj> after perturbation.
+        eps : float
         """
 
         n = self.n
