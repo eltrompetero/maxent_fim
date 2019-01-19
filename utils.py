@@ -6,6 +6,7 @@ import numpy as np
 from numba import njit
 from coniii.utils import *
 import importlib
+np.seterr(divide='ignore')
 
 
 class IsingFisherCurvatureMethod1():
@@ -29,17 +30,22 @@ class IsingFisherCurvatureMethod1():
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
         self.allStates = bin_states(n, True)
-
-        # precompute linear change to parameters for small perturbation
-        self.dJ = np.zeros((n,n+(n-1)*n//2))
+    
         if precompute:
-            for i in range(n):
-                self.dJ[i] = self.solve_linearized_perturbation(i)
+            self.compute_dJ()
+        else:
+            self.dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
+
+    def compute_dJ(self):
+        # precompute linear change to parameters for small perturbation
+        self.dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
+        for i in range(self.n):
+            self.dJ[i] = self.solve_linearized_perturbation(i)
 
     def observables_after_perturbation(self, i,
                                        eps=None,
                                        perturb_up=True):
-        """Perturb spin index i by forcing it point upwards with probability eps/2.
+        """Perturb all specified spin by forcing it point upwards with probability eps/2.
         Perturb the corresponding mean and the correlations with other spins j.
         
         Parameters
@@ -54,38 +60,84 @@ class IsingFisherCurvatureMethod1():
         ndarray
             Observables <si> and <sisj> after perturbation.
         """
-
+        
+        if not hasattr(i,'__len__'):
+            i = (i,)
+        if not hasattr(eps,'__len__'):
+            eps = [eps]*len(i)
         n = self.n
         eps = eps or self.eps
         si = self.sisj[:n]
         sisj = self.sisj[n:]
+       
+        siNew = si.copy()
+        sisjNew = sisj.copy()
         
         if perturb_up:
-            # observables after perturbations
-            siNew = si.copy()
-            sisjNew = sisj.copy()
-            siNew[i]  = (1-eps)*si[i] + eps
-
-            for j in np.delete(range(n),i):
-                if i<j:
-                    ijix = unravel_index((i,j),n)
-                else:
-                    ijix = unravel_index((j,i),n)
-                sisjNew[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
+            for i_,eps_ in zip(i,eps):
+                # observables after perturbations
+                self._observables_after_perturbation_up(siNew, sisjNew, i_, eps_)
         else:
-            # observables after perturbations
-            siNew = si.copy()
-            sisjNew = sisj.copy()
-            siNew[i]  = (1-eps)*si[i] - eps
+            for i_,eps_ in zip(i,eps):
+                # observables after perturbations
+                self._observables_after_perturbation_down(siNew, sisjNew, i_, eps_)
 
-            for j in np.delete(range(n),i):
-                if i<j:
-                    ijix = unravel_index((i,j),n)
-                else:
-                    ijix = unravel_index((j,i),n)
-                sisjNew[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
         return np.concatenate((siNew, sisjNew))
-    
+   
+    def _observables_after_perturbation_up(self, si, sisj, i, eps):
+        """        
+        Parameters
+        ----------
+        si : ndarray
+        sisj : ndarray
+        i : int
+        eps : float, None
+
+        Returns
+        -------
+        ndarray
+            Observables <si> and <sisj> after perturbation.
+        """
+
+        n = self.n
+        
+        # observables after perturbations
+        si[i]  = (1-eps)*si[i] + eps
+
+        for j in np.delete(range(n),i):
+            if i<j:
+                ijix = unravel_index((i,j),n)
+            else:
+                ijix = unravel_index((j,i),n)
+            sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
+
+    def _observables_after_perturbation_down(self, si, sisj, i, eps):
+        """        
+        Parameters
+        ----------
+        si : ndarray
+        sisj : ndarray
+        i : int
+        eps : float, None
+
+        Returns
+        -------
+        ndarray
+            Observables <si> and <sisj> after perturbation.
+        """
+
+        n = self.n
+        
+        # observables after perturbations
+        si[i]  = (1-eps)*si[i] - eps
+
+        for j in np.delete(range(n),i):
+            if i<j:
+                ijix = unravel_index((i,j),n)
+            else:
+                ijix = unravel_index((j,i),n)
+            sisj[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
+
     def _solve_linearized_perturbation(self, iStar, eps=None, perturb_up=True):
         """Consider a perturbation to a single spin.
         
@@ -123,7 +175,8 @@ class IsingFisherCurvatureMethod1():
                                       sisj=None,
                                       full_output=False,
                                       eps=None,
-                                      check_stability=True):
+                                      check_stability=True,
+                                      method='inverse'):
         """Consider a perturbation to a single spin.
         
         Parameters
@@ -134,6 +187,8 @@ class IsingFisherCurvatureMethod1():
         full_output : bool, False
         eps : float, None
         check_stability : bool, False
+        method : str, 'inverse'
+            Can be 'inverse' or 'lstsq'
 
         Returns
         -------
@@ -179,8 +234,11 @@ class IsingFisherCurvatureMethod1():
                 A[n+ijcount,n+klcount] = np.prod(self.allStates[:,(i,j,k,l)],1).dot(p) - C[n+ijcount]*sisj[klcount]
     
         C -= self.sisj
-        # factor out linear dependence on eps
-        dJ = np.linalg.solve(A,C)/eps
+        if method=='inverse':
+            # factor out linear dependence on eps
+            dJ = np.linalg.solve(A,C)/eps
+        else:
+            dJ = np.linalg.lstsq(A,C)[0]/eps
         if si[iStar]>=0:
             dJ[:n] *= -1
 
@@ -214,8 +272,8 @@ class IsingFisherCurvatureMethod1():
         hJ : ndarray, None
             Ising model parameters.
         dJ : ndarray, None
-            Linear perturbations in parameter space corresponding to Hessian at given hJ. These can be
-            calculuated using self.solve_linearized_perturbation().
+            Linear perturbations in parameter space corresponding to Hessian at given hJ.
+            These can be calculuated using self.solve_linearized_perturbation().
         epsdJ : float, 1e-2
             Step size for taking linear perturbation wrt parameters.
         n_cpus : int, None
@@ -510,7 +568,11 @@ class IsingFisherCurvatureMethod1():
             sisj = self.ising.calc_observables(hJ)
             dJ = np.zeros_like(self.dJ)
             for i in range(self.n):
-                dJ[i] = self.solve_linearized_perturbation(i, p=p, sisj=sisj, check_stability=False)
+                dJ[i] = self.solve_linearized_perturbation(i,
+                                                           p=p,
+                                                           sisj=sisj,
+                                                           check_stability=False,
+                                                           method='lstsq')
             hessDiagSum = self.dkl_curvature(hJ=hJ, dJ=dJ).diagonal().sum()
             print(hessDiagSum)
             print(hJ)
@@ -518,7 +580,7 @@ class IsingFisherCurvatureMethod1():
             return -hessDiagSum
             return -np.linalg.norm(self.dkl_curvature(hJ=hJ, dJ=dJ))
 
-        return minimize(f, hJ0, options={'eps':1e-4, 'ftol':1e-3})
+        return minimize(f, hJ0, options={'eps':1e-4,'ftol':1e-3}, bounds=[(-5,5)]*len(hJ0))
 #end IsingFisherCurvatureMethod1
 
 
