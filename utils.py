@@ -10,6 +10,64 @@ from warnings import warn
 np.seterr(divide='ignore')
 
 
+# ==================
+# Functions
+# ==================
+@njit
+def factorial(x):
+    f = 1.
+    while x>0:
+        f *= x
+        x -= 1
+    return f
+
+@njit
+def binom(n,k):
+    return factorial(n)/factorial(n-k)/factorial(k)
+
+@njit
+def jit_all(x):
+    for x_ in x:
+        if not x_:
+            return False
+    return True
+
+@njit
+def unravel_index(ijk, n):
+    """Unravel multi-dimensional index to flattened index but specifically for
+    multi-dimensional analog of an upper triangular array (lower triangle indices are not
+    counted).
+
+    Parameters
+    ----------
+    ijk : tuple
+        Raveled index to unravel.
+    n : int
+        System size.
+
+    Returns
+    -------
+    ix : int
+        Unraveled index.
+    """
+    
+    if len(ijk)==1:
+        raise Exception
+
+    assert jit_all([ijk[i]<ijk[i+1] for i in range(len(ijk)-1)])
+    assert jit_all([i<n for i in ijk])
+
+    ix = np.sum(np.array([int(binom(n-1-i,len(ijk)-1)) for i in range(ijk[0])]))
+    for d in range(1, len(ijk)-1):
+        if (ijk[d]-ijk[d-1])>1:
+            ix += np.sum(np.array([int(binom(n-i-1,len(ijk)-d-1)) for i in range(ijk[d-1]+1, ijk[d])]))
+    ix += ijk[-1] -ijk[-2] -1
+    return ix
+
+
+# ==================
+# Classes
+# ==================
 class IsingFisherCurvatureMethod1():
     def __init__(self, n, h=None, J=None, eps=1e-7, precompute=True):
         """
@@ -30,7 +88,19 @@ class IsingFisherCurvatureMethod1():
         self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
-        self.allStates = bin_states(n, True)
+        self.allStates = bin_states(n, True).astype(np.int8)
+
+        # cache triplet and quartet products
+        self.triplets = {}
+        self.quartets = {}
+        for i in range(n):
+            for j,k in combinations(range(n),2):
+                self.triplets[(i,j,k)] = np.prod(self.allStates[:,(i,j,k)],1).astype(np.int8)
+        for i,j in combinations(range(n),2):
+            for k in range(n):
+                self.triplets[(i,j,k)] = np.prod(self.allStates[:,(i,j,k)],1).astype(np.int8)
+            for k,l in combinations(range(n),2):
+                self.quartets[(i,j,k,l)] = np.prod(self.allStates[:,(i,j,k,l)],1).astype(np.int8)
     
         if precompute:
             self.compute_dJ()
@@ -218,14 +288,14 @@ class IsingFisherCurvatureMethod1():
                     A[i,k] = sisj[ikix] - C[i]*si[k]
 
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[i,n+klcount] = np.prod(self.allStates[:,(i,k,l)],1).dot(p) - C[i]*sisj[klcount]
+                A[i,n+klcount] = self.triplets[(i,k,l)].dot(p) - C[i]*sisj[klcount]
         
         # pair constraints
         for ijcount,(i,j) in enumerate(combinations(range(n),2)):
             for k in range(n):
-                A[n+ijcount,k] = np.prod(self.allStates[:,(i,j,k)],1).dot(p) - C[n+ijcount]*si[k]
+                A[n+ijcount,k] = self.triplets[(i,j,k)].dot(p) - C[n+ijcount]*si[k]
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[n+ijcount,n+klcount] = np.prod(self.allStates[:,(i,j,k,l)],1).dot(p) - C[n+ijcount]*sisj[klcount]
+                A[n+ijcount,n+klcount] = self.quartets[(i,j,k,l)].dot(p) - C[n+ijcount]*sisj[klcount]
     
         C -= self.sisj
         if method=='inverse':
@@ -239,10 +309,10 @@ class IsingFisherCurvatureMethod1():
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
             dJtwiceEps, errflag = self.solve_linearized_perturbation(iStar,
-                                                                    eps=eps/2,
-                                                                    check_stability=False,
-                                                                    p=p,
-                                                                    sisj=np.concatenate((si,sisj)))
+                                                                     eps=eps/2,
+                                                                     check_stability=False,
+                                                                     p=p,
+                                                                     sisj=np.concatenate((si,sisj)))
             # print if relative change is more than .1% for any entry
             if ((np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ)))>-3).any():
                 print("Unstable solution. Recommend shrinking eps.")
@@ -976,3 +1046,5 @@ def define_energy_basin_functions(calc_observables):
         return x 
 
     return find_energy_basin, flip_least_stable_spin
+
+
