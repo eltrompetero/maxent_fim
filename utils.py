@@ -300,7 +300,10 @@ class IsingFisherCurvatureMethod1():
         C -= self.sisj
         if method=='inverse':
             # factor out linear dependence on eps
-            dJ = np.linalg.solve(A,C)/eps
+            try:
+                dJ = np.linalg.solve(A,C)/eps
+            except np.linalg.LinAlgError:
+                dJ = np.zeros(C.size)+np.nan
         else:
             dJ = np.linalg.lstsq(A,C)[0]/eps
         if si[iStar]>=0:
@@ -317,7 +320,7 @@ class IsingFisherCurvatureMethod1():
             if ((np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ)))>-3).any():
                 print("Unstable solution. Recommend shrinking eps.")
                    
-        if np.linalg.cond(A)>1e3:
+        if np.linalg.cond(A)>1e15:
             warn("A is badly conditioned.")
             errflag = 1
         else:
