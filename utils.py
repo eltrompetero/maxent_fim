@@ -69,7 +69,7 @@ def unravel_index(ijk, n):
 # Classes
 # ==================
 class IsingFisherCurvatureMethod1():
-    def __init__(self, n, h=None, J=None, eps=1e-7, precompute=True):
+    def __init__(self, n, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
         Parameters
         ----------
@@ -79,6 +79,8 @@ class IsingFisherCurvatureMethod1():
         eps : float, 1e-7
         precompute : bool, True
         """
+        
+        import multiprocess as mp
 
         assert n>1 and 0<eps<.1
         self.n = n
@@ -89,6 +91,9 @@ class IsingFisherCurvatureMethod1():
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
         self.allStates = bin_states(n, True).astype(np.int8)
+        
+        n_cpus = n_cpus or mp.cpu_count()
+        self.pool = mp.Pool(n_cpus)
 
         # cache triplet and quartet products
         self.triplets = {}
@@ -359,10 +364,8 @@ class IsingFisherCurvatureMethod1():
             Hessian.
         """
         
-        from multiprocess import Pool, cpu_count
         from itertools import combinations
         
-        n_cpus = n_cpus or (cpu_count()-1)
         n = self.n
         if hJ is None:
             hJ = self.hJ
@@ -404,17 +407,15 @@ class IsingFisherCurvatureMethod1():
                      (np.log2(modp01)-log2p).dot(modp01) )/epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
-        if n_cpus<=1:
+        if (not n_cpus is None) and n_cpus<=1:
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
                 hess[i,j] = off_diag((i,j))
         else:
-            pool = Pool(n_cpus)
-            hess[np.triu_indices_from(hess,k=1)] = pool.map(off_diag, combinations(range(len(dJ)),2))
+            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
             hess += hess.T
-            hess[np.eye(len(dJ))==1] = pool.map(diag, range(len(dJ)))
-            pool.close()
+            hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
 
         if check_stability:
             hess2 = self.dkl_curvature(epsdJ=epsdJ/2, check_stability=False)
@@ -473,10 +474,8 @@ class IsingFisherCurvatureMethod1():
             Hessian.
         """
         
-        from multiprocess import Pool, cpu_count
         from itertools import combinations
         
-        n_cpus = n_cpus or (cpu_count()-1)
         n = self.n
         allStatesSum = self.allStates.sum(1)
         kAllStatesSum = np.unique(allStatesSum)
@@ -526,17 +525,15 @@ class IsingFisherCurvatureMethod1():
                      (np.log2(modp01)-log2p).dot(modp01) )/epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
-        if n_cpus<=1:
+        if (not n_cpus is None) or n_cpus<=1:
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
                 hess[i,j] = off_diag((i,j))
         else:
-            pool = Pool(n_cpus)
-            hess[np.triu_indices_from(hess,k=1)] = pool.map(off_diag, combinations(range(len(dJ)),2))
+            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
             hess += hess.T
-            hess[np.eye(len(dJ))==1] = pool.map(diag, range(len(dJ)))
-            pool.close()
+            hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
 
         if check_stability:
             hess2 = self._dkl_curvature(epsdJ=epsdJ/2, check_stability=False)
