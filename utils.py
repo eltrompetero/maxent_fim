@@ -343,6 +343,8 @@ class IsingFisherCurvatureMethod1():
                       rtol=1e-3):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
         the theta_{ij} parameters replacing the spin i by sampling from j.
+
+        Use single step finite difference method to estimated Hessian.
         
         Parameters
         ----------
@@ -378,14 +380,9 @@ class IsingFisherCurvatureMethod1():
         # diagonal entries
         def diag(i, hJ=hJ, ising=self.ising, dJ=dJ):
             newhJ = hJ.copy()
-            newhJ += 2*dJ[i]*epsdJ
-            modp2 = ising.p(newhJ)
-            
-            newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
-            modp1 = ising.p(newhJ)
-            return ((np.log2(modp2)-log2p).dot(modp2) -
-                    2*(np.log2(modp1)-log2p).dot(modp1))/epsdJ**2
+            modp = ising.p(newhJ)
+            return (2*(log2p-np.log2(modp)).dot(log2p)) / epsdJ**2
             
         # compute off-diagonal entries
         def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ):
@@ -402,9 +399,9 @@ class IsingFisherCurvatureMethod1():
             newhJ += dJ[j]*epsdJ
             modp01 = ising.p(newhJ)
                     
-            return ( (np.log2(modp11)-log2p).dot(modp11) -
-                     (np.log2(modp10)-log2p).dot(modp10) - 
-                     (np.log2(modp01)-log2p).dot(modp01) )/epsdJ**2
+            return ( (log2p-np.log2(modp11)).dot(log2p) -
+                     (log2p-np.log2(modp10)).dot(log2p) - 
+                     (log2p-np.log2(modp01)).dot(log2p) )/epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
@@ -420,7 +417,7 @@ class IsingFisherCurvatureMethod1():
         if check_stability:
             hess2 = self.dkl_curvature(epsdJ=epsdJ/2, check_stability=False)
             err = hess2 - hess
-            if ((np.abs(err)/hess)>rtol).any():
+            if (np.abs(err/hess) > rtol).any():
                 normerr = np.linalg.norm(err)
                 msg = "Finite difference estimate has not converged. May want to shrink epsdJ. %f"%normerr
                 print(msg)
@@ -656,7 +653,12 @@ class IsingFisherCurvatureMethod1():
                                                                     check_stability=False)
                 if errflag:
                     return np.inf
-            hessEigSum = np.linalg.eig(self.dkl_curvature(hJ=hJ, dJ=dJ))[0].sum()
+            try:
+                hessEigSum = np.linalg.eig(self.dkl_curvature(hJ=hJ, dJ=dJ))[0].sum()
+            except np.linalg.LinAlgError:
+                print("Problem with finding Hessian.")
+                print(hJ)
+                return np.inf
             return -hessEigSum
 
         return minimize(f, hJ0, options={'eps':1e-5}, bounds=[(-2,2)]*len(hJ0))
