@@ -421,24 +421,6 @@ class IsingFisherCurvatureMethod1():
                 normerr = np.linalg.norm(err)
                 msg = "Finite difference estimate has not converged. May want to shrink epsdJ. %f"%normerr
                 print(msg)
-    #     Another way of calculating Hessian for checking
-    #     for i,j in combinations(range(4),2):
-    #         newhJ = hJ.copy()
-    #         newhJ[n:] += (dJ[i]+dJ[j])*epsDkl
-    #         modp1 = ising.p(newhJ)
-    #         newhJ = hJ.copy()
-    #         newhJ[n:] += dJ[i]*epsDkl
-    #         modp0 = ising.p(newhJ)
-    #         d1 = ((log2(modp1)-log2(p)).dot(modp1) - (log2(modp0)-log2(p)).dot(modp0)) / epsDkl
-            
-    #         newhJ = hJ.copy()
-    #         newhJ[n:] += (dJ[j])*epsDkl
-    #         modp1 = ising.p(newhJ)
-    #         newhJ = hJ.copy()
-    #         modp0 = ising.p(newhJ)
-    #         d0 = ((log2(modp1)-log2(p)).dot(modp1)-(log2(modp0)-log2(p)).dot(modp0)) / epsDkl
-
-    #         hess[i,j] = hess[j,i] = (d1-d0)/epsDkl
         return hess
 
     def _dkl_curvature(self,
@@ -448,8 +430,7 @@ class IsingFisherCurvatureMethod1():
                        n_cpus=None,
                        check_stability=False,
                        rtol=1e-3):
-        """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
-        the theta_{ij} parameters replacing the spin i by sampling from j.
+        """This considers number of votes in the majority for protoyping with SCOTUS.
         
         Parameters
         ----------
@@ -493,14 +474,9 @@ class IsingFisherCurvatureMethod1():
         # diagonal entries
         def diag(i, hJ=hJ, ising=self.ising, dJ=dJ):
             newhJ = hJ.copy()
-            newhJ += 2*dJ[i]*epsdJ
-            modp2 = pk(ising.p(newhJ))
-            
-            newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
-            modp1 = pk(ising.p(newhJ))
-            return ((np.log2(modp2)-log2p).dot(modp2) -
-                    2*(np.log2(modp1)-log2p).dot(modp1))/epsdJ**2
+            modp = pk(ising.p(newhJ))
+            return (2*(log2p-np.log2(modp)).dot(log2p)) / epsdJ**2
             
         # compute off-diagonal entries
         def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ):
@@ -517,9 +493,9 @@ class IsingFisherCurvatureMethod1():
             newhJ += dJ[j]*epsdJ
             modp01 = pk(ising.p(newhJ))
                     
-            return ( (np.log2(modp11)-log2p).dot(modp11) -
-                     (np.log2(modp10)-log2p).dot(modp10) - 
-                     (np.log2(modp01)-log2p).dot(modp01) )/epsdJ**2
+            return ( (log2p-np.log2(modp11)).dot(log2p) -
+                     (log2p-np.log2(modp10)).dot(log2p) - 
+                     (log2p-np.log2(modp01)).dot(log2p) )/epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) or n_cpus<=1:
@@ -535,7 +511,7 @@ class IsingFisherCurvatureMethod1():
         if check_stability:
             hess2 = self._dkl_curvature(epsdJ=epsdJ/2, check_stability=False)
             err = hess2 - hess
-            if ((np.abs(err)/hess)>rtol).any():
+            if (np.abs(err/hess) > rtol).any():
                 normerr = np.linalg.norm(err)
                 msg = "Finite difference estimate has not converged. May want to shrink epsdJ. %f"%normerr
                 print(msg)
