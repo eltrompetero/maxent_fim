@@ -377,14 +377,14 @@ class IsingFisherCurvatureMethod1():
             dJ = self.dJ
         
         # diagonal entries
-        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ):
+        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=self.p):
             newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
             modp = ising.p(newhJ)
-            return (2*(log2p-np.log2(modp)).dot(log2p)) / epsdJ**2
+            return (2*(log2p-np.log2(modp)).dot(p)) / epsdJ**2
             
         # compute off-diagonal entries
-        def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ):
+        def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ, p=self.p):
             i, j = args
             newhJ = hJ.copy()
             newhJ += (dJ[i]+dJ[j])*epsdJ
@@ -398,9 +398,9 @@ class IsingFisherCurvatureMethod1():
             newhJ += dJ[j]*epsdJ
             modp01 = ising.p(newhJ)
                     
-            return ( (log2p-np.log2(modp11)).dot(log2p) -
-                     (log2p-np.log2(modp10)).dot(log2p) - 
-                     (log2p-np.log2(modp01)).dot(log2p) )/epsdJ**2
+            return ( (log2p-np.log2(modp11)).dot(p) -
+                     (log2p-np.log2(modp10)).dot(p) - 
+                     (log2p-np.log2(modp01)).dot(p) )/epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
@@ -473,7 +473,7 @@ class IsingFisherCurvatureMethod1():
             newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
             modp = pk(ising.p(newhJ))
-            return (2*(log2p-np.log2(modp)).dot(log2p)) / epsdJ**2
+            return (2*(log2p-np.log2(modp)).dot(p)) / epsdJ**2
             
         # compute off-diagonal entries
         def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ):
@@ -490,12 +490,12 @@ class IsingFisherCurvatureMethod1():
             newhJ += dJ[j]*epsdJ
             modp01 = pk(ising.p(newhJ))
                     
-            return ( (log2p-np.log2(modp11)).dot(log2p) -
-                     (log2p-np.log2(modp10)).dot(log2p) - 
-                     (log2p-np.log2(modp01)).dot(log2p) )/epsdJ**2
+            return ( (log2p-np.log2(modp11)).dot(p) -
+                     (log2p-np.log2(modp10)).dot(p) - 
+                     (log2p-np.log2(modp01)).dot(p) )/epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
-        if (not n_cpus is None) or n_cpus<=1:
+        if (not n_cpus is None) and n_cpus<=1:
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
@@ -634,7 +634,7 @@ class IsingFisherCurvatureMethod1():
                 return np.inf
             return -hessEigSum
 
-        return minimize(f, hJ0, options={'eps':1e-5}, bounds=[(-2,2)]*len(hJ0))
+        return minimize(f, hJ0, options={'eps':1e-5, 'ftol':1e-4}, bounds=[(-1,1)]*len(hJ0))
 #end IsingFisherCurvatureMethod1
 
 
