@@ -383,24 +383,15 @@ class IsingFisherCurvatureMethod1():
             modp = ising.p(newhJ)
             return (2*(log2p-np.log2(modp)).dot(p)) / epsdJ**2
             
-        # compute off-diagonal entries
+        # Compute off-diagonal entries. These don't account for the subtraction of the
+        # diagonal elements which are removed later To see this, expand D(theta_i+del,
+        # theta_j+del) to second order.
         def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ, p=self.p):
             i, j = args
             newhJ = hJ.copy()
             newhJ += (dJ[i]+dJ[j])*epsdJ
-            modp11 = ising.p(newhJ)
-            
-            newhJ = hJ.copy()
-            newhJ += dJ[i]*epsdJ
-            modp10 = ising.p(newhJ)
-            
-            newhJ = hJ.copy()
-            newhJ += dJ[j]*epsdJ
-            modp01 = ising.p(newhJ)
-                    
-            return ( (log2p-np.log2(modp11)).dot(p) -
-                     (log2p-np.log2(modp10)).dot(p) - 
-                     (log2p-np.log2(modp01)).dot(p) )/epsdJ**2
+            modp = ising.p(newhJ)
+            return (log2p-np.log2(modp)).dot(p) / epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
@@ -409,9 +400,13 @@ class IsingFisherCurvatureMethod1():
             for i,j in combinations(range(len(dJ)),2):
                 hess[i,j] = hess[j,i] = off_diag((i,j))
         else:
-            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
-            hess += hess.T
             hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
+            # subtract off linear terms to get Hessian (and not just cross derivative)
+            hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
+                                                            for i,j in combinations(range(n),2)])
+            hess += hess.T
+            hess[np.eye(len(dJ))==1] /= 2
 
         if check_stability:
             hess2 = self.dkl_curvature(epsdJ=epsdJ/2, check_stability=False)
@@ -469,7 +464,7 @@ class IsingFisherCurvatureMethod1():
         if dJ is None:
             dJ = self.dJ
         
-        # diagonal entries
+        # diagonal entries: only need to take step eps because linear term is 0
         def diag(i, hJ=hJ, ising=self.ising, dJ=dJ):
             newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
@@ -483,28 +478,20 @@ class IsingFisherCurvatureMethod1():
             newhJ += (dJ[i]+dJ[j])*epsdJ
             modp11 = pk(ising.p(newhJ))
             
-            newhJ = hJ.copy()
-            newhJ += dJ[i]*epsdJ
-            modp10 = pk(ising.p(newhJ))
-            
-            newhJ = hJ.copy()
-            newhJ += dJ[j]*epsdJ
-            modp01 = pk(ising.p(newhJ))
-                    
-            return ( (log2p-np.log2(modp11)).dot(p) -
-                     (log2p-np.log2(modp10)).dot(p) - 
-                     (log2p-np.log2(modp01)).dot(p) )/epsdJ**2
+            return (log2p-np.log2(modp11)).dot(p) /epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
-                hess[i,j] = hess[j,i] = off_diag((i,j))
+                hess[i,j] = hess[j,i] = off_diag((i,j)) - hess[i,i]/2 - hess[j,j]/2
         else:
-            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
-            hess += hess.T
             hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
+            hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
+                                                            for i,j in combinations(range(n),2)])
+            hess += hess.T
 
         if check_stability:
             hess2 = self._dkl_curvature(epsdJ=epsdJ/2, check_stability=False)
