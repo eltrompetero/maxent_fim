@@ -370,14 +370,15 @@ class IsingFisherCurvatureMethod1():
         n = self.n
         if hJ is None:
             hJ = self.hJ
-            log2p = np.log2(self.p)
+            p = self.p
         else:
-            log2p = np.log2(self.ising.p(hJ))
+            p = self.ising.p(hJ)
+        log2p = np.log2(p)
         if dJ is None:
             dJ = self.dJ
         
         # diagonal entries
-        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=self.p):
+        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p):
             newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
             modp = ising.p(newhJ)
@@ -386,7 +387,7 @@ class IsingFisherCurvatureMethod1():
         # Compute off-diagonal entries. These don't account for the subtraction of the
         # diagonal elements which are removed later To see this, expand D(theta_i+del,
         # theta_j+del) to second order.
-        def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ, p=self.p):
+        def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ, p=p):
             i, j = args
             newhJ = hJ.copy()
             newhJ += (dJ[i]+dJ[j])*epsdJ
@@ -409,7 +410,7 @@ class IsingFisherCurvatureMethod1():
             hess[np.eye(len(dJ))==1] /= 2
 
         if check_stability:
-            hess2 = self.dkl_curvature(epsdJ=epsdJ/2, check_stability=False)
+            hess2 = self.dkl_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
             err = hess2 - hess
             if (np.abs(err/hess) > rtol).any():
                 normerr = np.linalg.norm(err)
@@ -530,7 +531,7 @@ class IsingFisherCurvatureMethod1():
         sortix = np.argsort(np.abs(eigval))[::-1]
         eigval = eigval[sortix]
         eigvec = eigvec[:,sortix]
-        eigvec *= np.sign(eigvec.mean(0))[None,:]
+        eigvec *= np.sign(eigvec[:self.n,:].mean(0))[None,:]
         if (eigval<0).any():
             print("Negative eigenvalues.")
             print(eigval)
@@ -542,7 +543,8 @@ class IsingFisherCurvatureMethod1():
         return self.dJ.T.dot(eigvec)
 
     def map_trajectory(self, n_steps, step_size, hJ0=None):
-        """Linear perturbations to parameter space to explore info space.
+        """Move along steepest directions of parameter step and keep a record of local
+        landscape.
         
         Parameters
         ----------
@@ -566,12 +568,12 @@ class IsingFisherCurvatureMethod1():
         for i in range(n_steps):
             p = self.ising.p(hJTraj[i])
             sisj = self.ising.calc_observables(hJTraj[i])
+
             dJ.append(np.zeros_like(self.dJ))
-            
             for iStar in range(self.n):
                 dJ[i][iStar], errflag = self.solve_linearized_perturbation(iStar, p=p, sisj=sisj)
 
-            hess.append( self.dkl_curvature( hJ=hJTraj[i], dJ=dJ[i]) )
+            hess.append( self.dkl_curvature( hJ=hJTraj[i], dJ=dJ[i], epsdJ=1e-5) )
             out = self.hess_eig(hess[i])
             eigval.append(out[0])
             eigvec.append(out[1])
@@ -581,6 +583,7 @@ class IsingFisherCurvatureMethod1():
             dJcombo = self.hess_eig2dJ(eigvec[i][:,eigix])
             
             hJTraj.append(hJTraj[-1] + dJcombo*step_size)
+            print("Done with step %d."%i)
 
         return dJ, hess, eigval, eigvec, hJTraj
 
