@@ -7,6 +7,7 @@ from numba import njit
 from coniii.utils import *
 import importlib
 from warnings import warn
+from itertools import combinations
 np.seterr(divide='ignore')
 
 
@@ -366,8 +367,6 @@ class IsingFisherCurvatureMethod1():
             Hessian.
         """
         
-        from itertools import combinations
-        
         n = self.n
         if hJ is None:
             hJ = self.hJ
@@ -408,7 +407,7 @@ class IsingFisherCurvatureMethod1():
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
-                hess[i,j] = off_diag((i,j))
+                hess[i,j] = hess[j,i] = off_diag((i,j))
         else:
             hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
             hess += hess.T
@@ -451,8 +450,6 @@ class IsingFisherCurvatureMethod1():
         ndarray
             Hessian.
         """
-        
-        from itertools import combinations
         
         n = self.n
         allStatesSum = self.allStates.sum(1)
@@ -502,7 +499,7 @@ class IsingFisherCurvatureMethod1():
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
-                hess[i,j] = off_diag((i,j))
+                hess[i,j] = hess[j,i] = off_diag((i,j))
         else:
             hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
             hess += hess.T
