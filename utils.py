@@ -354,7 +354,7 @@ class IsingFisherCurvatureMethod1():
         dJ : ndarray, None
             Linear perturbations in parameter space corresponding to Hessian at given hJ.
             These can be calculuated using self.solve_linearized_perturbation().
-        epsdJ : float, 1e-2
+        epsdJ : float, 1e-4
             Step size for taking linear perturbation wrt parameters.
         n_cpus : int, None
         check_stability : bool, False
@@ -418,8 +418,9 @@ class IsingFisherCurvatureMethod1():
             err = hess2 - hess
             if (np.abs(err/hess) > rtol).any():
                 normerr = np.linalg.norm(err)
-                msg = "Finite difference estimate has not converged. May want to shrink epsdJ. %f"%normerr
-                print(msg)
+                msg = ("Finite difference estimate has not converged with rtol=%f. "+
+                       "May want to shrink epsdJ. Norm error %f.")
+                print(msg%(rtol,normerr))
         return hess
 
     def _dkl_curvature(self,
@@ -438,7 +439,7 @@ class IsingFisherCurvatureMethod1():
         dJ : ndarray, None
             Linear perturbations in parameter space corresponding to Hessian at given hJ. These can be
             calculuated using self.solve_linearized_perturbation().
-        epsdJ : float, 1e-2
+        epsdJ : float, 1e-4
             Step size for taking linear perturbation wrt parameters.
         n_cpus : int, None
         check_stability : bool, False
