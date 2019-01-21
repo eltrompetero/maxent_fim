@@ -531,6 +531,7 @@ class IsingFisherCurvatureMethod1():
         sortix = np.argsort(np.abs(eigval))[::-1]
         eigval = eigval[sortix]
         eigvec = eigvec[:,sortix]
+        # orient along direction of mean of individual means change
         eigvec *= np.sign(eigvec[:self.n,:].mean(0))[None,:]
         if (eigval<0).any():
             print("Negative eigenvalues.")
@@ -539,8 +540,10 @@ class IsingFisherCurvatureMethod1():
         
         return eigval, eigvec
 
-    def hess_eig2dJ(self, eigvec):
-        return self.dJ.T.dot(eigvec)
+    def hess_eig2dJ(self, eigvec, dJ=None):
+        if dJ is None:
+            dJ = self.dJ
+        return dJ.T.dot(eigvec)
 
     def map_trajectory(self, n_steps, step_size, hJ0=None):
         """Move along steepest directions of parameter step and keep a record of local
@@ -564,6 +567,7 @@ class IsingFisherCurvatureMethod1():
         eigval = []
         eigvec = []
         hJTraj = [hJ0]
+        prevStepFlipped = False
 
         for i in range(n_steps):
             p = self.ising.p(hJTraj[i])
@@ -578,10 +582,23 @@ class IsingFisherCurvatureMethod1():
             eigval.append(out[0])
             eigvec.append(out[1])
             
-            # take a step in the steepest direction
-            eigix = 0
+            # take a step in the steepest direction while move in the same direction as the previous step
+            eigix = 1
             dJcombo = self.hess_eig2dJ(eigvec[i][:,eigix])
-            
+            if i>0:
+                if prevStepFlipped:
+                    if (eigvec[-2][:,eigix].dot(eigvec[-1][:,eigix])<=0):
+                        prevStepFlipped = False
+                    else:
+                        dJcombo *= -1
+                        prevStepFlipped = True
+                else:
+                    if (eigvec[-2][:,eigix].dot(eigvec[-1][:,eigix])<=0):
+                        dJcombo *= -1
+                        prevStepFlipped = True
+                    else:
+                        prevStepFlipped = False
+                
             hJTraj.append(hJTraj[-1] + dJcombo*step_size)
             print("Done with step %d."%i)
 
