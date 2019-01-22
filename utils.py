@@ -584,8 +584,8 @@ class IsingFisherCurvatureMethod1():
             eigvec.append(out[1])
             
             # take a step in the steepest direction while moving in the same direction as the previous step
-            eigix = 0
-            dJcombo = self.hess_eig2dJ(eigvec[i][:,eigix])
+            eigix = 0  # eigenvector direction in which to move
+            dJcombo = self.hess_eig2dJ(eigvec[i][:,eigix], dJ[-1])
             if i==0 and initial_direction_sign==-1:
                 dJcombo *= -1
                 flipRecord[0] = -1
@@ -609,6 +609,7 @@ class IsingFisherCurvatureMethod1():
             hJTraj.append(hJTraj[-1] + dJcombo*step_size)
             print("Done with step %d."%i)
         
+        # apply sign change to return eigenvector direction
         for i in range(n_steps):
             eigvec[i][:,eigix] *= flipRecord[i]
         return dJ, hess, eigval, eigvec, hJTraj
