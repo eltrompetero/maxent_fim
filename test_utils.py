@@ -43,3 +43,31 @@ def test_IsingFisherCurvatureMethod1():
     hessNdt = hessfun(np.zeros(n))
     hessToCheck = isingdkl.dkl_curvature()
     assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-2).all()
+
+def test_IsingFisherCurvatureMethod2():
+    import numdifftools as ndt
+
+    n = 5
+    rng = np.random.RandomState(0)
+    hJ = rng.normal(scale=.1, size=15)
+    isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:])
+
+    # Compare linearized perturbation matrix calculation with direct solution by solving
+    # the inverse problem.
+    i = 0
+    for a in range(1,4):
+        dJ = isingdkl._solve_linearized_perturbation(i, a)
+        assert np.linalg.norm(dJ-isingdkl.dJ[a-1])<1e-6
+    
+    # Compare own estimation of Hessian with simpler (but slower) implementation using numdifftools.
+    # Checking within 1% error.
+    log2p = np.log2(isingdkl.p)
+    def f(eps):
+        dJ = (eps[:,None]*isingdkl.dJ).sum(0)
+        return (log2p-np.log2(isingdkl.ising.p(isingdkl.hJ + dJ))).dot(isingdkl.p)
+
+    hessfun = ndt.Hessian(f, step=1e-4)
+    hessNdt = hessfun(np.zeros(n*(n-1)))
+    hessToCheck = isingdkl.dkl_curvature(epsdJ=1e-4)
+    print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
+    assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-2).all()

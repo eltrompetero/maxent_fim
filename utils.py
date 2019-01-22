@@ -79,6 +79,7 @@ class IsingFisherCurvatureMethod1():
         J : ndarray, None
         eps : float, 1e-7
         precompute : bool, True
+        n_cpus : int, None
         """
         
         import multiprocess as mp
@@ -405,7 +406,7 @@ class IsingFisherCurvatureMethod1():
             hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
             # subtract off linear terms to get Hessian (and not just cross derivative)
             hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
-                                                            for i,j in combinations(range(n),2)])
+                                                            for i,j in combinations(range(len(dJ)),2)])
             hess += hess.T
             hess[np.eye(len(dJ))==1] /= 2
 
@@ -680,24 +681,12 @@ class IsingFisherCurvatureMethod1():
 
 
 class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
-    def __init__(self, n, h=None, J=None, eps=1e-7):
-        """Turning spin i into spin a."""
-
-        assert n>1 and 0<eps<.1
-        self.n = n
-        self.eps = eps
-        self.hJ = np.concatenate((h,J))
-
-        self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
-        self.sisj = self.ising.calc_observables(self.hJ)
-        self.p = self.ising.p(self.hJ)
-        self.allStates = bin_states(n,True)
-
+    def compute_dJ(self):
         # precompute linear change to parameters for small perturbation
-        self.dJ = np.zeros((n*(n-1),n+(n-1)*n//2))
+        self.dJ = np.zeros((self.n*(self.n-1),self.n+(self.n-1)*self.n//2))
         counter = 0
-        for i in range(n):
-            for a in np.delete(range(n),i):
+        for i in range(self.n):
+            for a in np.delete(range(self.n),i):
                 self.dJ[counter] = self.solve_linearized_perturbation(i, a)
                 counter += 1
 
@@ -720,15 +709,30 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         """
         
         assert i!=a
+        if not hasattr(i,'__len__'):
+            i = (i,)
+        if not hasattr(a,'__len__'):
+            a = (a,)
+        if not hasattr(eps,'__len__'):
+            eps = eps or self.eps
+            eps = [eps]*len(i)
         n = self.n
-        eps = eps or self.eps
         si = self.sisj[:n]
         sisj = self.sisj[n:]
 
         # observables after perturbations
         siNew = si.copy()
         sisjNew = sisj.copy()
-        siNew[i]  = (1-eps)*si[i] + eps*si[a]
+
+        for i_,a_,eps_ in zip(i,a,eps):
+            self._observables_after_perturbation(siNew, sisjNew, i_, a_, eps_)
+
+        return np.concatenate((siNew, sisjNew))
+   
+    def _observables_after_perturbation(self, si, sisj, i, a, eps):
+        n = self.n
+
+        si[i] = (1-eps)*si[i] + eps*si[a]
 
         for j in np.delete(range(n),i):
             if i<j:
@@ -737,15 +741,14 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
                 ijix = unravel_index((j,i),n)
 
             if j==a:
-                sisjNew[ijix] = (1-eps)*sisj[ijix] + eps
+                sisj[ijix] = (1-eps)*sisj[ijix] + eps
             else:
                 if j<a:
                     jaix = unravel_index((j,a),n)
                 else:
                     jaix = unravel_index((a,j),n)
-                sisjNew[ijix] = (1-eps)*sisj[ijix] + eps*sisj[jaix]
-        return np.concatenate((siNew, sisjNew))
-    
+                sisj[ijix] = (1-eps)*sisj[ijix] + eps*sisj[jaix]
+
     def _solve_linearized_perturbation(self, iStar, aStar):
         """Consider a perturbation to a single spin.
         
@@ -818,14 +821,14 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
                     A[i,k] = sisj[ikix] - C[i]*si[k]
 
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[i,n+klcount] = np.prod(self.allStates[:,(i,k,l)],1).dot(p) - C[i]*sisj[klcount]
+                A[i,n+klcount] = self.triplets[(i,k,l)].dot(p) - C[i]*sisj[klcount]
         
         # pair constraints
         for ijcount,(i,j) in enumerate(combinations(range(n),2)):
             for k in range(n):
-                A[n+ijcount,k] = np.prod(self.allStates[:,(i,j,k)],1).dot(p) - C[n+ijcount]*si[k]
+                A[n+ijcount,k] = self.triplets[(i,j,k)].dot(p) - C[n+ijcount]*si[k]
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[n+ijcount,n+klcount] = np.prod(self.allStates[:,(i,j,k,l)],1).dot(p) - C[n+ijcount]*sisj[klcount]
+                A[n+ijcount,n+klcount] = self.quartets[(i,j,k,l)].dot(p) - C[n+ijcount]*sisj[klcount]
     
         C -= self.sisj
         # factor out linear dependence on eps
