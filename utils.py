@@ -433,8 +433,8 @@ class IsingFisherCurvatureMethod1():
         hJ : ndarray, None
             Ising model parameters.
         dJ : ndarray, None
-            Linear perturbations in parameter space corresponding to Hessian at given hJ. These can be
-            calculuated using self.solve_linearized_perturbation().
+            Linear perturbations in parameter space corresponding to Hessian at given hJ.
+            These can be calculuated using self.solve_linearized_perturbation().
         epsdJ : float, 1e-4
             Step size for taking linear perturbation wrt parameters.
         n_cpus : int, None
@@ -563,8 +563,9 @@ class IsingFisherCurvatureMethod1():
         ----------
         n_steps : int
         step_size : float
-            Amount to move in specified direction accounting for the curvature. In other words, the distance
-            moved, eps, will be step_size / eigval[eigix], such that steps are smaller in steeper regions.
+            Amount to move in specified direction accounting for the curvature. In other
+            words, the distance moved, eps, will be step_size / eigval[eigix], such that
+            steps are smaller in steeper regions.
         eigix : int, 0
             eigenvector direction in which to move. Default specifies principal direction.
         hJ0 : ndarray, None
@@ -573,6 +574,7 @@ class IsingFisherCurvatureMethod1():
 
         Returns
         -------
+        dJ, hess, eigval, eigvec, hJTraj
         """
 
         if hJ0 is None:
@@ -600,7 +602,9 @@ class IsingFisherCurvatureMethod1():
             eigvec.append(out[1])
             
             # take a step in the steepest direction while moving in the same direction as the previous step
-            moveDirection = eigvec[i][:,eigix]
+            #moveDirection = eigvec[i][:,eigix]
+            # weighted average direction
+            moveDirection = eigvec[i].dot(eigval[i]/np.linalg.norm(eigval[i]))
             dJcombo = self.hess_eig2dJ(moveDirection, dJ[-1])
             if i==0 and initial_direction_sign==-1:
                 dJcombo *= -1
@@ -623,12 +627,14 @@ class IsingFisherCurvatureMethod1():
                         prevStepFlipped = False
             prevMoveDirection = moveDirection
                 
-            hJTraj.append(hJTraj[-1] + dJcombo*step_size/eigval[-1][eigix])
+            #hJTraj.append(hJTraj[-1] + dJcombo*step_size/eigval[-1][eigix])
+            hJTraj.append(hJTraj[-1] + dJcombo*step_size/eigval[-1].sum())
             print("Done with step %d."%i)
         
         # apply sign change to return eigenvector direction
         for i in range(n_steps):
-            eigvec[i][:,eigix] *= flipRecord[i]
+            #eigvec[i][:,eigix] *= flipRecord[i]
+            eigvec[i] *= flipRecord[i]
         return dJ, hess, eigval, eigvec, hJTraj
 
     def find_peak_dkl_curvature(self, hJ0=None):
