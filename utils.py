@@ -503,13 +503,16 @@ class IsingFisherCurvatureMethod1():
                 print(msg)
         return hess
 
-    def hess_eig(self, hess, imag_norm_threshold=1e-10):
+    def hess_eig(self, hess, orientation_vector=None, imag_norm_threshold=1e-10):
         """Get Hessian eigenvalues and eigenvectors corresponds to parameter combinations
-        of max curvature. Return them nicely sorted and cleaned.
+        of max curvature. Return them nicely sorted and cleaned and oriented consistently.
         
         Parameters
         ----------
         hess : ndarray
+        orientation_vector : ndarray, None
+            Vector along which to orient all vectors so that they are consistent with
+            sign. By default, it is set to the sign of the first entry in the vector.
         imag_norm_threshold : float, 1e-10
         
         Returns
@@ -520,12 +523,19 @@ class IsingFisherCurvatureMethod1():
             Eigenvectors in cols.
         """
         
+        if orientation_vector is None:
+            orientation_vector = np.zeros(self.n)
+            orientation_vector[0] = 1.
+
         eigval, eigvec = np.linalg.eig(hess)
         if (np.linalg.norm(eigval.imag)>imag_norm_threshold or
             np.linalg.norm(eigvec.imag[:,:10]>imag_norm_threshold)):
             print("Imaginary components are significant.")
         eigval = eigval.real
         eigvec = eigvec.real
+
+        # orient all vectors along same direction
+        eigvec *= np.sign(eigvec.T.dot(orientation_vector))[None,:]
         
         # sort by largest eigenvalues
         sortix = np.argsort(np.abs(eigval))[::-1]
@@ -545,15 +555,21 @@ class IsingFisherCurvatureMethod1():
             dJ = self.dJ
         return dJ.T.dot(eigvec)
 
-    def map_trajectory(self, n_steps, step_size, hJ0=None, initial_direction_sign=1):
+    def map_trajectory(self, n_steps, step_size, eigix=0, hJ0=None, initial_direction_sign=1):
         """Move along steepest directions of parameter step and keep a record of local
         landscape.
         
         Parameters
         ----------
         n_steps : int
-        step_size : int
+        step_size : float
+            Amount to move in specified direction accounting for the curvature. In other words, the distance
+            moved, eps, will be step_size / eigval[eigix], such that steps are smaller in steeper regions.
+        eigix : int, 0
+            eigenvector direction in which to move. Default specifies principal direction.
         hJ0 : ndarray, None
+        initial_direction_sign : int, 1
+            -1 or 1.
 
         Returns
         -------
@@ -584,29 +600,30 @@ class IsingFisherCurvatureMethod1():
             eigvec.append(out[1])
             
             # take a step in the steepest direction while moving in the same direction as the previous step
-            eigix = 0  # eigenvector direction in which to move
-            dJcombo = self.hess_eig2dJ(eigvec[i][:,eigix], dJ[-1])
+            moveDirection = eigvec[i][:,eigix]
+            dJcombo = self.hess_eig2dJ(moveDirection, dJ[-1])
             if i==0 and initial_direction_sign==-1:
                 dJcombo *= -1
                 flipRecord[0] = -1
                 prevStepFlipped = True
             elif i>0:
                 if prevStepFlipped:
-                    if (eigvec[-2][:,eigix].dot(eigvec[-1][:,eigix])<=0):
+                    if (prevMoveDirection.dot(moveDirection)<=0):
                         prevStepFlipped = False
                     else:
                         dJcombo *= -1
                         flipRecord[i] = -1
                         prevStepFlipped = True
                 else:
-                    if (eigvec[-2][:,eigix].dot(eigvec[-1][:,eigix])<=0):
+                    if (prevMoveDirection.dot(moveDirection)<=0):
                         dJcombo *= -1
                         flipRecord[i] = -1
                         prevStepFlipped = True
                     else:
                         prevStepFlipped = False
+            prevMoveDirection = moveDirection
                 
-            hJTraj.append(hJTraj[-1] + dJcombo*step_size)
+            hJTraj.append(hJTraj[-1] + dJcombo*step_size/eigval[-1][eigix])
             print("Done with step %d."%i)
         
         # apply sign change to return eigenvector direction
