@@ -545,7 +545,7 @@ class IsingFisherCurvatureMethod1():
             dJ = self.dJ
         return dJ.T.dot(eigvec)
 
-    def map_trajectory(self, n_steps, step_size, hJ0=None):
+    def map_trajectory(self, n_steps, step_size, hJ0=None, initial_direction_sign=1):
         """Move along steepest directions of parameter step and keep a record of local
         landscape.
         
@@ -567,6 +567,7 @@ class IsingFisherCurvatureMethod1():
         eigval = []
         eigvec = []
         hJTraj = [hJ0]
+        flipRecord = np.ones(n_steps)
         prevStepFlipped = False
 
         for i in range(n_steps):
@@ -582,26 +583,34 @@ class IsingFisherCurvatureMethod1():
             eigval.append(out[0])
             eigvec.append(out[1])
             
-            # take a step in the steepest direction while move in the same direction as the previous step
-            eigix = 1
+            # take a step in the steepest direction while moving in the same direction as the previous step
+            eigix = 0
             dJcombo = self.hess_eig2dJ(eigvec[i][:,eigix])
-            if i>0:
+            if i==0 and initial_direction_sign==-1:
+                dJcombo *= -1
+                flipRecord[0] = -1
+                prevStepFlipped = True
+            elif i>0:
                 if prevStepFlipped:
                     if (eigvec[-2][:,eigix].dot(eigvec[-1][:,eigix])<=0):
                         prevStepFlipped = False
                     else:
                         dJcombo *= -1
+                        flipRecord[i] = -1
                         prevStepFlipped = True
                 else:
                     if (eigvec[-2][:,eigix].dot(eigvec[-1][:,eigix])<=0):
                         dJcombo *= -1
+                        flipRecord[i] = -1
                         prevStepFlipped = True
                     else:
                         prevStepFlipped = False
                 
             hJTraj.append(hJTraj[-1] + dJcombo*step_size)
             print("Done with step %d."%i)
-
+        
+        for i in range(n_steps):
+            eigvec[i][:,eigix] *= flipRecord[i]
         return dJ, hess, eigval, eigvec, hJTraj
 
     def find_peak_dkl_curvature(self, hJ0=None):
