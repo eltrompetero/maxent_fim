@@ -407,6 +407,7 @@ class IsingFisherCurvatureMethod1():
             # subtract off linear terms to get Hessian (and not just cross derivative)
             hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
                                                             for i,j in combinations(range(len(dJ)),2)])
+            # fill in lower triangle
             hess += hess.T
             hess[np.eye(len(dJ))==1] /= 2
 
@@ -525,7 +526,7 @@ class IsingFisherCurvatureMethod1():
         """
         
         if orientation_vector is None:
-            orientation_vector = np.zeros(self.n)
+            orientation_vector = np.zeros(len(self.dJ))
             orientation_vector[0] = 1.
 
         eigval, eigvec = np.linalg.eig(hess)
@@ -687,7 +688,7 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         counter = 0
         for i in range(self.n):
             for a in np.delete(range(self.n),i):
-                self.dJ[counter] = self.solve_linearized_perturbation(i, a)
+                self.dJ[counter], errflag = self.solve_linearized_perturbation(i, a)
                 counter += 1
 
     def observables_after_perturbation(self, i, a, eps=None):
@@ -791,6 +792,8 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         -------
         ndarray
             dJ
+        int
+            Error flag. Returns 0 by default. 1 means badly conditioned matrix A.
         tuple (optional)
             (A,C)
         """
@@ -836,17 +839,24 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
-            dJtwiceEps = self.solve_linearized_perturbation(iStar, aStar,
-                                                            p=p,
-                                                            sisj=np.concatenate((si,sisj)),
-                                                            eps=eps/2,
-                                                            check_stability=False)
+            dJtwiceEps, errflag = self.solve_linearized_perturbation(iStar, aStar,
+                                                                     p=p,
+                                                                     sisj=np.concatenate((si,sisj)),
+                                                                     eps=eps/2,
+                                                                     check_stability=False)
             # print if relative change is more than .1% for any entry
             if ((np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ)))>-3).any():
                 print("Unstable solution. Recommend shrinking eps.")
+
+        if np.linalg.cond(A)>1e15:
+            warn("A is badly conditioned.")
+            errflag = 1
+        else:
+            errflag = 0
+
         if full_output:
-            return dJ, (A, C)
-        return dJ
+            return dJ, errflag, (A, C)
+        return dJ, errflag
 
     def map_trajectory(self, n_steps, step_size, hJ0=None):
         """Linear perturbations to parameter space to explore info space.
@@ -875,7 +885,7 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
             dJ.append(np.zeros_like(self.dJ))
             
             for count,(iStar,aStar) in enumerate(combinations(range(self.n),2)):
-                dJ[i][count] = self.solve_linearized_perturbation(iStar, aStar, p=p, sisj=sisj)
+                dJ[i][count], errflag = self.solve_linearized_perturbation(iStar, aStar, p=p, sisj=sisj)
 
             hess.append( self.dkl_curvature( hJ=hJTraj[i], dJ=dJ[i]) )
             out = self.hess_eig(hess[i])
@@ -889,6 +899,49 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
             hJTraj.append(hJTraj[-1] + dJcombo*step_size)
 
         return dJ, hess, eigval, eigvec, hJTraj
+
+    def find_peak_dkl_curvature(self, hJ0=None):
+        """Use scipy.optimize to find peak in DKL curvature. Regions of parameter space
+        where the matrix A describing the linearized perturbations is badly conditioned
+        will be ignored by the algorithm.
+
+        Parameters
+        ----------
+        hJ0 : ndarray, None
+
+        Returns
+        -------
+        scipy.optimize.minimize dict
+        """
+
+        from scipy.optimize import minimize
+
+        if hJ0 is None:
+            hJ0 = self.hJ
+
+        def f(hJ):
+            p = self.ising.p(hJ)
+            sisj = self.ising.calc_observables(hJ)
+            dJ = np.zeros_like(self.dJ)
+            counter = 0
+            for i in range(self.n):
+                for a in np.delete(range(self.n),i):
+                    dJ[counter], errflag = self.solve_linearized_perturbation(i, a,
+                                                                              p=p,
+                                                                              sisj=sisj,
+                                                                              check_stability=False)
+                    counter += 1
+                if errflag:
+                    return np.inf
+            try:
+                hessEigSum = np.linalg.eig(self.dkl_curvature(hJ=hJ, dJ=dJ))[0].sum()
+            except np.linalg.LinAlgError:
+                print("Problem with finding Hessian.")
+                print(hJ)
+                return np.inf
+            return -hessEigSum
+
+        return minimize(f, hJ0, options={'eps':1e-5, 'ftol':1e-4}, bounds=[(-1,1)]*len(hJ0))
 #end IsingFisherCurvatureMethod2
 
 
