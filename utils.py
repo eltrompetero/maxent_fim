@@ -709,11 +709,12 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
             Observables <si> and <sisj> after perturbation.
         """
         
-        assert i!=a
         if not hasattr(i,'__len__'):
             i = (i,)
         if not hasattr(a,'__len__'):
             a = (a,)
+        for (i_,a_) in zip(i,a):
+            assert i_!=a_
         if not hasattr(eps,'__len__'):
             eps = eps or self.eps
             eps = [eps]*len(i)
