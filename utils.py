@@ -66,9 +66,9 @@ def unravel_index(ijk, n):
     return ix
 
 
-# ==================
-# Classes
-# ==================
+# ======= #
+# Classes #
+# ======= #
 class IsingFisherCurvatureMethod1():
     def __init__(self, n, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
@@ -110,15 +110,16 @@ class IsingFisherCurvatureMethod1():
                 self.quartets[(i,j,k,l)] = np.prod(self.allStates[:,(i,j,k,l)],1).astype(np.int8)
     
         if precompute:
-            self.compute_dJ()
+            self.dJ = self.compute_dJ()
         else:
             self.dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
 
-    def compute_dJ(self):
+    def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
-        self.dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
+        dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
         for i in range(self.n):
-            self.dJ[i], errflag = self.solve_linearized_perturbation(i)
+            dJ[i], errflag = self.solve_linearized_perturbation(i, p=p, sisj=sisj)
+        return dJ
 
     def observables_after_perturbation(self, i,
                                        eps=None,
@@ -682,14 +683,15 @@ class IsingFisherCurvatureMethod1():
 
 
 class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
-    def compute_dJ(self):
+    def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
-        self.dJ = np.zeros((self.n*(self.n-1),self.n+(self.n-1)*self.n//2))
+        dJ = np.zeros((self.n*(self.n-1),self.n+(self.n-1)*self.n//2))
         counter = 0
         for i in range(self.n):
             for a in np.delete(range(self.n),i):
-                self.dJ[counter], errflag = self.solve_linearized_perturbation(i, a)
+                dJ[counter], errflag = self.solve_linearized_perturbation(i, a, p=p, sisj=sisj)
                 counter += 1
+        return dJ
 
     def observables_after_perturbation(self, i, a, eps=None, perturb_up=False):
         """Make spin index i more like spin a by eps. Perturb the corresponding mean and
