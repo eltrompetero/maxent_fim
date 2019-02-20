@@ -336,18 +336,53 @@ class IsingFisherCurvatureMethod1():
         if full_output:
             return dJ, errflag, (A, C)
         return dJ, errflag
+    
+    def dkl_curvature(self, *args, **kwargs):
+        """Wrapper for _dkl_curvature() to find best finite diff step size."""
 
-    def dkl_curvature(self,
+        if not 'epsdJ' in kwargs.keys():
+            kwargs['epsdJ'] = 1e-4
+        if not 'check_stability' in kwargs.keys():
+            kwargs['check_stability'] = True
+        if 'full_output' in kwargs.keys():
+            full_output = kwargs['full_output']
+        else:
+            full_output = False
+        kwargs['full_output'] = True
+        epsDecreaseFactor = 10
+        
+        converged = False
+        prevHess, errflag, prevNormerr = self._dkl_curvature(*args, **kwargs)
+        kwargs['epsdJ'] /= epsDecreaseFactor
+        while (not converged) and errflag:
+            hess, errflag, normerr = self._dkl_curvature(*args, **kwargs)
+            # end loop if error starts increasing again
+            if errflag and normerr<prevNormerr:
+                prevHess = hess
+                prevNormerr = normerr
+                kwargs['epsdJ'] /= epsDecreaseFactor
+            else:
+                converged = True
+        if not converged and not errflag:
+            normerr = None
+        hess = prevHess
+        
+        if full_output:
+            return hess, errflag, normerr
+        return hess
+
+    def _dkl_curvature(self,
                       hJ=None,
                       dJ=None,
                       epsdJ=1e-4,
                       n_cpus=None,
                       check_stability=False,
-                      rtol=1e-3):
+                      rtol=1e-3,
+                      full_output=False):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
         the theta_{ij} parameters replacing the spin i by sampling from j.
 
-        Use single step finite difference method to estimated Hessian.
+        Use single step finite difference method to estimate Hessian.
         
         Parameters
         ----------
@@ -362,11 +397,17 @@ class IsingFisherCurvatureMethod1():
         check_stability : bool, False
         rtol : float, 1e-3
             Relative tolerance for each entry in Hessian when checking stability.
+        full_output : bool, False
             
         Returns
         -------
         ndarray
             Hessian.
+        int (optional)
+            Error flag. 1 indicates rtol was exceeded. None indicates that no check was
+            done.
+        float (optional)
+            Norm difference between hessian with step size eps and eps/2.
         """
         
         n = self.n
@@ -417,12 +458,22 @@ class IsingFisherCurvatureMethod1():
             err = hess2 - hess
             if (np.abs(err/hess) > rtol).any():
                 normerr = np.linalg.norm(err)
+                errflag = 1
                 msg = ("Finite difference estimate has not converged with rtol=%f. "+
                        "May want to shrink epsdJ. Norm error %f.")
                 print(msg%(rtol,normerr))
-        return hess
+            else:
+                errflag = 0
+                normerr = None
+        else:
+            errflag = None
+            normerr = None
 
-    def _dkl_curvature(self,
+        if not full_output:
+            return hess
+        return hess, errflag, normerr
+
+    def __dkl_curvature(self,
                        hJ=None,
                        dJ=None,
                        epsdJ=1e-4,
