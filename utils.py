@@ -815,13 +815,25 @@ class IsingFisherCurvatureMethod1():
             return -hessEigSum
 
         return minimize(f, hJ0, options={'eps':1e-5, 'ftol':1e-4}, bounds=[(-1,1)]*len(hJ0))
+
+    def __get_state__(self):
+        return {'n':self.n,
+                'h':self.hJ[:self.n],
+                'J':self.hJ[self.n:],
+                'dJ':self.dJ,
+                'eps':self.eps}
+
+    def __set_state__(self, state_dict):
+        self.__init__(state_dict['n'], state_dict['h'], state_dict['J'], state_dict['eps'],
+                      precompute=False)
+        self.dJ = state_dict['dJ']
 #end IsingFisherCurvatureMethod1
 
 
 class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
-        dJ = np.zeros((self.n*(self.n-1),self.n+(self.n-1)*self.n//2))
+        dJ = np.zeros((self.n*(self.n-1), self.n+(self.n-1)*self.n//2))
         counter = 0
         for i in range(self.n):
             for a in np.delete(range(self.n),i):
