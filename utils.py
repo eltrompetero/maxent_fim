@@ -7,6 +7,7 @@ from numba import njit
 from coniii.utils import *
 import importlib
 from warnings import warn
+from itertools import combinations
 np.seterr(divide='ignore')
 
 
@@ -65,9 +66,9 @@ def unravel_index(ijk, n):
     return ix
 
 
-# ==================
-# Classes
-# ==================
+# ======= #
+# Classes #
+# ======= #
 class IsingFisherCurvatureMethod1():
     def __init__(self, n, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
@@ -78,6 +79,7 @@ class IsingFisherCurvatureMethod1():
         J : ndarray, None
         eps : float, 1e-7
         precompute : bool, True
+        n_cpus : int, None
         """
         
         import multiprocess as mp
@@ -108,15 +110,16 @@ class IsingFisherCurvatureMethod1():
                 self.quartets[(i,j,k,l)] = np.prod(self.allStates[:,(i,j,k,l)],1).astype(np.int8)
     
         if precompute:
-            self.compute_dJ()
+            self.dJ = self.compute_dJ()
         else:
             self.dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
 
-    def compute_dJ(self):
+    def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
-        self.dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
+        dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
         for i in range(self.n):
-            self.dJ[i], errflag = self.solve_linearized_perturbation(i)
+            dJ[i], errflag = self.solve_linearized_perturbation(i, p=p, sisj=sisj)
+        return dJ
 
     def observables_after_perturbation(self, i,
                                        eps=None,
@@ -333,16 +336,55 @@ class IsingFisherCurvatureMethod1():
         if full_output:
             return dJ, errflag, (A, C)
         return dJ, errflag
+    
+    def dkl_curvature(self, *args, **kwargs):
+        """Wrapper for _dkl_curvature() to find best finite diff step size."""
 
-    def dkl_curvature(self,
+        if not 'epsdJ' in kwargs.keys():
+            kwargs['epsdJ'] = 1e-4
+        if not 'check_stability' in kwargs.keys():
+            kwargs['check_stability'] = True
+        if 'full_output' in kwargs.keys():
+            full_output = kwargs['full_output']
+        else:
+            full_output = False
+        kwargs['full_output'] = True
+        epsDecreaseFactor = 10
+        
+        converged = False
+        prevHess, errflag, prevNormerr = self._dkl_curvature(*args, **kwargs)
+        kwargs['epsdJ'] /= epsDecreaseFactor
+        while (not converged) and errflag:
+            hess, errflag, normerr = self._dkl_curvature(*args, **kwargs)
+            # end loop if error starts increasing again
+            if errflag and normerr<prevNormerr:
+                prevHess = hess
+                prevNormerr = normerr
+                kwargs['epsdJ'] /= epsDecreaseFactor
+            else:
+                converged = True
+        if not converged and not errflag:
+            normerr = None
+        hess = prevHess
+        
+        if full_output:
+            return hess, errflag, normerr
+        return hess
+
+    def _dkl_curvature(self,
                       hJ=None,
                       dJ=None,
                       epsdJ=1e-4,
                       n_cpus=None,
                       check_stability=False,
-                      rtol=1e-3):
+                      rtol=1e-3,
+                      zero_out_small_p=True,
+                      p_threshold=1e-15,
+                      full_output=False):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
         the theta_{ij} parameters replacing the spin i by sampling from j.
+
+        Use single step finite difference method to estimate Hessian.
         
         Parameters
         ----------
@@ -351,206 +393,265 @@ class IsingFisherCurvatureMethod1():
         dJ : ndarray, None
             Linear perturbations in parameter space corresponding to Hessian at given hJ.
             These can be calculuated using self.solve_linearized_perturbation().
-        epsdJ : float, 1e-2
+        epsdJ : float, 1e-4
             Step size for taking linear perturbation wrt parameters.
         n_cpus : int, None
         check_stability : bool, False
         rtol : float, 1e-3
             Relative tolerance for each entry in Hessian when checking stability.
+        zero_out_small_p : bool, True
+            If True, set all small values below p_threshold to 0.
+        p_threshold : float, 1e-15
+        full_output : bool, False
             
         Returns
         -------
         ndarray
             Hessian.
+        int (optional)
+            Error flag. 1 indicates rtol was exceeded. None indicates that no check was
+            done.
+        float (optional)
+            Norm difference between hessian with step size eps and eps/2.
         """
-        
-        from itertools import combinations
         
         n = self.n
         if hJ is None:
             hJ = self.hJ
-            log2p = np.log2(self.p)
+            p = self.p
         else:
-            log2p = np.log2(self.ising.p(hJ))
+            p = self.ising.p(hJ)
+        log2p = np.log2(p)
         if dJ is None:
             dJ = self.dJ
+
+        if zero_out_small_p:
+            log2p[p<p_threshold] = -np.inf
+            p = p.copy()
+            p[p<p_threshold] = 0.
         
         # diagonal entries
-        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ):
-            newhJ = hJ.copy()
-            newhJ += 2*dJ[i]*epsdJ
-            modp2 = ising.p(newhJ)
-            
+        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p):
             newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
-            modp1 = ising.p(newhJ)
-            return ((np.log2(modp2)-log2p).dot(modp2) -
-                    2*(np.log2(modp1)-log2p).dot(modp1))/epsdJ**2
+            modp = ising.p(newhJ)
+            return np.nansum(2*(log2p-np.log2(modp))*p) / epsdJ**2
             
-        # compute off-diagonal entries
-        def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ):
+        # Compute off-diagonal entries. These don't account for the subtraction of the
+        # diagonal elements which are removed later To see this, expand D(theta_i+del,
+        # theta_j+del) to second order.
+        def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ, p=p):
             i, j = args
             newhJ = hJ.copy()
             newhJ += (dJ[i]+dJ[j])*epsdJ
-            modp11 = ising.p(newhJ)
-            
-            newhJ = hJ.copy()
-            newhJ += dJ[i]*epsdJ
-            modp10 = ising.p(newhJ)
-            
-            newhJ = hJ.copy()
-            newhJ += dJ[j]*epsdJ
-            modp01 = ising.p(newhJ)
-                    
-            return ( (np.log2(modp11)-log2p).dot(modp11) -
-                     (np.log2(modp10)-log2p).dot(modp10) - 
-                     (np.log2(modp01)-log2p).dot(modp01) )/epsdJ**2
+            modp = ising.p(newhJ)
+            return np.nansum((log2p-np.log2(modp))*p) / epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
-                hess[i,j] = off_diag((i,j))
+                hess[i,j] = hess[j,i] = off_diag((i,j))
         else:
-            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
-            hess += hess.T
             hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
+            # subtract off linear terms to get Hessian (and not just cross derivative)
+            hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
+                                                            for i,j in combinations(range(len(dJ)),2)])
+            # fill in lower triangle
+            hess += hess.T
+            hess[np.eye(len(dJ))==1] /= 2
 
         if check_stability:
-            hess2 = self.dkl_curvature(epsdJ=epsdJ/2, check_stability=False)
+            hess2 = self.dkl_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
             err = hess2 - hess
-            if ((np.abs(err)/hess)>rtol).any():
+            if (np.abs(err/hess) > rtol).any():
                 normerr = np.linalg.norm(err)
-                msg = "Finite difference estimate has not converged. May want to shrink epsdJ. %f"%normerr
-                print(msg)
-    #     Another way of calculating Hessian for checking
-    #     for i,j in combinations(range(4),2):
-    #         newhJ = hJ.copy()
-    #         newhJ[n:] += (dJ[i]+dJ[j])*epsDkl
-    #         modp1 = ising.p(newhJ)
-    #         newhJ = hJ.copy()
-    #         newhJ[n:] += dJ[i]*epsDkl
-    #         modp0 = ising.p(newhJ)
-    #         d1 = ((log2(modp1)-log2(p)).dot(modp1) - (log2(modp0)-log2(p)).dot(modp0)) / epsDkl
-            
-    #         newhJ = hJ.copy()
-    #         newhJ[n:] += (dJ[j])*epsDkl
-    #         modp1 = ising.p(newhJ)
-    #         newhJ = hJ.copy()
-    #         modp0 = ising.p(newhJ)
-    #         d0 = ((log2(modp1)-log2(p)).dot(modp1)-(log2(modp0)-log2(p)).dot(modp0)) / epsDkl
+                errflag = 1
+                msg = ("Finite difference estimate has not converged with rtol=%f. "+
+                       "May want to shrink epsdJ. Norm error %f.")
+                print(msg%(rtol,normerr))
+            else:
+                errflag = 0
+                normerr = None
+        else:
+            errflag = None
+            normerr = None
 
-    #         hess[i,j] = hess[j,i] = (d1-d0)/epsDkl
+        if not full_output:
+            return hess
+        return hess, errflag, normerr
+    
+    @staticmethod
+    def p2pk(p, allStates):
+        """Convert the full probability distribution to the probability of having k votes
+        in the majority. Assuming that n is odd.
+
+        Parameters
+        ----------
+        p : ndarray
+
+        Returns
+        -------
+        ndarray
+            p(k)
+        """
+        
+        n = allStates.shape[1]
+        pk = np.zeros(n//2+1)
+        kVotes = np.abs( allStates.sum(1) )
+        for i in range(pk.size):
+            pk[i] = p[kVotes==(i*2+1)].sum()
+        return pk
+
+    def maj_curvature(self, *args, **kwargs):
+        """Wrapper for _dkl_curvature() to find best finite diff step size."""
+
+        if not 'epsdJ' in kwargs.keys():
+            kwargs['epsdJ'] = 1e-4
+        if not 'check_stability' in kwargs.keys():
+            kwargs['check_stability'] = True
+        if 'full_output' in kwargs.keys():
+            full_output = kwargs['full_output']
+        else:
+            full_output = False
+        kwargs['full_output'] = True
+        epsDecreaseFactor = 10
+        
+        converged = False
+        prevHess, errflag, prevNormerr = self._maj_curvature(*args, **kwargs)
+        kwargs['epsdJ'] /= epsDecreaseFactor
+        while (not converged) and errflag:
+            hess, errflag, normerr = self._maj_curvature(*args, **kwargs)
+            # end loop if error starts increasing again
+            if errflag and normerr<prevNormerr:
+                prevHess = hess
+                prevNormerr = normerr
+                kwargs['epsdJ'] /= epsDecreaseFactor
+            else:
+                converged = True
+        if not converged and not errflag:
+            normerr = None
+        hess = prevHess
+        
+        if full_output:
+            return hess, errflag, normerr
         return hess
 
-    def _dkl_curvature(self,
-                       hJ=None,
-                       dJ=None,
-                       epsdJ=1e-4,
-                       n_cpus=None,
-                       check_stability=False,
-                       rtol=1e-3):
+    def _maj_curvature(self,
+                      hJ=None,
+                      dJ=None,
+                      epsdJ=1e-4,
+                      n_cpus=None,
+                      check_stability=False,
+                      rtol=1e-3,
+                      full_output=False):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
-        the theta_{ij} parameters replacing the spin i by sampling from j.
+        the theta_{ij} parameters replacing the spin i by sampling from j for the number
+        of k votes in the majority.
+
+        Use single step finite difference method to estimate Hessian.
         
         Parameters
         ----------
         hJ : ndarray, None
             Ising model parameters.
         dJ : ndarray, None
-            Linear perturbations in parameter space corresponding to Hessian at given hJ. These can be
-            calculuated using self.solve_linearized_perturbation().
-        epsdJ : float, 1e-2
+            Linear perturbations in parameter space corresponding to Hessian at given hJ.
+            These can be calculuated using self.solve_linearized_perturbation().
+        epsdJ : float, 1e-4
             Step size for taking linear perturbation wrt parameters.
         n_cpus : int, None
         check_stability : bool, False
         rtol : float, 1e-3
             Relative tolerance for each entry in Hessian when checking stability.
+        full_output : bool, False
             
         Returns
         -------
         ndarray
             Hessian.
+        int (optional)
+            Error flag. 1 indicates rtol was exceeded. None indicates that no check was
+            done.
+        float (optional)
+            Norm difference between hessian with step size eps and eps/2.
         """
         
-        from itertools import combinations
-        
         n = self.n
-        allStatesSum = self.allStates.sum(1)
-        kAllStatesSum = np.unique(allStatesSum)
-        def pk(p):
-            pk = np.zeros(kAllStatesSum.size)
-            for i,k in enumerate(kAllStatesSum):
-                pk[i] = p[allStatesSum==k].sum()
-            return pk
-
         if hJ is None:
             hJ = self.hJ
-            log2p = np.log2(pk(self.p))
+            p = self.p2pk(self.p, self.allStates)
         else:
-            log2p = np.log2(pk(self.ising.p(hJ)))
+            p = self.p2pk(self.ising.p(hJ), self.allStates)
+        log2p = np.log2(p)
         if dJ is None:
             dJ = self.dJ
         
         # diagonal entries
-        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ):
-            newhJ = hJ.copy()
-            newhJ += 2*dJ[i]*epsdJ
-            modp2 = pk(ising.p(newhJ))
-            
+        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p, p2pk=self.p2pk, allStates=self.allStates):
             newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
-            modp1 = pk(ising.p(newhJ))
-            return ((np.log2(modp2)-log2p).dot(modp2) -
-                    2*(np.log2(modp1)-log2p).dot(modp1))/epsdJ**2
+            modp = p2pk(ising.p(newhJ), allStates)
+            return (2*(log2p-np.log2(modp)).dot(p)) / epsdJ**2
             
-        # compute off-diagonal entries
-        def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ):
+        # Compute off-diagonal entries. These don't account for the subtraction of the
+        # diagonal elements which are removed later To see this, expand D(theta_i+del,
+        # theta_j+del) to second order.
+        def off_diag(args, hJ=hJ, ising=self.ising, p2pk=self.p2pk, dJ=dJ, p=p, allStates=self.allStates):
             i, j = args
             newhJ = hJ.copy()
             newhJ += (dJ[i]+dJ[j])*epsdJ
-            modp11 = pk(ising.p(newhJ))
-            
-            newhJ = hJ.copy()
-            newhJ += dJ[i]*epsdJ
-            modp10 = pk(ising.p(newhJ))
-            
-            newhJ = hJ.copy()
-            newhJ += dJ[j]*epsdJ
-            modp01 = pk(ising.p(newhJ))
-                    
-            return ( (np.log2(modp11)-log2p).dot(modp11) -
-                     (np.log2(modp10)-log2p).dot(modp10) - 
-                     (np.log2(modp01)-log2p).dot(modp01) )/epsdJ**2
+            modp = p2pk(ising.p(newhJ), allStates)
+            return (log2p-np.log2(modp)).dot(p) / epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
-        if (not n_cpus is None) or n_cpus<=1:
+        if (not n_cpus is None) and n_cpus<=1:
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
-                hess[i,j] = off_diag((i,j))
+                hess[i,j] = hess[j,i] = off_diag((i,j))
         else:
-            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
-            hess += hess.T
             hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
+            # subtract off linear terms to get Hessian (and not just cross derivative)
+            hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
+                                                            for i,j in combinations(range(len(dJ)),2)])
+            # fill in lower triangle
+            hess += hess.T
+            hess[np.eye(len(dJ))==1] /= 2
 
         if check_stability:
-            hess2 = self._dkl_curvature(epsdJ=epsdJ/2, check_stability=False)
+            hess2 = self.maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
             err = hess2 - hess
-            if ((np.abs(err)/hess)>rtol).any():
+            if (np.abs(err/hess) > rtol).any():
                 normerr = np.linalg.norm(err)
-                msg = "Finite difference estimate has not converged. May want to shrink epsdJ. %f"%normerr
-                print(msg)
-        return hess
+                errflag = 1
+                msg = ("Finite difference estimate has not converged with rtol=%f. "+
+                       "May want to shrink epsdJ. Norm error %f.")
+                print(msg%(rtol,normerr))
+            else:
+                errflag = 0
+                normerr = None
+        else:
+            errflag = None
+            normerr = None
 
-    def hess_eig(self, hess, imag_norm_threshold=1e-10):
+        if not full_output:
+            return hess
+        return hess, errflag, normerr
+
+    def hess_eig(self, hess, orientation_vector=None, imag_norm_threshold=1e-10):
         """Get Hessian eigenvalues and eigenvectors corresponds to parameter combinations
-        of max curvature. Return them nicely sorted and cleaned.
+        of max curvature. Return them nicely sorted and cleaned and oriented consistently.
         
         Parameters
         ----------
         hess : ndarray
+        orientation_vector : ndarray, None
+            Vector along which to orient all vectors so that they are consistent with
+            sign. By default, it is set to the sign of the first entry in the vector.
         imag_norm_threshold : float, 1e-10
         
         Returns
@@ -561,18 +662,26 @@ class IsingFisherCurvatureMethod1():
             Eigenvectors in cols.
         """
         
+        if orientation_vector is None:
+            orientation_vector = np.zeros(len(self.dJ))
+            orientation_vector[0] = 1.
+
         eigval, eigvec = np.linalg.eig(hess)
         if (np.linalg.norm(eigval.imag)>imag_norm_threshold or
             np.linalg.norm(eigvec.imag[:,:10]>imag_norm_threshold)):
             print("Imaginary components are significant.")
         eigval = eigval.real
         eigvec = eigvec.real
+
+        # orient all vectors along same direction
+        eigvec *= np.sign(eigvec.T.dot(orientation_vector))[None,:]
         
         # sort by largest eigenvalues
         sortix = np.argsort(np.abs(eigval))[::-1]
         eigval = eigval[sortix]
         eigvec = eigvec[:,sortix]
-        eigvec *= np.sign(eigvec.mean(0))[None,:]
+        # orient along direction of mean of individual means change
+        eigvec *= np.sign(eigvec[:self.n,:].mean(0))[None,:]
         if (eigval<0).any():
             print("Negative eigenvalues.")
             print(eigval)
@@ -580,20 +689,31 @@ class IsingFisherCurvatureMethod1():
         
         return eigval, eigvec
 
-    def hess_eig2dJ(self, eigvec):
-        return self.dJ.T.dot(eigvec)
+    def hess_eig2dJ(self, eigvec, dJ=None):
+        if dJ is None:
+            dJ = self.dJ
+        return dJ.T.dot(eigvec)
 
-    def map_trajectory(self, n_steps, step_size, hJ0=None):
-        """Linear perturbations to parameter space to explore info space.
+    def map_trajectory(self, n_steps, step_size, eigix=0, hJ0=None, initial_direction_sign=1):
+        """Move along steepest directions of parameter step and keep a record of local
+        landscape.
         
         Parameters
         ----------
         n_steps : int
-        step_size : int
+        step_size : float
+            Amount to move in specified direction accounting for the curvature. In other
+            words, the distance moved, eps, will be step_size / eigval[eigix], such that
+            steps are smaller in steeper regions.
+        eigix : int, 0
+            eigenvector direction in which to move. Default specifies principal direction.
         hJ0 : ndarray, None
+        initial_direction_sign : int, 1
+            -1 or 1.
 
         Returns
         -------
+        dJ, hess, eigval, eigvec, hJTraj
         """
 
         if hJ0 is None:
@@ -604,26 +724,56 @@ class IsingFisherCurvatureMethod1():
         eigval = []
         eigvec = []
         hJTraj = [hJ0]
+        flipRecord = np.ones(n_steps)
+        prevStepFlipped = False
 
         for i in range(n_steps):
             p = self.ising.p(hJTraj[i])
             sisj = self.ising.calc_observables(hJTraj[i])
+
             dJ.append(np.zeros_like(self.dJ))
-            
             for iStar in range(self.n):
                 dJ[i][iStar], errflag = self.solve_linearized_perturbation(iStar, p=p, sisj=sisj)
 
-            hess.append( self.dkl_curvature( hJ=hJTraj[i], dJ=dJ[i]) )
+            hess.append( self.dkl_curvature( hJ=hJTraj[i], dJ=dJ[i], epsdJ=1e-5) )
             out = self.hess_eig(hess[i])
             eigval.append(out[0])
             eigvec.append(out[1])
             
-            # take a step in the steepest direction
-            eigix = 0
-            dJcombo = self.hess_eig2dJ(eigvec[i][:,eigix])
-            
-            hJTraj.append(hJTraj[-1] + dJcombo*step_size)
-
+            # take a step in the steepest direction while moving in the same direction as the previous step
+            #moveDirection = eigvec[i][:,eigix]
+            # weighted average direction
+            moveDirection = eigvec[i].dot(eigval[i]/np.linalg.norm(eigval[i]))
+            dJcombo = self.hess_eig2dJ(moveDirection, dJ[-1])
+            if i==0 and initial_direction_sign==-1:
+                dJcombo *= -1
+                flipRecord[0] = -1
+                prevStepFlipped = True
+            elif i>0:
+                if prevStepFlipped:
+                    if (prevMoveDirection.dot(moveDirection)<=0):
+                        prevStepFlipped = False
+                    else:
+                        dJcombo *= -1
+                        flipRecord[i] = -1
+                        prevStepFlipped = True
+                else:
+                    if (prevMoveDirection.dot(moveDirection)<=0):
+                        dJcombo *= -1
+                        flipRecord[i] = -1
+                        prevStepFlipped = True
+                    else:
+                        prevStepFlipped = False
+            prevMoveDirection = moveDirection
+                
+            #hJTraj.append(hJTraj[-1] + dJcombo*step_size/eigval[-1][eigix])
+            hJTraj.append(hJTraj[-1] + dJcombo*step_size/eigval[-1].sum())
+            print("Done with step %d."%i)
+        
+        # apply sign change to return eigenvector direction
+        for i in range(n_steps):
+            #eigvec[i][:,eigix] *= flipRecord[i]
+            eigvec[i] *= flipRecord[i]
         return dJ, hess, eigval, eigvec, hJTraj
 
     def find_peak_dkl_curvature(self, hJ0=None):
@@ -656,36 +806,42 @@ class IsingFisherCurvatureMethod1():
                                                                     check_stability=False)
                 if errflag:
                     return np.inf
-            hessEigSum = np.linalg.eig(self.dkl_curvature(hJ=hJ, dJ=dJ))[0].sum()
+            try:
+                hessEigSum = np.linalg.eig(self.dkl_curvature(hJ=hJ, dJ=dJ))[0].sum()
+            except np.linalg.LinAlgError:
+                print("Problem with finding Hessian.")
+                print(hJ)
+                return np.inf
             return -hessEigSum
 
-        return minimize(f, hJ0, options={'eps':1e-5}, bounds=[(-2,2)]*len(hJ0))
+        return minimize(f, hJ0, options={'eps':1e-5, 'ftol':1e-4}, bounds=[(-1,1)]*len(hJ0))
+
+    def __get_state__(self):
+        return {'n':self.n,
+                'h':self.hJ[:self.n],
+                'J':self.hJ[self.n:],
+                'dJ':self.dJ,
+                'eps':self.eps}
+
+    def __set_state__(self, state_dict):
+        self.__init__(state_dict['n'], state_dict['h'], state_dict['J'], state_dict['eps'],
+                      precompute=False)
+        self.dJ = state_dict['dJ']
 #end IsingFisherCurvatureMethod1
 
 
 class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
-    def __init__(self, n, h=None, J=None, eps=1e-7):
-        """Turning spin i into spin a."""
-
-        assert n>1 and 0<eps<.1
-        self.n = n
-        self.eps = eps
-        self.hJ = np.concatenate((h,J))
-
-        self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
-        self.sisj = self.ising.calc_observables(self.hJ)
-        self.p = self.ising.p(self.hJ)
-        self.allStates = bin_states(n,True)
-
+    def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
-        self.dJ = np.zeros((n*(n-1),n+(n-1)*n//2))
+        dJ = np.zeros((self.n*(self.n-1), self.n+(self.n-1)*self.n//2))
         counter = 0
-        for i in range(n):
-            for a in np.delete(range(n),i):
-                self.dJ[counter] = self.solve_linearized_perturbation(i, a)
+        for i in range(self.n):
+            for a in np.delete(range(self.n),i):
+                dJ[counter], errflag = self.solve_linearized_perturbation(i, a, p=p, sisj=sisj)
                 counter += 1
+        return dJ
 
-    def observables_after_perturbation(self, i, a, eps=None):
+    def observables_after_perturbation(self, i, a, eps=None, perturb_up=False):
         """Make spin index i more like spin a by eps. Perturb the corresponding mean and
         the correlations with other spins j.
         
@@ -696,6 +852,7 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         a : int
             Spin to mimic.
         eps : float, None
+        perturb_up : bool, False
 
         Returns
         -------
@@ -703,16 +860,37 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
             Observables <si> and <sisj> after perturbation.
         """
         
-        assert i!=a
+        if not hasattr(i,'__len__'):
+            i = (i,)
+        if not hasattr(a,'__len__'):
+            a = (a,)
+        for (i_,a_) in zip(i,a):
+            assert i_!=a_
+        if not hasattr(eps,'__len__'):
+            eps = eps or self.eps
+            eps = [eps]*len(i)
         n = self.n
-        eps = eps or self.eps
         si = self.sisj[:n]
         sisj = self.sisj[n:]
 
         # observables after perturbations
         siNew = si.copy()
         sisjNew = sisj.copy()
-        siNew[i]  = (1-eps)*si[i] + eps*si[a]
+        
+        if perturb_up:
+            for i_,a_,eps_ in zip(i,a,eps):
+                self._observables_after_perturbation_up(siNew, sisjNew, i_, a_, eps_)
+        else:
+            for i_,a_,eps_ in zip(i,a,eps):
+                self._observables_after_perturbation_down(siNew, sisjNew, i_, a_, eps_)
+
+
+        return np.concatenate((siNew, sisjNew))
+   
+    def _observables_after_perturbation_up(self, si, sisj, i, a, eps):
+        n = self.n
+
+        si[i] = (1-eps)*si[i] + eps*si[a]
 
         for j in np.delete(range(n),i):
             if i<j:
@@ -721,15 +899,34 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
                 ijix = unravel_index((j,i),n)
 
             if j==a:
-                sisjNew[ijix] = (1-eps)*sisj[ijix] + eps
+                sisj[ijix] = (1-eps)*sisj[ijix] + eps
             else:
                 if j<a:
                     jaix = unravel_index((j,a),n)
                 else:
                     jaix = unravel_index((a,j),n)
-                sisjNew[ijix] = (1-eps)*sisj[ijix] + eps*sisj[jaix]
-        return np.concatenate((siNew, sisjNew))
-    
+                sisj[ijix] = (1-eps)*sisj[ijix] + eps*sisj[jaix]
+
+    def _observables_after_perturbation_down(self, si, sisj, i, a, eps):
+        n = self.n
+
+        si[i] = (1-eps)*si[i] - eps*si[a]
+
+        for j in np.delete(range(n),i):
+            if i<j:
+                ijix = unravel_index((i,j),n)
+            else:
+                ijix = unravel_index((j,i),n)
+
+            if j==a:
+                sisj[ijix] = (1-eps)*sisj[ijix] - eps
+            else:
+                if j<a:
+                    jaix = unravel_index((j,a),n)
+                else:
+                    jaix = unravel_index((a,j),n)
+                sisj[ijix] = (1-eps)*sisj[ijix] - eps*sisj[jaix]
+
     def _solve_linearized_perturbation(self, iStar, aStar):
         """Consider a perturbation to a single spin.
         
@@ -772,6 +969,8 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         -------
         ndarray
             dJ
+        int
+            Error flag. Returns 0 by default. 1 means badly conditioned matrix A.
         tuple (optional)
             (A,C)
         """
@@ -802,14 +1001,14 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
                     A[i,k] = sisj[ikix] - C[i]*si[k]
 
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[i,n+klcount] = np.prod(self.allStates[:,(i,k,l)],1).dot(p) - C[i]*sisj[klcount]
+                A[i,n+klcount] = self.triplets[(i,k,l)].dot(p) - C[i]*sisj[klcount]
         
         # pair constraints
         for ijcount,(i,j) in enumerate(combinations(range(n),2)):
             for k in range(n):
-                A[n+ijcount,k] = np.prod(self.allStates[:,(i,j,k)],1).dot(p) - C[n+ijcount]*si[k]
+                A[n+ijcount,k] = self.triplets[(i,j,k)].dot(p) - C[n+ijcount]*si[k]
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[n+ijcount,n+klcount] = np.prod(self.allStates[:,(i,j,k,l)],1).dot(p) - C[n+ijcount]*sisj[klcount]
+                A[n+ijcount,n+klcount] = self.quartets[(i,j,k,l)].dot(p) - C[n+ijcount]*sisj[klcount]
     
         C -= self.sisj
         # factor out linear dependence on eps
@@ -817,17 +1016,24 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
-            dJtwiceEps = self.solve_linearized_perturbation(iStar, aStar,
-                                                            p=p,
-                                                            sisj=np.concatenate((si,sisj)),
-                                                            eps=eps/2,
-                                                            check_stability=False)
+            dJtwiceEps, errflag = self.solve_linearized_perturbation(iStar, aStar,
+                                                                     p=p,
+                                                                     sisj=np.concatenate((si,sisj)),
+                                                                     eps=eps/2,
+                                                                     check_stability=False)
             # print if relative change is more than .1% for any entry
             if ((np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ)))>-3).any():
                 print("Unstable solution. Recommend shrinking eps.")
+
+        if np.linalg.cond(A)>1e15:
+            warn("A is badly conditioned.")
+            errflag = 1
+        else:
+            errflag = 0
+
         if full_output:
-            return dJ, (A, C)
-        return dJ
+            return dJ, errflag, (A, C)
+        return dJ, errflag
 
     def map_trajectory(self, n_steps, step_size, hJ0=None):
         """Linear perturbations to parameter space to explore info space.
@@ -856,7 +1062,7 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
             dJ.append(np.zeros_like(self.dJ))
             
             for count,(iStar,aStar) in enumerate(combinations(range(self.n),2)):
-                dJ[i][count] = self.solve_linearized_perturbation(iStar, aStar, p=p, sisj=sisj)
+                dJ[i][count], errflag = self.solve_linearized_perturbation(iStar, aStar, p=p, sisj=sisj)
 
             hess.append( self.dkl_curvature( hJ=hJTraj[i], dJ=dJ[i]) )
             out = self.hess_eig(hess[i])
@@ -870,6 +1076,49 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
             hJTraj.append(hJTraj[-1] + dJcombo*step_size)
 
         return dJ, hess, eigval, eigvec, hJTraj
+
+    def find_peak_dkl_curvature(self, hJ0=None):
+        """Use scipy.optimize to find peak in DKL curvature. Regions of parameter space
+        where the matrix A describing the linearized perturbations is badly conditioned
+        will be ignored by the algorithm.
+
+        Parameters
+        ----------
+        hJ0 : ndarray, None
+
+        Returns
+        -------
+        scipy.optimize.minimize dict
+        """
+
+        from scipy.optimize import minimize
+
+        if hJ0 is None:
+            hJ0 = self.hJ
+
+        def f(hJ):
+            p = self.ising.p(hJ)
+            sisj = self.ising.calc_observables(hJ)
+            dJ = np.zeros_like(self.dJ)
+            counter = 0
+            for i in range(self.n):
+                for a in np.delete(range(self.n),i):
+                    dJ[counter], errflag = self.solve_linearized_perturbation(i, a,
+                                                                              p=p,
+                                                                              sisj=sisj,
+                                                                              check_stability=False)
+                    counter += 1
+                if errflag:
+                    return np.inf
+            try:
+                hessEigSum = np.linalg.eig(self.dkl_curvature(hJ=hJ, dJ=dJ))[0].sum()
+            except np.linalg.LinAlgError:
+                print("Problem with finding Hessian.")
+                print(hJ)
+                return np.inf
+            return -hessEigSum
+
+        return minimize(f, hJ0, options={'eps':1e-5, 'ftol':1e-4}, bounds=[(-1,1)]*len(hJ0))
 #end IsingFisherCurvatureMethod2
 
 
