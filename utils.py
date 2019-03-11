@@ -65,6 +65,48 @@ def unravel_index(ijk, n):
     ix += ijk[-1] -ijk[-2] -1
     return ix
 
+def fisher_subspace(n, result, rtol=.05):
+    """Wrapper for extracting individual subspace eigenvalues.
+
+    Parameters
+    ----------
+    n : int
+    result : tuple
+        Elements saved in fisherResult.
+    rtol : float, .05
+
+    Returns
+    -------
+    ndarray
+    """
+
+    isingdkl, (hess, errflag, normerr), eigval, eigvec = result
+    
+    if normerr is None or normerr<(rtol*np.linalg.norm(hess)):
+        # when limited to the subspace of a single justice at a given time (how do we 
+        # optimally tweak a single justice to change the system?)
+        justiceEigval = []
+        justiceEigvec = []
+
+        for j in range(n):
+            subspaceHess = hess[j*(n-1):(j+1)*(n-1),j*(n-1):(j+1)*(n-1)]
+            u,v = np.linalg.eig(subspaceHess)
+            sortix = np.argsort(u)[::-1]
+            u = u[sortix]
+            v = v[:,sortix]
+
+            justiceEigval.append(u)
+            justiceEigvec.append(v)
+        justiceEigval = np.vstack(justiceEigval)
+
+        primaryEigval = eigval[0]
+        topVoterEigvals = np.sort(justiceEigval[:,0])[::-1][:3]
+        assert (topVoterEigvals[0]/primaryEigval)<=1, "Individual subspace eigenvector is larger."
+    else:
+        raise Exception("Error on Hessian is large.")
+    
+    return primaryEigval, topVoterEigvals
+
 
 # ======= #
 # Classes #
