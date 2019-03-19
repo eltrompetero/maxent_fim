@@ -107,7 +107,7 @@ def fisher_subspace(n, result, rtol=.05):
     
     return primaryEigval, topVoterEigvals
 
-def multi_info(X, hJ, n_boot=10_000, disp=True):
+def multi_info(X, hJ, n_boot=10_000, disp=True, **Squad_kwargs):
     """
     Parameters
     ----------
@@ -130,9 +130,10 @@ def multi_info(X, hJ, n_boot=10_000, disp=True):
     import importlib
     
     # estimate the data entropy (enforcing symmetrization of prob)
-    Sdata, fit, err = S_quad(np.unique(X[:len(X)//2], axis=0, return_counts=True)[1],
+    Sdata, fit, err = S_quad(np.unique(X, axis=0, return_counts=True)[1],
                              np.logspace(.5,1,10), n_boot,
-                             X_is_count=True, parallel=True, return_fit=True)
+                             X_is_count=True, parallel=True, return_fit=True,
+                             **Squad_kwargs)
     
     # measure pairwise model entropy
     ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%X.shape[1])
@@ -146,7 +147,8 @@ def multi_info(X, hJ, n_boot=10_000, disp=True):
     return 1-(Spair-Sdata)/(Sind-Sdata), (Sdata, Sind, Spair), fit
 
 def check_correlations(X, p, orders, allStates=None):
-    """
+    """Check how well correlations are fit by model probability distribution.
+    
     Parameters
     ----------
     X : ndarray
@@ -161,6 +163,8 @@ def check_correlations(X, p, orders, allStates=None):
     -------
     ndarray
         Errors for each correlation order given.
+    ndarray
+        Correlation coefficient.
     """
     
     from coniii import bin_states
@@ -169,12 +173,56 @@ def check_correlations(X, p, orders, allStates=None):
         allStates = bin_states(X.shape[1], sym=True)
 
     errs = np.zeros(len(orders))
+    corr = np.zeros(len(orders))
 
     for i,k in enumerate(orders):
         Xcorr = k_corr(X, k)
-        modelcorr = k_corr(X, k, weights=p)
+        modelcorr = k_corr(allStates, k, weights=p)
         errs[i] = np.linalg.norm(Xcorr-modelcorr)
-    return errs
+        corr[i] = np.corrcoef(Xcorr, modelcorr)[0,1]
+    return errs, corr
+    
+def coarse_grain(X, nbins, sortix=None, method='maj'):
+    """
+    Coarse-grain given votes into n bins by using specified coarse-graining method.
+    
+    Parameters
+    ----------
+    X : ndarray
+        (n_votes, n_voters) in {-1,1} basis.
+    nbins : int
+    sortix : ndarray, None
+        By default, votes will be sorted in default order.
+    method : str, 'maj'
+    
+    Returns
+    -------
+    coarseX
+    """
+    
+    assert set(np.unique(X))<=frozenset((-1,0,1))
+    if sortix is None:
+        sortix = np.arange(X.shape[1], dtype=int)
+    
+    binsix = []  # indices of cols in each bin
+
+    if method=='maj':
+        # find locations of where the index cutoffs will be per bin
+        bins = np.linspace(0, sortix.size-1, nbins+1)
+        bins[-1] += np.inf
+        
+        # sort into bins
+        groupix = np.digitize(sortix, bins)
+
+        coarseX = np.zeros((len(X), nbins), dtype=int)
+        for i in range(1,nbins+1):
+            binsix.append( np.where(groupix==i)[0] )
+            coarseX[:,i-1] = np.sign(X[:,groupix==i].sum(1))
+        coarseX[coarseX==0] = np.random.choice([-1,1], size=(coarseX==0).sum())
+    else:
+        raise NotImplementedError("Invalid method option.")
+
+    return coarseX, binsix
 
 
 # ======= #
