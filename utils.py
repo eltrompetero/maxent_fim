@@ -107,6 +107,75 @@ def fisher_subspace(n, result, rtol=.05):
     
     return primaryEigval, topVoterEigvals
 
+def multi_info(X, hJ, n_boot=10_000, disp=True):
+    """
+    Parameters
+    ----------
+    X : ndarray
+    hJ : ndarray
+    n_boot : int, 10_000
+    disp : bool, True
+
+    Returns
+    -------
+    float
+        Multi-information captured.
+    tuple
+        (Sdata, Sind, Spair)
+    ndarray
+        fit
+    """
+
+    from entropy.estimators import S_quad
+    import importlib
+    
+    # estimate the data entropy (enforcing symmetrization of prob)
+    Sdata, fit, err = S_quad(np.unique(X[:len(X)//2], axis=0, return_counts=True)[1],
+                             np.logspace(.5,1,10), n_boot,
+                             X_is_count=True, parallel=True, return_fit=True)
+    
+    # measure pairwise model entropy
+    ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%X.shape[1])
+    p = ising.p(hJ)
+    
+    Spair = -p.dot(np.log2(p))
+    
+    Sind = X.shape[1]
+    if disp and Spair<Sdata:
+        print(Sdata,Sind,Spair)
+    return 1-(Spair-Sdata)/(Sind-Sdata), (Sdata, Sind, Spair), fit
+
+def check_correlations(X, p, orders, allStates=None):
+    """
+    Parameters
+    ----------
+    X : ndarray
+        Data samples. Assuming {-1,1} basis.
+    p : ndarray
+        Probability distribution of all possible states given model.
+    orders : list
+        Correlation functions of orders to check.
+    allStates : ndarray, None
+    
+    Returns
+    -------
+    ndarray
+        Errors for each correlation order given.
+    """
+    
+    from coniii import bin_states
+
+    if allStates is None:
+        allStates = bin_states(X.shape[1], sym=True)
+
+    errs = np.zeros(len(orders))
+
+    for i,k in enumerate(orders):
+        Xcorr = k_corr(X, k)
+        modelcorr = k_corr(X, k, weights=p)
+        errs[i] = np.linalg.norm(Xcorr-modelcorr)
+    return errs
+
 
 # ======= #
 # Classes #
