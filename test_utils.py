@@ -3,7 +3,18 @@
 # Author : Eddie Lee, edlee@alumni.princeton.edu
 # ============================================================================================ # 
 from .utils import *
+np.random.seed(0)
 
+def test_coarse_grain():
+    X = np.random.choice([-1,1], size=(100,3))
+    coarseX, groupsix = coarse_grain(X, 3)
+    assert np.array_equal(X, coarseX)
+    
+    # with 4 cols and 3 bins, the first two cols should be preserved
+    X = np.random.choice([-1,1], size=(100,4))
+    coarseX, groupsix = coarse_grain(X, 3)
+    assert np.array_equal(coarseX[:,:2], X[:,:2])
+    assert ~np.array_equal(coarseX[:,-1], np.sign(X[:,-2:].sum(1)))
 
 def test_tweak_constraints(n=3):
     X=np.random.choice([-1,1],(100,n))

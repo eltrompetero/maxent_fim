@@ -781,6 +781,10 @@ class IsingFisherCurvatureMethod1():
             hess += hess.T
             hess[np.eye(len(dJ))==1] /= 2
 
+        # check for precision problems
+        assert ~np.isnan(hess).any()
+        assert ~np.isinf(hess).any()
+
         if check_stability:
             hess2 = self.maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
             err = hess2 - hess
