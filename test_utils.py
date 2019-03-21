@@ -67,7 +67,7 @@ def test_IsingFisherCurvatureMethod2():
     # the inverse problem.
     i = 0
     for a in range(1,4):
-        dJ = isingdkl._solve_linearized_perturbation(i, a)
+        dJ = isingdkl._solve_linearized_perturbation(i, a)[0]
         assert np.linalg.norm(dJ-isingdkl.dJ[a-1])<1e-6
     
     # Compare own estimation of Hessian with simpler (but slower) implementation using numdifftools.
