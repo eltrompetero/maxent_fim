@@ -484,8 +484,9 @@ class IsingFisherCurvatureMethod1():
                                                                      p=p,
                                                                      sisj=np.concatenate((si,sisj)))
             # print if relative change is more than .1% for any entry
-            if ((np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ)))>-3).any():
-                print("Unstable solution. Recommend shrinking eps.")
+            relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
+            if (relerr>-3).any():
+                print("Unstable solution. Recommend shrinking eps. %E"%(10**relerr))
                    
         if np.linalg.cond(A)>1e15:
             warn("A is badly conditioned.")
@@ -1185,8 +1186,9 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
                                                                      eps=eps/2,
                                                                      check_stability=False)
             # print if relative change is more than .1% for any entry
-            if ((np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ)))>-3).any():
-                print("Unstable solution. Recommend shrinking eps.")
+            relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
+            if (relerr>-3).any():
+                print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
 
         if np.linalg.cond(A)>1e15:
             warn("A is badly conditioned.")
