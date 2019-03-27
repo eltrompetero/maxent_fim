@@ -484,8 +484,9 @@ class IsingFisherCurvatureMethod1():
                                                                      p=p,
                                                                      sisj=np.concatenate((si,sisj)))
             # print if relative change is more than .1% for any entry
-            if ((np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ)))>-3).any():
-                print("Unstable solution. Recommend shrinking eps.")
+            relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
+            if (relerr>-3).any():
+                print("Unstable solution. Recommend shrinking eps. %E"%(10**relerr))
                    
         if np.linalg.cond(A)>1e15:
             warn("A is badly conditioned.")
@@ -780,6 +781,10 @@ class IsingFisherCurvatureMethod1():
             # fill in lower triangle
             hess += hess.T
             hess[np.eye(len(dJ))==1] /= 2
+
+        # check for precision problems
+        assert ~np.isnan(hess).any()
+        assert ~np.isinf(hess).any()
 
         if check_stability:
             hess2 = self.maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
@@ -1105,13 +1110,59 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         from coniii.solvers import Enumerate
         solver = Enumerate(n, calc_observables_multipliers=self.ising.calc_observables)
         return (solver.solve(C)-self.hJ)/self.eps
+    
+    def solve_linearized_perturbation(self, *args, **kwargs):
+        """Wrapper for automating search for best eps value for given perturbation.
+        """
+        
+        # settings
+        epsChangeFactor = 10
+        
+        # check whether error increases or decreases with eps
+        eps0 = kwargs.get('eps', self.eps)
+        kwargs['check_stability'] = True
+        kwargs['full_output'] = True
+        
+        dJ, errflag, (A,C), relerr = self._solve_linearized_perturbation(*args, **kwargs)
 
-    def solve_linearized_perturbation(self, iStar, aStar,
+        kwargs['eps'] = eps0*epsChangeFactor
+        dJUp, errflagUp, _, relerrUp = self._solve_linearized_perturbation(*args, **kwargs)
+
+        kwargs['eps'] = eps0/epsChangeFactor
+        dJDown, errflagDown, _, relerrDown = self._solve_linearized_perturbation(*args, **kwargs)
+        
+        # if changing eps doesn't help, just return estimate at current eps
+        if relerr.max()<relerrUp.max() and relerr.max()<relerrDown.max():
+            return dJ, errflag
+        
+        # if error decreases more sharpy going down
+        if relerrDown.max()<=relerrUp.max():
+            epsChangeFactor = 1/epsChangeFactor
+            prevdJ, errflag, prevRelErr = dJDown, errflagDown, relerrDown
+        # if error decreases more sharpy going up, no need to change eps
+        else:
+            prevdJ, errflag, prevRelErr = dJUp, errflagUp, relerrUp
+        
+        # decrease/increase eps til error starts increasing
+        converged = False
+        while (not converged) and errflag:
+            kwargs['eps'] *= epsChangeFactor
+            dJ, errflag, (A,C), relerr = self._solve_linearized_perturbation(*args, **kwargs)
+            if errflag and relerr.max()<prevRelErr.max():
+                prevdJ = dJ
+                prevRelErr = relerr
+            else:
+                converged = True
+        
+        return dJ, errflag
+
+    def _solve_linearized_perturbation(self, iStar, aStar,
                                       p=None,
                                       sisj=None,
                                       full_output=False,
                                       eps=None,
-                                      check_stability=True):
+                                      check_stability=True,
+                                      disp=False):
         """Consider a perturbation to a single spin.
         
         Parameters
@@ -1132,6 +1183,8 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
             Error flag. Returns 0 by default. 1 means badly conditioned matrix A.
         tuple (optional)
             (A,C)
+        float (optional)
+            Relative error to log10.
         """
         
         eps = eps or self.eps
@@ -1146,6 +1199,7 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
             sisj = sisj[n:]
         A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2))
         C = self.observables_after_perturbation(iStar, aStar, eps=eps)
+        errflag = 0
         
         # mean constraints
         for i in range(n):
@@ -1175,22 +1229,26 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
-            dJtwiceEps, errflag = self.solve_linearized_perturbation(iStar, aStar,
-                                                                     p=p,
-                                                                     sisj=np.concatenate((si,sisj)),
-                                                                     eps=eps/2,
-                                                                     check_stability=False)
+            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, aStar,
+                                                                      p=p,
+                                                                      sisj=np.concatenate((si,sisj)),
+                                                                      eps=eps/2,
+                                                                      check_stability=False)
             # print if relative change is more than .1% for any entry
-            if ((np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ)))>-3).any():
-                print("Unstable solution. Recommend shrinking eps.")
-
+            relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
+            if (relerr>-3).any():
+                if disp:
+                    print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
+                errflag = 2
+        
         if np.linalg.cond(A)>1e15:
             warn("A is badly conditioned.")
+            # this takes precedence over relerr over threshold
             errflag = 1
-        else:
-            errflag = 0
 
         if full_output:
+            if check_stability:
+                return dJ, errflag, (A, C), relerr
             return dJ, errflag, (A, C)
         return dJ, errflag
 
@@ -1206,6 +1264,7 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         Returns
         -------
         """
+
         if hJ0 is None:
             hJ0 = self.hJ
 
