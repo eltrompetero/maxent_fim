@@ -711,28 +711,28 @@ class IsingFisherCurvatureMethod1():
         # start loop for finding optimal eps for Hessian with num diff
         converged = False
         if high_prec:
-            prevHess, errflag, prevNormerr = self._maj_curvature_high_prec(*args, **kwargs)
+            prevHess, errflag, preverr = self._maj_curvature_high_prec(*args, **kwargs)
         else:
-            prevHess, errflag, prevNormerr = self._maj_curvature(*args, **kwargs)
+            prevHess, errflag, preverr = self._maj_curvature(*args, **kwargs)
         kwargs['epsdJ'] /= epsDecreaseFactor
         while (not converged) and errflag:
             if high_prec:
-                hess, errflag, normerr = self._maj_curvature_high_prec(*args, **kwargs)
+                hess, errflag, err = self._maj_curvature_high_prec(*args, **kwargs)
             else:
-                hess, errflag, normerr = self._maj_curvature(*args, **kwargs)
+                hess, errflag, err = self._maj_curvature(*args, **kwargs)
             # end loop if error starts increasing again
-            if errflag and normerr<prevNormerr:
+            if errflag and np.linalg.norm(err)<np.linalg.norm(preverr):
                 prevHess = hess
-                prevNormerr = normerr
+                preverr = err
                 kwargs['epsdJ'] /= epsDecreaseFactor
             else:
                 converged = True
         if not converged and not errflag:
-            normerr = None
+            err = None
         hess = prevHess
         
         if full_output:
-            return hess, errflag, normerr
+            return hess, errflag, err
         return hess
 
     def _maj_curvature(self,
@@ -833,23 +833,23 @@ class IsingFisherCurvatureMethod1():
 
         if check_stability:
             hess2 = self._maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
-            err = hess2 - hess
+            # 4/3 ratio predicted from expansion up to 4th order term with eps/2
+            err = (hess - hess2)*4/3
             if (np.abs(err/hess) > rtol).any():
-                normerr = np.linalg.norm(err)
                 errflag = 1
                 msg = ("Finite difference estimate has not converged with rtol=%f. "+
                        "May want to shrink epsdJ. Norm error %f.")
-                print(msg%(rtol,normerr))
+                print(msg%(rtol,np.linalg.norm(err)))
             else:
                 errflag = 0
-                normerr = None
+                err = None
         else:
             errflag = None
-            normerr = None
+            err = None
 
         if not full_output:
             return hess
-        return hess, errflag, normerr
+        return hess, errflag, err
 
     def _maj_curvature_high_prec(self,
                                  hJ=None,
@@ -963,23 +963,22 @@ class IsingFisherCurvatureMethod1():
 
         if check_stability:
             hess2 = self._maj_curvature_high_prec(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
-            err = hess2 - hess
+            err = (hess - hess2)*4/3
             if (np.abs(err/hess) > rtol).any():
-                normerr = np.linalg.norm(err)
                 errflag = 1
                 msg = ("Finite difference estimate has not converged with rtol=%f. "+
                        "May want to shrink epsdJ. Norm error %f.")
-                print(msg%(rtol,normerr))
+                print(msg%(rtol,np.linalg.norm(err)))
             else:
                 errflag = 0
-                normerr = None
+                err = None
         else:
             errflag = None
-            normerr = None
+            err = None
 
         if not full_output:
             return hess
-        return hess, errflag, normerr
+        return hess, errflag, err
 
     def hess_eig(self, hess, orientation_vector=None, imag_norm_threshold=1e-10):
         """Get Hessian eigenvalues and eigenvectors corresponds to parameter combinations
