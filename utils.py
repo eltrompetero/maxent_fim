@@ -783,32 +783,40 @@ class IsingFisherCurvatureMethod1():
         log2p = np.log2(p)
         if dJ is None:
             dJ = self.dJ
+            
         # diagonal entries
         def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p, p2pk=self.p2pk, allStates=self.allStates):
-            newhJ = hJ.copy()
-            newhJ += dJ[i]*epsdJ
+            mxix = np.argmax(np.abs(dJ[i]))
+            newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
+            epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
+
+            newhJ = hJ + dJ[i]*epsdJ_
             modp = p2pk(ising.p(newhJ), allStates)
             dklplus = 2*(log2p-np.log2(modp)).dot(p)
 
-            newhJ -= 2*dJ[i]*epsdJ
+            newhJ -= 2*dJ[i]*epsdJ_
             modp = p2pk(ising.p(newhJ), allStates)
             dklminus = 2*(log2p-np.log2(modp)).dot(p)
             
-            return (dklplus+dklminus) / 2 / epsdJ**2
+            return (dklplus+dklminus) / 2 / epsdJ_**2
 
         # theta_j+del) to second order.
         def off_diag(args, hJ=hJ, ising=self.ising, p2pk=self.p2pk, dJ=dJ, p=p, allStates=self.allStates):
             i, j = args
-            newhJ = hJ.copy()
-            newhJ += (dJ[i]+dJ[j])*epsdJ
+            
+            mxix = np.argmax(np.abs(dJ[i]+dJ[j]))
+            newhJ = hJ[mxix] + (dJ[i]+dJ[j])[mxix]*epsdJ
+            epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]
+
+            newhJ = hJ + (dJ[i]+dJ[j])*epsdJ_
             modp = p2pk(ising.p(newhJ), allStates)
             dklplus = (log2p-np.log2(modp)).dot(p)
 
-            newhJ -= 2*(dJ[i]+dJ[j])*epsdJ
+            newhJ -= 2*(dJ[i]+dJ[j])*epsdJ_
             modp = p2pk(ising.p(newhJ), allStates)
             dklminus = (log2p-np.log2(modp)).dot(p)
 
-            return (dklplus+dklminus) / 2 / epsdJ**2
+            return (dklplus+dklminus) / 2 / epsdJ_**2
         
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
@@ -856,7 +864,8 @@ class IsingFisherCurvatureMethod1():
                                  n_cpus=None,
                                  check_stability=False,
                                  rtol=1e-3,
-                                 full_output=False):
+                                 full_output=False,
+                                 dps=20):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
         the theta_{ij} parameters replacing the spin i by sampling from j for the number
         of k votes in the majority.
@@ -877,6 +886,7 @@ class IsingFisherCurvatureMethod1():
         rtol : float, 1e-3
             Relative tolerance for each entry in Hessian when checking stability.
         full_output : bool, False
+        dps : int, 20
             
         Returns
         -------
@@ -890,7 +900,7 @@ class IsingFisherCurvatureMethod1():
         """
         
         import mpmath as mp
-        mp.mp.dps = 30
+        mp.mp.dps = dps
 
         mplog2_ = lambda x:mp.log(x)/mp.log(2)
         mplog2 = lambda x: list(map(mplog2_, x))
@@ -909,16 +919,20 @@ class IsingFisherCurvatureMethod1():
                  p=p,
                  p2pk=self.p2pk_high_prec,
                  allStates=self.allStates):
-            newhJ = hJ.copy()
-            newhJ += dJ[i]*epsdJ
+            # round epsdJ_ to machine precision
+            mxix = np.argmax(np.abs(dJ[i]))
+            newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
+            epsdJ_ = (newhJ - hJ[mxix]) / dJ[i][mxix]
+
+            newhJ = hJ + dJ[i]*epsdJ_
             modp = p2pk(ising.p(newhJ), allStates)
             dklplus = 2*(log2p-mplog2(modp)).dot(p)
 
-            newhJ -= 2*dJ[i]*epsdJ
+            newhJ -= 2*dJ[i]*epsdJ_
             modp = p2pk(ising.p(newhJ), allStates)
             dklminus = 2*(log2p-mplog2(modp)).dot(p)
 
-            return (dklplus+dklminus) / 2 / epsdJ**2
+            return (dklplus+dklminus) / 2 / epsdJ_**2
 
         # theta_j+del) to second order.
         def off_diag(args,
@@ -929,16 +943,21 @@ class IsingFisherCurvatureMethod1():
                      p=p,
                      allStates=self.allStates):
             i, j = args
-            newhJ = hJ.copy()
-            newhJ += (dJ[i]+dJ[j])*epsdJ
+            
+            # round epsdJ_ to machine precision
+            mxix = np.argmax(np.abs(dJ[i]+dJ[j]))
+            newhJ = hJ[mxix] + (dJ[i][mxix]+dJ[j][mxix])*epsdJ
+            epsdJ_ = (newhJ - hJ[mxix]) / (dJ[i][mxix]+dJ[j][mxix]) 
+
+            newhJ = hJ + (dJ[i]+dJ[j])*epsdJ_
             modp = p2pk(ising.p(newhJ), allStates)
             dklplus = (log2p-mplog2(modp)).dot(p)
 
-            newhJ -= 2*(dJ[i]+dJ[j])*epsdJ
+            newhJ -= 2*(dJ[i]+dJ[j])*epsdJ_
             modp = p2pk(ising.p(newhJ), allStates)
             dklminus = (log2p-mplog2(modp)).dot(p)
             
-            return (dklplus+dklminus) / 2 / epsdJ**2
+            return (dklplus+dklminus) / 2 / epsdJ_**2
 
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
