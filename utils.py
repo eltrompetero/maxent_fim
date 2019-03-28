@@ -717,7 +717,6 @@ class IsingFisherCurvatureMethod1():
         kwargs['epsdJ'] /= epsDecreaseFactor
         while (not converged) and errflag:
             if high_prec:
-                print("Initiating high prec.")
                 hess, errflag, normerr = self._maj_curvature_high_prec(*args, **kwargs)
             else:
                 hess, errflag, normerr = self._maj_curvature(*args, **kwargs)
@@ -790,14 +789,27 @@ class IsingFisherCurvatureMethod1():
             newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
             modp = p2pk(ising.p(newhJ), allStates)
-            return (2*(log2p-np.log2(modp)).dot(p)) / epsdJ**2
+            dklplus = 2*(log2p-np.log2(modp)).dot(p)
+
+            newhJ -= 2*dJ[i]*epsdJ
+            modp = p2pk(ising.p(newhJ), allStates)
+            dklminus = 2*(log2p-np.log2(modp)).dot(p)
+            
+            return (dklplus+dklminus) / 2 / epsdJ**2
+
         # theta_j+del) to second order.
         def off_diag(args, hJ=hJ, ising=self.ising, p2pk=self.p2pk, dJ=dJ, p=p, allStates=self.allStates):
             i, j = args
             newhJ = hJ.copy()
             newhJ += (dJ[i]+dJ[j])*epsdJ
             modp = p2pk(ising.p(newhJ), allStates)
-            return (log2p-np.log2(modp)).dot(p) / epsdJ**2
+            dklplus = (log2p-np.log2(modp)).dot(p)
+
+            newhJ -= 2*(dJ[i]+dJ[j])*epsdJ
+            modp = p2pk(ising.p(newhJ), allStates)
+            dklminus = (log2p-np.log2(modp)).dot(p)
+
+            return (dklplus+dklminus) / 2 / epsdJ**2
         
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
@@ -902,8 +914,14 @@ class IsingFisherCurvatureMethod1():
             newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
             modp = p2pk(ising.p(newhJ), allStates)
-            assert (modp>0).all(), (modp,modp.dtype)
-            return (2*(log2p-mplog2(modp)).dot(p)) / epsdJ**2
+            dklplus = 2*(log2p-mplog2(modp)).dot(p)
+
+            newhJ -= 2*dJ[i]*epsdJ
+            modp = p2pk(ising.p(newhJ), allStates)
+            dklminus = 2*(log2p-mplog2(modp)).dot(p)
+
+            return (dklplus+dklminus) / 2 / epsdJ**2
+
         # theta_j+del) to second order.
         def off_diag(args,
                      hJ=hJ,
@@ -916,9 +934,14 @@ class IsingFisherCurvatureMethod1():
             newhJ = hJ.copy()
             newhJ += (dJ[i]+dJ[j])*epsdJ
             modp = p2pk(ising.p(newhJ), allStates)
-            assert (modp>0).all(), modp
-            return (log2p-mplog2(modp)).dot(p) / epsdJ**2
-        
+            dklplus = (log2p-mplog2(modp)).dot(p)
+
+            newhJ -= 2*(dJ[i]+dJ[j])*epsdJ
+            modp = p2pk(ising.p(newhJ), allStates)
+            dklminus = (log2p-mplog2(modp)).dot(p)
+            
+            return (dklplus+dklminus) / 2 / epsdJ**2
+
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
             for i in range(len(dJ)):
