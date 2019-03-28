@@ -665,6 +665,30 @@ class IsingFisherCurvatureMethod1():
             pk[i] = p[kVotes==(i*2+1)].sum()
         return pk
 
+    @staticmethod
+    def p2pk_high_prec(p, allStates):
+        """Convert the full probability distribution to the probability of having k votes
+        in the majority. Assuming that n is odd.
+
+        High precision version (p is an array of mp.mpf types).
+
+        Parameters
+        ----------
+        p : ndarray
+
+        Returns
+        -------
+        ndarray
+            p(k)
+        """
+        
+        n = allStates.shape[1]
+        pk = np.zeros(n//2+1, dtype=object)
+        kVotes = np.abs( allStates.sum(1) )
+        for i in range(pk.size):
+            pk[i] = p[kVotes==(i*2+1)].sum()
+        return pk
+
     def maj_curvature(self, *args, **kwargs):
         """Wrapper for _dkl_curvature() to find best finite diff step size."""
 
@@ -676,14 +700,27 @@ class IsingFisherCurvatureMethod1():
             full_output = kwargs['full_output']
         else:
             full_output = False
+        if 'high_prec' in kwargs.keys():
+            high_prec = kwargs['high_prec']
+            del kwargs['high_prec']
+        else:
+            high_prec = False
         kwargs['full_output'] = True
         epsDecreaseFactor = 10
         
+        # start loop for finding optimal eps for Hessian with num diff
         converged = False
-        prevHess, errflag, prevNormerr = self._maj_curvature(*args, **kwargs)
+        if high_prec:
+            prevHess, errflag, prevNormerr = self._maj_curvature_high_prec(*args, **kwargs)
+        else:
+            prevHess, errflag, prevNormerr = self._maj_curvature(*args, **kwargs)
         kwargs['epsdJ'] /= epsDecreaseFactor
         while (not converged) and errflag:
-            hess, errflag, normerr = self._maj_curvature(*args, **kwargs)
+            if high_prec:
+                print("Initiating high prec.")
+                hess, errflag, normerr = self._maj_curvature_high_prec(*args, **kwargs)
+            else:
+                hess, errflag, normerr = self._maj_curvature(*args, **kwargs)
             # end loop if error starts increasing again
             if errflag and normerr<prevNormerr:
                 prevHess = hess
@@ -748,16 +785,12 @@ class IsingFisherCurvatureMethod1():
         log2p = np.log2(p)
         if dJ is None:
             dJ = self.dJ
-        
         # diagonal entries
         def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p, p2pk=self.p2pk, allStates=self.allStates):
             newhJ = hJ.copy()
             newhJ += dJ[i]*epsdJ
             modp = p2pk(ising.p(newhJ), allStates)
             return (2*(log2p-np.log2(modp)).dot(p)) / epsdJ**2
-            
-        # Compute off-diagonal entries. These don't account for the subtraction of the
-        # diagonal elements which are removed later To see this, expand D(theta_i+del,
         # theta_j+del) to second order.
         def off_diag(args, hJ=hJ, ising=self.ising, p2pk=self.p2pk, dJ=dJ, p=p, allStates=self.allStates):
             i, j = args
@@ -787,7 +820,126 @@ class IsingFisherCurvatureMethod1():
         assert ~np.isinf(hess).any()
 
         if check_stability:
-            hess2 = self.maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
+            hess2 = self._maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
+            err = hess2 - hess
+            if (np.abs(err/hess) > rtol).any():
+                normerr = np.linalg.norm(err)
+                errflag = 1
+                msg = ("Finite difference estimate has not converged with rtol=%f. "+
+                       "May want to shrink epsdJ. Norm error %f.")
+                print(msg%(rtol,normerr))
+            else:
+                errflag = 0
+                normerr = None
+        else:
+            errflag = None
+            normerr = None
+
+        if not full_output:
+            return hess
+        return hess, errflag, normerr
+
+    def _maj_curvature_high_prec(self,
+                                 hJ=None,
+                                 dJ=None,
+                                 epsdJ=1e-4,
+                                 n_cpus=None,
+                                 check_stability=False,
+                                 rtol=1e-3,
+                                 full_output=False):
+        """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
+        the theta_{ij} parameters replacing the spin i by sampling from j for the number
+        of k votes in the majority.
+
+        Use single step finite difference method to estimate Hessian.
+        
+        Parameters
+        ----------
+        hJ : ndarray, None
+            Ising model parameters.
+        dJ : ndarray, None
+            Linear perturbations in parameter space corresponding to Hessian at given hJ.
+            These can be calculuated using self.solve_linearized_perturbation().
+        epsdJ : float, 1e-4
+            Step size for taking linear perturbation wrt parameters.
+        n_cpus : int, None
+        check_stability : bool, False
+        rtol : float, 1e-3
+            Relative tolerance for each entry in Hessian when checking stability.
+        full_output : bool, False
+            
+        Returns
+        -------
+        ndarray
+            Hessian.
+        int (optional)
+            Error flag. 1 indicates rtol was exceeded. None indicates that no check was
+            done.
+        float (optional)
+            Norm difference between hessian with step size eps and eps/2.
+        """
+        
+        import mpmath as mp
+        mp.mp.dps = 30
+
+        mplog2_ = lambda x:mp.log(x)/mp.log(2)
+        mplog2 = lambda x: list(map(mplog2_, x))
+        n = self.n
+        if hJ is None:
+            hJ = self.hJ
+        p = self.p2pk_high_prec(self.ising.p(hJ), self.allStates)
+        log2p = np.array(mplog2(p))
+        if dJ is None:
+            dJ = self.dJ
+
+        def diag(i,
+                 hJ=hJ,
+                 ising=self.ising,
+                 dJ=dJ,
+                 p=p,
+                 p2pk=self.p2pk_high_prec,
+                 allStates=self.allStates):
+            newhJ = hJ.copy()
+            newhJ += dJ[i]*epsdJ
+            modp = p2pk(ising.p(newhJ), allStates)
+            assert (modp>0).all(), (modp,modp.dtype)
+            return (2*(log2p-mplog2(modp)).dot(p)) / epsdJ**2
+        # theta_j+del) to second order.
+        def off_diag(args,
+                     hJ=hJ,
+                     ising=self.ising,
+                     p2pk=self.p2pk_high_prec,
+                     dJ=dJ,
+                     p=p,
+                     allStates=self.allStates):
+            i, j = args
+            newhJ = hJ.copy()
+            newhJ += (dJ[i]+dJ[j])*epsdJ
+            modp = p2pk(ising.p(newhJ), allStates)
+            assert (modp>0).all(), modp
+            return (log2p-mplog2(modp)).dot(p) / epsdJ**2
+        
+        hess = np.zeros((len(dJ),len(dJ)))
+        if (not n_cpus is None) and n_cpus<=1:
+            for i in range(len(dJ)):
+                hess[i,i] = diag(i)
+            for i,j in combinations(range(len(dJ)),2):
+                hess[i,j] = hess[j,i] = off_diag((i,j))
+        else:
+            hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
+            # subtract off linear terms to get Hessian (and not just cross derivative)
+            hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
+                                                            for i,j in combinations(range(len(dJ)),2)])
+            # fill in lower triangle
+            hess += hess.T
+            hess[np.eye(len(dJ))==1] /= 2
+        
+        assert ~np.isnan(hess).any()
+        assert ~np.isinf(hess).any()
+
+        if check_stability:
+            hess2 = self._maj_curvature_high_prec(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
             err = hess2 - hess
             if (np.abs(err/hess) > rtol).any():
                 normerr = np.linalg.norm(err)
