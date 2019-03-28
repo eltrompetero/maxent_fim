@@ -79,6 +79,27 @@ def test_IsingFisherCurvatureMethod2():
 
     hessfun = ndt.Hessian(f, step=1e-4)
     hessNdt = hessfun(np.zeros(n*(n-1)))
-    hessToCheck = isingdkl.dkl_curvature(epsdJ=1e-4)
+    hessToCheck, errflag, err = isingdkl.dkl_curvature(epsdJ=1e-4, full_output=True)
     print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
+    print()
     assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-2).all()
+
+    # p(k) in maj 
+    pk = isingdkl.p2pk(isingdkl.p, isingdkl.allStates)
+    log2pk = np.log2(pk)
+    def f(eps):
+        dJ = (eps[:,None]*isingdkl.dJ).sum(0)
+        return (log2pk - np.log2(isingdkl.p2pk(isingdkl.ising.p(isingdkl.hJ + dJ),
+                                               isingdkl.allStates))).dot(pk)
+
+    hessfun = ndt.Hessian(f, step=1e-4)
+    hessNdt = hessfun(np.zeros(n*(n-1)))
+    hessToCheck, errflag, err = isingdkl.maj_curvature(epsdJ=1e-4, full_output=True)
+
+    print("Relative error")
+    print(err/hessToCheck)
+    print()
+
+    print("NDT error")
+    print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
+    assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-6).all()

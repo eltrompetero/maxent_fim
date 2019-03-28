@@ -727,9 +727,8 @@ class IsingFisherCurvatureMethod1():
                 kwargs['epsdJ'] /= epsDecreaseFactor
             else:
                 converged = True
-        if not converged and not errflag:
-            err = None
         hess = prevHess
+        err = preverr
         
         if full_output:
             return hess, errflag, err
@@ -842,7 +841,6 @@ class IsingFisherCurvatureMethod1():
                 print(msg%(rtol,np.linalg.norm(err)))
             else:
                 errflag = 0
-                err = None
         else:
             errflag = None
             err = None
