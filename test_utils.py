@@ -55,12 +55,11 @@ def test_IsingFisherCurvatureMethod1():
     hessToCheck = isingdkl.dkl_curvature()
     assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-2).all()
 
-def test_IsingFisherCurvatureMethod2():
+def test_IsingFisherCurvatureMethod2(n=5):
     import numdifftools as ndt
 
-    n = 5
     rng = np.random.RandomState(0)
-    hJ = rng.normal(scale=.1, size=15)
+    hJ = rng.normal(scale=.1, size=n*(n-1)//2+n)
     isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:])
 
     # Compare linearized perturbation matrix calculation with direct solution by solving

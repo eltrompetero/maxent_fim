@@ -80,9 +80,9 @@ def fisher_subspace(n, result, rtol=.05):
     ndarray
     """
 
-    isingdkl, (hess, errflag, normerr), eigval, eigvec = result
+    isingdkl, (hess, errflag, err), eigval, eigvec = result
     
-    if normerr is None or normerr<(rtol*np.linalg.norm(hess)):
+    if np.linalg.norm(err)<(rtol*np.linalg.norm(hess)):
         # when limited to the subspace of a single justice at a given time (how do we 
         # optimally tweak a single justice to change the system?)
         justiceEigval = []
@@ -849,6 +849,8 @@ class IsingFisherCurvatureMethod1():
                 print(msg%(rtol,np.linalg.norm(err)))
             else:
                 errflag = 0
+                msg = "Finite difference estimate converged with rtol=%f."
+                print(msg%rtol)
         else:
             errflag = None
             err = None
@@ -988,7 +990,8 @@ class IsingFisherCurvatureMethod1():
                 print(msg%(rtol,np.linalg.norm(err)))
             else:
                 errflag = 0
-                err = None
+                msg = "Finite difference estimate converged with rtol=%f."
+                print(msg%rtol)
         else:
             errflag = None
             err = None
@@ -1038,8 +1041,7 @@ class IsingFisherCurvatureMethod1():
         # orient along direction of mean of individual means change
         eigvec *= np.sign(eigvec[:self.n,:].mean(0))[None,:]
         if (eigval<0).any():
-            print("Negative eigenvalues.")
-            print(eigval)
+            print("There are negative eigenvalues.")
             print()
         
         return eigval, eigvec
