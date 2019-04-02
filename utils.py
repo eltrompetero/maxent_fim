@@ -224,6 +224,27 @@ def coarse_grain(X, nbins, sortix=None, method='maj'):
 
     return coarseX, binsix
 
+def ndarray2text(X, fname, cols=None):
+    """Export ndarray to a simple text file for use with R. Assumes that entries are int.
+    
+    Parameters
+    ----------
+    X : ndarray
+    fname : str
+    cols : list of str
+    """
+    
+    import gzip
+    if not cols is None:
+        assert len(cols)==X.shape[1]
+    
+    with gzip.open(fname, 'w') as f:
+        if not cols is None:
+            f.write((' '.join(cols)+'\n').encode('utf-8'))
+        
+        for row in X:
+            f.write((' '.join(['%d'%i for i in row.tolist()])+'\n').encode('utf-8'))
+
 
 # ======= #
 # Classes #
