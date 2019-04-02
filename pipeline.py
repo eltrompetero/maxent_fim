@@ -183,3 +183,38 @@ def solve_inverse_on_data(data, n_cpus=4):
         data[k].append(hJ[i])
         data[k].append(soln[i])
     assert all([len(i)==4 for i in data.values()])
+
+def extract_voter_subspace(fisherResult):
+    K = len(fisherResult)
+    primaryEigval = np.zeros(K)-1
+    principleVoter = np.zeros(K)
+    secondaryVoter = np.zeros(K)
+    tertiaryVoter = np.zeros(K)
+
+    for i,k in enumerate(fisherResult.keys()):
+        n = fisherResult[k][0].n
+
+        isingdkl, (hess, errflag, err), eigval, eigvec = fisherResult[k]
+
+        if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
+            # when limited to the subspace of a single justice at a given time (how do we 
+            # optimally tweak a single justice to change the system?)
+            justiceEigval = []
+            justiceEigvec = []
+
+            for j in range(n):
+                subspaceHess = hess[j*(n-1):(j+1)*(n-1),j*(n-1):(j+1)*(n-1)]
+                u,v = np.linalg.eig(subspaceHess)
+                sortix = np.argsort(u)[::-1]
+                u = u[sortix]
+                v = v[:,sortix]
+
+                justiceEigval.append(u)
+                justiceEigvec.append(v)
+            justiceEigval = np.vstack(justiceEigval)
+
+            primaryEigval[i] = eigval[0]
+            principleVoter[i],secondaryVoter[i],tertiaryVoter[i] = np.sort(justiceEigval[:,0])[::-1][:3]
+            assert (principleVoter[i]/primaryEigval[i])<=1
+    return primaryEigval, principleVoter, secondaryVoter, tertiaryVoter
+

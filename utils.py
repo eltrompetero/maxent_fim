@@ -184,7 +184,8 @@ def check_correlations(X, p, orders, allStates=None):
     
 def coarse_grain(X, nbins, sortix=None, method='maj'):
     """
-    Coarse-grain given votes into n bins by using specified coarse-graining method.
+    Coarse-grain given votes into n bins by using specified coarse-graining method. If
+    method is majority and a vote is tied, a random vote is chosen.
     
     Parameters
     ----------
