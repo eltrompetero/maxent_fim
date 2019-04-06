@@ -186,27 +186,28 @@ def solve_inverse_on_data(data, n_cpus=4):
         data[k].append(soln[i])
     assert all([len(i)==4 for i in data.values()])
 
-def extract_voter_subspace(fisherResult, return_n_voters=False):
+def extract_voter_subspace(fisherResult, return_n_voters=3, deprecated=False):
     """
     Parameters
     ----------
     fisherResult : dict
     return_n_voters : int, False
+        If an int is given, number of voter subspace eigenvalues to return.
+    deprecated : bool, False
+        If True, use deprecated interface.
 
     Returns
     -------
     ndarray
         Principal bloc
     ndarray
-        Principal voter
+        Voter subspace eigenvalues (sorted).
     ndarray
-        2nd voter
-    ndarray
-        3rd voter
+        sort index
     """
     
     K = len(fisherResult)
-    if not return_n_voters:
+    if deprecated:
         primaryEigval = np.zeros(K)-1
         principleVoter = np.zeros(K)
         secondaryVoter = np.zeros(K)
@@ -241,6 +242,7 @@ def extract_voter_subspace(fisherResult, return_n_voters=False):
 
     primaryEigval = np.zeros(K)-1
     voterEigval = np.zeros((K,return_n_voters))
+    voterEigvalSortix = np.zeros((K,return_n_voters), dtype=int)
 
     for i,k in enumerate(fisherResult.keys()):
         n = fisherResult[k][0].n
@@ -248,10 +250,10 @@ def extract_voter_subspace(fisherResult, return_n_voters=False):
         isingdkl, (hess, errflag, err), eigval, eigvec = fisherResult[k]
 
         if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
-            # when limited to the subspace of a single justice at a given time (how do we 
-            # optimally tweak a single justice to change the system?)
-            justiceEigval = []
-            justiceEigvec = []
+            # when limited to the subspace of a single voter at a given time (how do we 
+            # optimally tweak a single voter to change the system?)
+            voterEigval = []
+            voterEigvec = []
 
             for j in range(n):
                 subspaceHess = hess[j*(n-1):(j+1)*(n-1),j*(n-1):(j+1)*(n-1)]
@@ -260,12 +262,14 @@ def extract_voter_subspace(fisherResult, return_n_voters=False):
                 u = u[sortix]
                 v = v[:,sortix]
 
-                justiceEigval.append(u)
-                justiceEigvec.append(v)
-            justiceEigval = np.vstack(justiceEigval)
+                voterEigval.append(u)
+                voterEigvec.append(v)
+            voterEigval = np.vstack(voterEigval)
 
             primaryEigval[i] = eigval[0]
-            voterEigval[i] = np.sort(justiceEigval[:,0])[::-1][:return_n_voters]
+            # sort voters by largest eigevalue
+            voterEigvalSortix[i] = np.argsort(voterEigval[:,0])[::-1][:return_n_voters]
+            voterEigval[i] = voterEigval[:,0][voterEigvalSortix[i]]
             assert (voterEigval[i,0]/primaryEigval[i])<=1
-    return primaryEigval, voterEigval
+    return primaryEigval, voterEigval, voterEigvalSortix
 
