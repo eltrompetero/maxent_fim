@@ -240,36 +240,40 @@ def extract_voter_subspace(fisherResult, return_n_voters=3, deprecated=False):
                 assert (principleVoter[i]/primaryEigval[i])<=1
         return primaryEigval, principleVoter, secondaryVoter, tertiaryVoter
 
-    primaryEigval = np.zeros(K)-1
+    pivotalEigval = np.zeros(K)-1
     voterEigval = np.zeros((K,return_n_voters))
     voterEigvalSortix = np.zeros((K,return_n_voters), dtype=int)
 
     for i,k in enumerate(fisherResult.keys()):
         n = fisherResult[k][0].n
-
+        
+        # read out results stored in dict
         isingdkl, (hess, errflag, err), eigval, eigvec = fisherResult[k]
-
+        
+        # only consider hessians that are well-estimated
         if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
+            pivotalEigval[i] = eigval[0]
+
             # when limited to the subspace of a single voter at a given time (how do we 
             # optimally tweak a single voter to change the system?)
-            voterEigval = []
-            voterEigvec = []
-
+            veigval = []
+            veigvec = []
+            
+            # iterate through subspace for each voter (assuming each voter is connected n-1 others
             for j in range(n):
-                subspaceHess = hess[j*(n-1):(j+1)*(n-1),j*(n-1):(j+1)*(n-1)]
-                u,v = np.linalg.eig(subspaceHess)
+                subspaceHess = hess[j*(n-1):(j+1)*(n-1), j*(n-1):(j+1)*(n-1)]
+                u, v = np.linalg.eig(subspaceHess)
                 sortix = np.argsort(u)[::-1]
                 u = u[sortix]
                 v = v[:,sortix]
 
-                voterEigval.append(u)
-                voterEigvec.append(v)
-            voterEigval = np.vstack(voterEigval)
+                veigval.append(u)
+                veigvec.append(v)
+            voterEigval_ = np.vstack(veigval)
 
-            primaryEigval[i] = eigval[0]
-            # sort voters by largest eigevalue
-            voterEigvalSortix[i] = np.argsort(voterEigval[:,0])[::-1][:return_n_voters]
-            voterEigval[i] = voterEigval[:,0][voterEigvalSortix[i]]
-            assert (voterEigval[i,0]/primaryEigval[i])<=1
-    return primaryEigval, voterEigval, voterEigvalSortix
+            # sort voters by largest voter eigenvalue
+            voterEigvalSortix[i] = np.argsort(voterEigval_[:,0])[::-1][:return_n_voters]
+            voterEigval[i] = voterEigval_[:,0][voterEigvalSortix[i]]
 
+            assert 0<=(voterEigval[i,0]/pivotalEigval[i])<=1, "Hessian calculation error. Condition violated."
+    return pivotalEigval, voterEigval, voterEigvalSortix
