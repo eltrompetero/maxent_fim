@@ -182,9 +182,8 @@ def check_correlations(X, p, orders, allStates=None):
         corr[i] = np.corrcoef(Xcorr, modelcorr)[0,1]
     return errs, corr
     
-def coarse_grain(X, nbins, sortix=None, method='maj'):
-    """
-    Coarse-grain given votes into n bins by using specified coarse-graining method. If
+def coarse_grain(X, nbins, sortix=None, method='maj', params=()):
+    """Coarse-grain given votes into n bins by using specified coarse-graining method. If
     method is majority and a vote is tied, a random vote is chosen.
     
     Parameters
@@ -195,6 +194,9 @@ def coarse_grain(X, nbins, sortix=None, method='maj'):
     sortix : ndarray, None
         By default, votes will be sorted in default order.
     method : str, 'maj'
+        'maj', 'anypos', or 'corr'
+    params : tuple, ()
+        Parameters specifying details of coarse-graining.
     
     Returns
     -------
@@ -220,6 +222,64 @@ def coarse_grain(X, nbins, sortix=None, method='maj'):
             binsix.append( np.where(groupix==i)[0] )
             coarseX[:,i-1] = np.sign(X[:,groupix==i].sum(1))
         coarseX[coarseX==0] = np.random.choice([-1,1], size=(coarseX==0).sum())
+    elif method=='anypos':
+        # find locations of where the index cutoffs will be per bin
+        bins = np.linspace(0, sortix.size-1, nbins+1)
+        bins[-1] += np.inf
+        
+        # sort into bins
+        groupix = np.digitize(sortix, bins)
+
+        coarseX = np.zeros((len(X), nbins), dtype=int)
+        for i in range(1,nbins+1):
+            binsix.append( np.where(groupix==i)[0] )
+            coarseX[:,i-1] = (X[:,groupix==i]==1).any(1) * 2 - 1
+        coarseX[coarseX==0] = np.random.choice([-1,1], size=(coarseX==0).sum())
+ 
+    elif method=='corr':
+        from scipy.spatial.distance import squareform
+        coarseX = X.copy()
+        originalIx = [[i] for i in range(X.shape[1])]
+
+        # Combine sets of spins with the largest pairwise correlations
+        while coarseX.shape[1]>nbins:
+            n = coarseX.shape[1]
+            cij = squareform(pair_corr(coarseX)[1])
+            ix = list(range(coarseX.shape[1]))
+            
+            newClusters = []
+            for i in range(n//2):
+                # find maximally correlated pair of spins
+                mxix = np.argmax(cij.ravel())
+                mxix = (mxix//(n-2*i), mxix-(n-2*i)*(mxix//(n-2*i)))  # row and col
+                if mxix[0]>mxix[1]:
+                    mxix = (mxix[1],mxix[0])
+                
+                newClusters.append((ix[mxix[0]], ix[mxix[1]]))
+                # remove corresponding rows and cols of pair
+                cij = np.delete(np.delete(cij, mxix[0], axis=0), mxix[0], axis=1)
+                cij = np.delete(np.delete(cij, mxix[1]-1, axis=0), mxix[1]-1, axis=1)
+                ix.pop(mxix[0])
+                ix.pop(mxix[1]-1)
+                #print(cij.shape, len(ix))
+            if n%2:
+                # if X contains an odd number of voters
+                newClusters.append((ix[0],))
+                assert ix[0]==iy[0]
+            # check that every index appears once (and only once)
+            assert np.array_equal(np.sort(np.concatenate(newClusters)),np.arange(n)), newClusters
+            
+            # coarse-grain votes such any positive lead to positive vote
+            X_ = np.zeros((coarseX.shape[0],int(np.ceil(n/2))), dtype=int)
+            originalIx_ = []
+            for i,ix in enumerate(newClusters):
+                X_[:,i] = (coarseX[:,ix]==1).any(1)*2-1
+                originalIx_.append([])
+                for ix_ in ix:
+                    originalIx_[-1] += originalIx[ix_]
+            originalIx = originalIx_
+            coarseX = X_
+        binsix = originalIx
     else:
         raise NotImplementedError("Invalid method option.")
 

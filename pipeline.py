@@ -103,7 +103,9 @@ def check_corr(system, method, orders=range(2,9,2), prefix='cache'):
     return errs, corr
 
 def solve_inverse_on_data(data, n_cpus=4):
-    """Automate solution of inverse problem on data dictionary.
+    """Automate solution of inverse problem on data dictionary. Only run on tuples in dict
+    that only have two entries (the others presumably have already been solved and the
+    solutions saved).
 
     Turns out that Pseudo can help get close enough to the solution when Enumerate is
     having a hard time calculating the gradient accurately. This happens (surprisingly)
@@ -184,12 +186,61 @@ def solve_inverse_on_data(data, n_cpus=4):
         data[k].append(soln[i])
     assert all([len(i)==4 for i in data.values()])
 
-def extract_voter_subspace(fisherResult):
+def extract_voter_subspace(fisherResult, return_n_voters=False):
+    """
+    Parameters
+    ----------
+    fisherResult : dict
+    return_n_voters : int, False
+
+    Returns
+    -------
+    ndarray
+        Principal bloc
+    ndarray
+        Principal voter
+    ndarray
+        2nd voter
+    ndarray
+        3rd voter
+    """
+    
     K = len(fisherResult)
+    if not return_n_voters:
+        primaryEigval = np.zeros(K)-1
+        principleVoter = np.zeros(K)
+        secondaryVoter = np.zeros(K)
+        tertiaryVoter = np.zeros(K)
+
+        for i,k in enumerate(fisherResult.keys()):
+            n = fisherResult[k][0].n
+
+            isingdkl, (hess, errflag, err), eigval, eigvec = fisherResult[k]
+
+            if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
+                # when limited to the subspace of a single justice at a given time (how do we 
+                # optimally tweak a single justice to change the system?)
+                justiceEigval = []
+                justiceEigvec = []
+
+                for j in range(n):
+                    subspaceHess = hess[j*(n-1):(j+1)*(n-1),j*(n-1):(j+1)*(n-1)]
+                    u,v = np.linalg.eig(subspaceHess)
+                    sortix = np.argsort(u)[::-1]
+                    u = u[sortix]
+                    v = v[:,sortix]
+
+                    justiceEigval.append(u)
+                    justiceEigvec.append(v)
+                justiceEigval = np.vstack(justiceEigval)
+
+                primaryEigval[i] = eigval[0]
+                principleVoter[i], secondaryVoter[i], tertiaryVoter[i] = np.sort(justiceEigval[:,0])[::-1][:3]
+                assert (principleVoter[i]/primaryEigval[i])<=1
+        return primaryEigval, principleVoter, secondaryVoter, tertiaryVoter
+
     primaryEigval = np.zeros(K)-1
-    principleVoter = np.zeros(K)
-    secondaryVoter = np.zeros(K)
-    tertiaryVoter = np.zeros(K)
+    voterEigval = np.zeros((K,return_n_voters))
 
     for i,k in enumerate(fisherResult.keys()):
         n = fisherResult[k][0].n
@@ -214,7 +265,7 @@ def extract_voter_subspace(fisherResult):
             justiceEigval = np.vstack(justiceEigval)
 
             primaryEigval[i] = eigval[0]
-            principleVoter[i],secondaryVoter[i],tertiaryVoter[i] = np.sort(justiceEigval[:,0])[::-1][:3]
-            assert (principleVoter[i]/primaryEigval[i])<=1
-    return primaryEigval, principleVoter, secondaryVoter, tertiaryVoter
+            voterEigval[i] = np.sort(justiceEigval[:,0])[::-1][:return_n_voters]
+            assert (voterEigval[i,0]/primaryEigval[i])<=1
+    return primaryEigval, voterEigval
 
