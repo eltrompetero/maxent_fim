@@ -265,7 +265,6 @@ def coarse_grain(X, nbins, sortix=None, method='maj', params=()):
             if n%2:
                 # if X contains an odd number of voters
                 newClusters.append((ix[0],))
-                assert ix[0]==iy[0]
             # check that every index appears once (and only once)
             assert np.array_equal(np.sort(np.concatenate(newClusters)),np.arange(n)), newClusters
             
