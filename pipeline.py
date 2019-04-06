@@ -186,6 +186,60 @@ def solve_inverse_on_data(data, n_cpus=4):
         data[k].append(soln[i])
     assert all([len(i)==4 for i in data.values()])
 
+def calculate_fisher_on_pk(data, system, method,
+                           high_prec_dps=30,
+                           save_every_loop=True):
+    """
+    Parameters
+    ----------
+    data : dict
+    system : str
+    method : str
+    high_prec_dps : int, 30
+    save_every_loop : bool, True
+    """
+    
+    import importlib
+
+    fname = 'cache/%s/%s/fisherResultMaj.p'%(system,method)
+
+    fisherResultMaj = {}
+    for k in data.keys():
+        if (data[k][-1] is None or
+            (np.linalg.norm(data[k][-1]['fun'])<1e-6
+             and (abs(data[k][2])<5).all())):
+            print("Starting %s..."%k)
+            n = len(data[k][0])
+            hJ = data[k][2]
+            
+            isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+            epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
+            hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=epsdJ)
+            
+            if errflag and np.linalg.norm(err)>2:
+                print("Trying high precision because of norm error of %f."%np.linalg.norm(err))
+                ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym_hp'%n)
+                isingdkl.ising = ising
+                hess, errflag, err = isingdkl.maj_curvature(full_output=True,
+                                                            high_prec=True,
+                                                            epsdJ=epsdJ,
+                                                            dps=high_prec_dps)
+            eigval, eigvec = isingdkl.hess_eig(hess)
+            
+            isingdkl.pool.close()
+            del isingdkl.pool
+            fisherResultMaj[k] = [isingdkl, (hess, errflag, err), eigval, eigvec]
+        
+        if save_every_loop:
+            print("Saving into %s"%fname)
+            with open(fname, 'wb') as f:
+                dill.dump({'fisherResultMaj':fisherResultMaj}, f, -1)
+
+    if not save_every_loop:
+        print("Saving into %s"%fname)
+        with open(fname, 'wb') as f:
+            dill.dump({'fisherResultMaj':fisherResultMaj}, f, -1)
+
 def extract_voter_subspace(fisherResult, return_n_voters=3, deprecated=False):
     """
     Parameters
