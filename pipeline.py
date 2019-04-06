@@ -240,13 +240,18 @@ def calculate_fisher_on_pk(data, system, method,
         with open(fname, 'wb') as f:
             dill.dump({'fisherResultMaj':fisherResultMaj}, f, -1)
 
-def extract_voter_subspace(fisherResult, return_n_voters=3, deprecated=False):
+def extract_voter_subspace(fisherResult,
+                           return_n_voters=3,
+                           remove_first_mode=False,
+                           deprecated=False):
     """
     Parameters
     ----------
     fisherResult : dict
     return_n_voters : int, False
         If an int is given, number of voter subspace eigenvalues to return.
+    remove_first_mode : bool, False
+        If True, subtract off principal mode from Hessian.
     deprecated : bool, False
         If True, use deprecated interface.
 
@@ -303,6 +308,12 @@ def extract_voter_subspace(fisherResult, return_n_voters=3, deprecated=False):
         
         # read out results stored in dict
         isingdkl, (hess, errflag, err), eigval, eigvec = fisherResult[k]
+        if remove_first_mode:
+            hess = remove_principal_mode(hess)
+            eigval, eigvec = np.linalg.eig(hess)
+            sortix = np.argsort(eigval)[::-1]
+            eigval = eigval[sortix]
+            eigvec = eigvec[:,sortix]
         
         # only consider hessians that are well-estimated
         if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):

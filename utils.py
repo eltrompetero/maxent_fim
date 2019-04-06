@@ -305,6 +305,28 @@ def ndarray2text(X, fname, cols=None):
         for row in X:
             f.write((' '.join(['%d'%i for i in row.tolist()])+'\n').encode('utf-8'))
 
+def remove_principal_mode(X):
+    """Remove principal eigenvector dimension from row space of matrix. For example, you
+    might use this to look beyond the collective mode in some cases.
+
+    Parameters
+    ----------
+    X : ndarray
+
+    Returns
+    -------
+    ndarray
+    """
+    
+    # identify principal mode
+    el, v = np.linalg.eig(X)
+    ix = np.argmax(el)
+    v = v[:,ix].real
+
+    # remove from row space
+    X = X - (X.dot(v)[:,None]*v[None,:])
+
+    return X
 
 # ======= #
 # Classes #

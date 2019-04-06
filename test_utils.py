@@ -102,3 +102,23 @@ def test_IsingFisherCurvatureMethod2(n=5):
     print("NDT error")
     print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
     assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-6).all()
+
+def test_remove_principal_mode():
+    X = np.corrcoef(np.random.rand(5,5))
+    el, v = np.linalg.eig(X)
+    sortix = np.argsort(el)[::-1][1:-1]
+    el = el[sortix].real
+    v = v[:,sortix].real
+    
+    newX = remove_principal_mode(X)
+    elnew, vnew = np.linalg.eig(newX)
+    sortix = np.argsort(elnew)[::-1][:-2]
+    elnew = elnew[sortix].real
+    vnew = vnew[:,sortix].real
+    #print(elnew)
+    #print(el)
+    #print()
+    #print(vnew)
+    #print(v)
+    assert np.isclose(elnew, el).all(), (elnew, el)
+    assert np.isclose(np.abs(vnew.T.dot(v)),np.eye(3)).all(), (vnew, v)
