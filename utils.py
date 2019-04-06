@@ -728,7 +728,7 @@ class IsingFisherCurvatureMethod1():
     @staticmethod
     def p2pk(p, allStates):
         """Convert the full probability distribution to the probability of having k votes
-        in the majority. Assuming that n is odd.
+        in the majority.
 
         Parameters
         ----------
@@ -739,12 +739,19 @@ class IsingFisherCurvatureMethod1():
         ndarray
             p(k)
         """
-        
+         
         n = allStates.shape[1]
         pk = np.zeros(n//2+1)
         kVotes = np.abs( allStates.sum(1) )
-        for i in range(pk.size):
-            pk[i] = p[kVotes==(i*2+1)].sum()
+
+        # if n is odd
+        if n%2:
+            for i in range(pk.size):
+                pk[i] = p[kVotes==(i*2+1)].sum()
+        else:
+            for i in range(pk.size):
+                pk[i] = p[kVotes==(i*2)].sum()
+
         return pk
 
     @staticmethod
@@ -767,8 +774,14 @@ class IsingFisherCurvatureMethod1():
         n = allStates.shape[1]
         pk = np.zeros(n//2+1, dtype=object)
         kVotes = np.abs( allStates.sum(1) )
-        for i in range(pk.size):
-            pk[i] = p[kVotes==(i*2+1)].sum()
+
+        if n%2:
+            for i in range(pk.size):
+                pk[i] = p[kVotes==(i*2+1)].sum()
+        else:
+            for i in range(pk.size):
+                pk[i] = p[kVotes==(i*2)].sum()
+
         return pk
 
     def maj_curvature(self, *args, **kwargs):
