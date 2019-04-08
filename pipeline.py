@@ -230,10 +230,10 @@ def calculate_fisher_on_pk(data, system, method,
             del isingdkl.pool
             fisherResultMaj[k] = [isingdkl, (hess, errflag, err), eigval, eigvec]
         
-        if save_every_loop:
-            print("Saving into %s"%fname)
-            with open(fname, 'wb') as f:
-                dill.dump({'fisherResultMaj':fisherResultMaj}, f, -1)
+            if save_every_loop:
+                print("Saving into %s"%fname)
+                with open(fname, 'wb') as f:
+                    dill.dump({'fisherResultMaj':fisherResultMaj}, f, -1)
 
     if not save_every_loop:
         print("Saving into %s"%fname)
@@ -342,3 +342,56 @@ def extract_voter_subspace(fisherResult,
 
             assert 0<=(voterEigval[i,0]/pivotalEigval[i])<=1, "Hessian calculation error. Condition violated."
     return pivotalEigval, voterEigval, voterEigvalSortix
+
+def degree_collective(fisherResult,
+                      remove_first_mode=False):
+    """
+    Parameters
+    ----------
+    fisherResult : dict
+    remove_first_mode : bool, False
+        If True, subtract off principal mode from Hessian.
+
+    Returns
+    -------
+    ndarray
+    """
+    
+    K = len(fisherResult)
+    degree = np.zeros(K)-1
+
+    for i,k in enumerate(fisherResult.keys()):
+        n = fisherResult[k][0].n
+        
+        # read out results stored in dict
+        isingdkl, (hess, errflag, err), eigval, eigvec = fisherResult[k]
+        if remove_first_mode:
+            hess = remove_principal_mode(hess)
+            eigval, eigvec = np.linalg.eig(hess)
+            sortix = np.argsort(eigval)[::-1]
+            eigval = eigval[sortix]
+            eigvec = eigvec[:,sortix]
+        
+        # only consider hessians that are well-estimated
+        if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
+            # when limited to the subspace of a single voter at a given time (how do we 
+            # optimally tweak a single voter to change the system?)
+            veigval = []
+            veigvec = []
+            
+            # iterate through subspace for each voter (assuming each voter is connected n-1 others
+            for j in range(n):
+                subspaceHess = hess[j*(n-1):(j+1)*(n-1), j*(n-1):(j+1)*(n-1)]
+                u, v = np.linalg.eig(subspaceHess)
+                sortix = np.argsort(u)[::-1]
+                u = u[sortix]
+                v = v[:,sortix]
+
+                veigval.append(u)
+                veigvec.append(v)
+            # just take max eigval for each voter
+            veigval = np.vstack(veigval)[:,0]
+            #degree[i] = veigval.max() / eigval[0]
+            degree[i] = veigval.max()**2 / (veigval**2).sum() - 1/veigval.size
+
+    return degree
