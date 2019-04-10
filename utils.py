@@ -450,7 +450,7 @@ class IsingFisherCurvatureMethod1():
         # observables after perturbations
         si[i]  = (1-eps)*si[i] + eps
 
-        for j in np.delete(range(n),i):
+        for j in delete(list(range(n)),i):
             if i<j:
                 ijix = unravel_index((i,j),n)
             else:
@@ -472,7 +472,7 @@ class IsingFisherCurvatureMethod1():
         # observables after perturbations
         si[i]  = (1-eps)*si[i] - eps
 
-        for j in np.delete(range(n),i):
+        for j in delete(list(range(n)),i):
             if i<j:
                 ijix = unravel_index((i,j),n)
             else:
