@@ -3,6 +3,7 @@
 # Author : Eddie Lee, edlee@alumni.princeton.edu
 # ============================================================================================ # 
 from .utils import *
+from time import perf_counter
 np.random.seed(0)
 
 def test_coarse_grain():
@@ -55,7 +56,7 @@ def test_IsingFisherCurvatureMethod1():
     hessToCheck = isingdkl.dkl_curvature()
     assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-2).all()
 
-def test_IsingFisherCurvatureMethod2(n=5):
+def test_IsingFisherCurvatureMethod2(n=5, disp=True, time=False):
     import numdifftools as ndt
 
     rng = np.random.RandomState(0)
@@ -79,8 +80,9 @@ def test_IsingFisherCurvatureMethod2(n=5):
     hessfun = ndt.Hessian(f, step=1e-4)
     hessNdt = hessfun(np.zeros(n*(n-1)))
     hessToCheck, errflag, err = isingdkl.dkl_curvature(epsdJ=1e-4, full_output=True)
-    print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
-    print()
+    if disp:
+        print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
+        print()
     assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-2).all()
 
     # p(k) in maj 
@@ -93,14 +95,19 @@ def test_IsingFisherCurvatureMethod2(n=5):
 
     hessfun = ndt.Hessian(f, step=1e-4)
     hessNdt = hessfun(np.zeros(n*(n-1)))
+    if time:
+        t0 = perf_counter()
     hessToCheck, errflag, err = isingdkl.maj_curvature(epsdJ=1e-4, full_output=True)
+    if time:
+        print("FI for p(k) took %fs to calculate."%(perf_counter()-t0))
+    
+    if disp:
+        print("Relative error")
+        print(err/hessToCheck)
+        print()
 
-    print("Relative error")
-    print(err/hessToCheck)
-    print()
-
-    print("NDT error")
-    print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
+        print("NDT error")
+        print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
     assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-6).all()
 
 def test_remove_principal_mode():

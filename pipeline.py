@@ -187,6 +187,7 @@ def solve_inverse_on_data(data, n_cpus=4):
     assert all([len(i)==4 for i in data.values()])
 
 def calculate_fisher_on_pk(data, system, method,
+                           computed_results=None,
                            high_prec_dps=30,
                            save_every_loop=True):
     """
@@ -195,19 +196,25 @@ def calculate_fisher_on_pk(data, system, method,
     data : dict
     system : str
     method : str
+    computed_results: dict, None
+        If given, results will be appended onto this.
     high_prec_dps : int, 30
     save_every_loop : bool, True
+        If False, only save at very end after loops.
     """
     
     import importlib
 
     fname = 'cache/%s/%s/fisherResultMaj.p'%(system,method)
+    
+    if computed_results is None:
+        fisherResultMaj = {}
+    else:
+        fisherResultMaj = computed_results
 
-    fisherResultMaj = {}
-    for k in data.keys():
+    for k in [kp for kp in data.keys() if not kp in fisherResultMaj.keys()]:
         if (data[k][-1] is None or
-            (np.linalg.norm(data[k][-1]['fun'])<1e-6
-             and (abs(data[k][2])<5).all())):
+            (np.linalg.norm(data[k][-1]['fun'])<1e-6)):
             print("Starting %s..."%k)
             n = len(data[k][0])
             hJ = data[k][2]
@@ -239,6 +246,7 @@ def calculate_fisher_on_pk(data, system, method,
         print("Saving into %s"%fname)
         with open(fname, 'wb') as f:
             dill.dump({'fisherResultMaj':fisherResultMaj}, f, -1)
+    return fisherResultMaj
 
 def extract_voter_subspace(fisherResult,
                            return_n_voters=3,
