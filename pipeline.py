@@ -7,6 +7,7 @@ import os
 import pickle
 import dill
 from .utils import *
+from .fim import *
 
 
 def entropy_estimates(system, method,
