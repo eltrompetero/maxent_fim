@@ -65,6 +65,16 @@ def unravel_index(ijk, n):
     ix += ijk[-1] -ijk[-2] -1
     return ix
 
+@njit
+def delete(X, i):
+    """Return vector X with the ith element removed."""
+    X_ = [0]
+    X_.pop(0)
+    for j in range(len(X)):
+        if i!=j:
+            X_.append(X[j])
+    return X_
+
 def fisher_subspace(n, result, rtol=.05):
     """Wrapper for extracting individual subspace eigenvalues.
 
@@ -1314,6 +1324,48 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
                 counter += 1
         return dJ
 
+    @staticmethod
+    def _observables_after_perturbation_up(si, sisj, i, a, eps):
+        n = len(si)
+
+        si[i] = (1-eps)*si[i] + eps*si[a]
+
+        for j in delete(list(range(n)),i):
+            if i<j:
+                ijix = unravel_index((i,j),n)
+            else:
+                ijix = unravel_index((j,i),n)
+
+            if j==a:
+                sisj[ijix] = (1-eps)*sisj[ijix] + eps
+            else:
+                if j<a:
+                    jaix = unravel_index((j,a),n)
+                else:
+                    jaix = unravel_index((a,j),n)
+                sisj[ijix] = (1-eps)*sisj[ijix] + eps*sisj[jaix]
+    
+    @staticmethod
+    def _observables_after_perturbation_down(si, sisj, i, a, eps):
+        n = len(si)
+
+        si[i] = (1-eps)*si[i] - eps*si[a]
+
+        for j in delete(list(range(n)),i):
+            if i<j:
+                ijix = unravel_index((i,j),n)
+            else:
+                ijix = unravel_index((j,i),n)
+
+            if j==a:
+                sisj[ijix] = (1-eps)*sisj[ijix] - eps
+            else:
+                if j<a:
+                    jaix = unravel_index((j,a),n)
+                else:
+                    jaix = unravel_index((a,j),n)
+                sisj[ijix] = (1-eps)*sisj[ijix] - eps*sisj[jaix]
+
     def observables_after_perturbation(self, i, a, eps=None, perturb_up=False):
         """Make spin index i more like spin a by eps. Perturb the corresponding mean and
         the correlations with other spins j.
@@ -1352,54 +1404,13 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         
         if perturb_up:
             for i_,a_,eps_ in zip(i,a,eps):
-                self._observables_after_perturbation_up(siNew, sisjNew, i_, a_, eps_)
+                jit_observables_after_perturbation_up(siNew, sisjNew, i_, a_, eps_)
         else:
             for i_,a_,eps_ in zip(i,a,eps):
-                self._observables_after_perturbation_down(siNew, sisjNew, i_, a_, eps_)
-
+                jit_observables_after_perturbation_down(siNew, sisjNew, i_, a_, eps_)
 
         return np.concatenate((siNew, sisjNew))
-   
-    def _observables_after_perturbation_up(self, si, sisj, i, a, eps):
-        n = self.n
-
-        si[i] = (1-eps)*si[i] + eps*si[a]
-
-        for j in np.delete(range(n),i):
-            if i<j:
-                ijix = unravel_index((i,j),n)
-            else:
-                ijix = unravel_index((j,i),n)
-
-            if j==a:
-                sisj[ijix] = (1-eps)*sisj[ijix] + eps
-            else:
-                if j<a:
-                    jaix = unravel_index((j,a),n)
-                else:
-                    jaix = unravel_index((a,j),n)
-                sisj[ijix] = (1-eps)*sisj[ijix] + eps*sisj[jaix]
-
-    def _observables_after_perturbation_down(self, si, sisj, i, a, eps):
-        n = self.n
-
-        si[i] = (1-eps)*si[i] - eps*si[a]
-
-        for j in np.delete(range(n),i):
-            if i<j:
-                ijix = unravel_index((i,j),n)
-            else:
-                ijix = unravel_index((j,i),n)
-
-            if j==a:
-                sisj[ijix] = (1-eps)*sisj[ijix] - eps
-            else:
-                if j<a:
-                    jaix = unravel_index((j,a),n)
-                else:
-                    jaix = unravel_index((a,j),n)
-                sisj[ijix] = (1-eps)*sisj[ijix] - eps*sisj[jaix]
-
+    
     def _solve_linearized_perturbation(self, iStar, aStar):
         """Consider a perturbation to a single spin.
         
@@ -1647,6 +1658,48 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
 
         return minimize(f, hJ0, options={'eps':1e-5, 'ftol':1e-4}, bounds=[(-1,1)]*len(hJ0))
 #end IsingFisherCurvatureMethod2
+
+@njit
+def jit_observables_after_perturbation_up(si, sisj, i, a, eps):
+    n = len(si)
+
+    si[i] = (1-eps)*si[i] + eps*si[a]
+
+    for j in delete(list(range(n)),i):
+        if i<j:
+            ijix = unravel_index((i,j),n)
+        else:
+            ijix = unravel_index((j,i),n)
+
+        if j==a:
+            sisj[ijix] = (1-eps)*sisj[ijix] + eps
+        else:
+            if j<a:
+                jaix = unravel_index((j,a),n)
+            else:
+                jaix = unravel_index((a,j),n)
+            sisj[ijix] = (1-eps)*sisj[ijix] + eps*sisj[jaix]
+
+@njit
+def jit_observables_after_perturbation_down(si, sisj, i, a, eps):
+    n = len(si)
+
+    si[i] = (1-eps)*si[i] - eps*si[a]
+
+    for j in delete(list(range(n)),i):
+        if i<j:
+            ijix = unravel_index((i,j),n)
+        else:
+            ijix = unravel_index((j,i),n)
+
+        if j==a:
+            sisj[ijix] = (1-eps)*sisj[ijix] - eps
+        else:
+            if j<a:
+                jaix = unravel_index((j,a),n)
+            else:
+                jaix = unravel_index((a,j),n)
+            sisj[ijix] = (1-eps)*sisj[ijix] - eps*sisj[jaix]
 
 
 def solve_linearized_pair_perturbation(n, iStar, aStar, sisj, p,
