@@ -1789,3 +1789,64 @@ def jit_observables_after_perturbation_minus_field(si, sisj, i, eps):
         else:
             ijix = unravel_index((j,i),n)
         sisj[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
+
+@njit
+def delete(X, i):
+    """Return vector X with the ith element removed."""
+    X_ = [0]
+    X_.pop(0)
+    for j in range(len(X)):
+        if i!=j:
+            X_.append(X[j])
+    return X_
+
+@njit
+def factorial(x):
+    f = 1.
+    while x>0:
+        f *= x
+        x -= 1
+    return f
+
+@njit
+def binom(n,k):
+    return factorial(n)/factorial(n-k)/factorial(k)
+
+@njit
+def jit_all(x):
+    for x_ in x:
+        if not x_:
+            return False
+    return True
+
+@njit
+def unravel_index(ijk, n):
+    """Unravel multi-dimensional index to flattened index but specifically for
+    multi-dimensional analog of an upper triangular array (lower triangle indices are not
+    counted).
+
+    Parameters
+    ----------
+    ijk : tuple
+        Raveled index to unravel.
+    n : int
+        System size.
+
+    Returns
+    -------
+    ix : int
+        Unraveled index.
+    """
+    
+    if len(ijk)==1:
+        raise Exception
+
+    assert jit_all([ijk[i]<ijk[i+1] for i in range(len(ijk)-1)])
+    assert jit_all([i<n for i in ijk])
+
+    ix = np.sum(np.array([int(binom(n-1-i,len(ijk)-1)) for i in range(ijk[0])]))
+    for d in range(1, len(ijk)-1):
+        if (ijk[d]-ijk[d-1])>1:
+            ix += np.sum(np.array([int(binom(n-i-1,len(ijk)-d-1)) for i in range(ijk[d-1]+1, ijk[d])]))
+    ix += ijk[-1] -ijk[-2] -1
+    return ix

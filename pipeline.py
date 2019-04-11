@@ -190,7 +190,8 @@ def solve_inverse_on_data(data, n_cpus=4):
 def calculate_fisher_on_pk(data, system, method,
                            computed_results=None,
                            high_prec_dps=30,
-                           save_every_loop=True):
+                           save_every_loop=True,
+                           fi_method=2):
     """
     Parameters
     ----------
@@ -202,6 +203,11 @@ def calculate_fisher_on_pk(data, system, method,
     high_prec_dps : int, 30
     save_every_loop : bool, True
         If False, only save at very end after loops.
+    fi_method : int, 2
+
+    Returns
+    -------
+    dict
     """
     
     import importlib
@@ -220,7 +226,12 @@ def calculate_fisher_on_pk(data, system, method,
             n = len(data[k][0])
             hJ = data[k][2]
             
-            isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+            if fi_method==2:
+                isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+            elif fi_method==3:
+                isingdkl = IsingFisherCurvatureMethod3(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+            else:
+                raise Exception("Invalid method.")
             epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
             hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=epsdJ)
             
