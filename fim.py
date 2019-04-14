@@ -1723,29 +1723,6 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         return dJ
     
     @staticmethod
-    def p2pk(p, uix, invix):
-        """Convert the full probability distribution to the probability of having k votes
-        in the majority.
-
-        Parameters
-        ----------
-        p : ndarray
-        uix : ndarray
-        invix : ndarray
-
-        Returns
-        -------
-        ndarray
-            p(k)
-        """
-        
-        pk = np.zeros(len(uix))
-        for i in range(len(uix)):
-            pk[i] = p[i==invix].sum()
-
-        return pk
-
-    @staticmethod
     def _observables_after_perturbation_up(si, sisj, i, a, eps):
         n = len(si)
 
