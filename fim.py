@@ -37,6 +37,7 @@ class IsingFisherCurvatureMethod1():
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
         self.allStates = bin_states(n, True).astype(np.int8)
+        self.coarseUix, self.coarseInvix = np.unique(np.abs(self.allStates.sum(1)), return_inverse=True)
         
         n_cpus = n_cpus or mp.cpu_count()
         self.pool = mp.Pool(n_cpus)
@@ -433,13 +434,15 @@ class IsingFisherCurvatureMethod1():
         return hess, errflag, normerr
     
     @staticmethod
-    def p2pk(p, allStates):
+    def p2pk(p, uix, invix):
         """Convert the full probability distribution to the probability of having k votes
         in the majority.
 
         Parameters
         ----------
         p : ndarray
+        uix : ndarray
+        invix : ndarray
 
         Returns
         -------
@@ -447,22 +450,14 @@ class IsingFisherCurvatureMethod1():
             p(k)
         """
          
-        n = allStates.shape[1]
-        pk = np.zeros(n//2+1)
-        kVotes = np.abs( allStates.sum(1) )
-
-        # if n is odd
-        if n%2:
-            for i in range(pk.size):
-                pk[i] = p[kVotes==(i*2+1)].sum()
-        else:
-            for i in range(pk.size):
-                pk[i] = p[kVotes==(i*2)].sum()
+        pk = np.zeros(len(uix))
+        for i in uix:
+            pk[i] = p[invix==i].sum()
 
         return pk
 
     @staticmethod
-    def p2pk_high_prec(p, allStates):
+    def p2pk_high_prec(p, uix, invix):
         """Convert the full probability distribution to the probability of having k votes
         in the majority. Assuming that n is odd.
 
@@ -478,16 +473,9 @@ class IsingFisherCurvatureMethod1():
             p(k)
         """
         
-        n = allStates.shape[1]
-        pk = np.zeros(n//2+1, dtype=object)
-        kVotes = np.abs( allStates.sum(1) )
-
-        if n%2:
-            for i in range(pk.size):
-                pk[i] = p[kVotes==(i*2+1)].sum()
-        else:
-            for i in range(pk.size):
-                pk[i] = p[kVotes==(i*2)].sum()
+        pk = np.zeros(len(uix), dtype=object)
+        for i in uix:
+            pk[i] = p[invix==i].sum()
 
         return pk
 
@@ -579,31 +567,33 @@ class IsingFisherCurvatureMethod1():
         n = self.n
         if hJ is None:
             hJ = self.hJ
-            p = self.p2pk(self.p, self.allStates)
+            p = self.p2pk(self.p, self.coarseUix, self.coarseInvix)
         else:
-            p = self.p2pk(self.ising.p(hJ), self.allStates)
+            p = self.p2pk(self.ising.p(hJ), self.coarseUix, self.coarseInvix)
         log2p = np.log2(p)
         if dJ is None:
             dJ = self.dJ
             
         # diagonal entries
-        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p, p2pk=self.p2pk, allStates=self.allStates):
+        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p, p2pk=self.p2pk,
+                 uix=self.coarseUix, invix=self.coarseInvix):
             mxix = np.argmax(np.abs(dJ[i]))
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
             epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
 
             newhJ = hJ + dJ[i]*epsdJ_
-            modp = p2pk(ising.p(newhJ), allStates)
+            modp = p2pk(ising.p(newhJ), uix, invix)
             dklplus = 2*(log2p-np.log2(modp)).dot(p)
 
             newhJ -= 2*dJ[i]*epsdJ_
-            modp = p2pk(ising.p(newhJ), allStates)
+            modp = p2pk(ising.p(newhJ), uix, invix)
             dklminus = 2*(log2p-np.log2(modp)).dot(p)
             
             return (dklplus+dklminus) / 2 / epsdJ_**2
 
         # theta_j+del) to second order.
-        def off_diag(args, hJ=hJ, ising=self.ising, p2pk=self.p2pk, dJ=dJ, p=p, allStates=self.allStates):
+        def off_diag(args, hJ=hJ, ising=self.ising, p2pk=self.p2pk, dJ=dJ, p=p,
+                     uix=self.coarseUix, invix=self.coarseInvix):
             i, j = args
             
             mxix = np.argmax(np.abs(dJ[i]+dJ[j]))
@@ -611,11 +601,11 @@ class IsingFisherCurvatureMethod1():
             epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]
 
             newhJ = hJ + (dJ[i]+dJ[j])*epsdJ_
-            modp = p2pk(ising.p(newhJ), allStates)
+            modp = p2pk(ising.p(newhJ), uix, invix)
             dklplus = (log2p-np.log2(modp)).dot(p)
 
             newhJ -= 2*(dJ[i]+dJ[j])*epsdJ_
-            modp = p2pk(ising.p(newhJ), allStates)
+            modp = p2pk(ising.p(newhJ), uix, invix)
             dklminus = (log2p-np.log2(modp)).dot(p)
 
             return (dklplus+dklminus) / 2 / epsdJ_**2
@@ -711,7 +701,7 @@ class IsingFisherCurvatureMethod1():
         n = self.n
         if hJ is None:
             hJ = self.hJ
-        p = self.p2pk_high_prec(self.ising.p(hJ), self.allStates)
+        p = self.p2pk_high_prec(self.ising.p(hJ), self.coarseUix, self.coarseInvix)
         log2p = np.array(mplog2(p))
         if dJ is None:
             dJ = self.dJ
@@ -722,18 +712,19 @@ class IsingFisherCurvatureMethod1():
                  dJ=dJ,
                  p=p,
                  p2pk=self.p2pk_high_prec,
-                 allStates=self.allStates):
+                 uix=self.coarseUix,
+                 invix=self.coarseInvix):
             # round epsdJ_ to machine precision
             mxix = np.argmax(np.abs(dJ[i]))
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
             epsdJ_ = (newhJ - hJ[mxix]) / dJ[i][mxix]
 
             newhJ = hJ + dJ[i]*epsdJ_
-            modp = p2pk(ising.p(newhJ), allStates)
+            modp = p2pk(ising.p(newhJ), uix, invix)
             dklplus = 2*(log2p-mplog2(modp)).dot(p)
 
             newhJ -= 2*dJ[i]*epsdJ_
-            modp = p2pk(ising.p(newhJ), allStates)
+            modp = p2pk(ising.p(newhJ), uix, invix)
             dklminus = 2*(log2p-mplog2(modp)).dot(p)
 
             return (dklplus+dklminus) / 2 / epsdJ_**2
@@ -745,7 +736,8 @@ class IsingFisherCurvatureMethod1():
                      p2pk=self.p2pk_high_prec,
                      dJ=dJ,
                      p=p,
-                     allStates=self.allStates):
+                     uix=self.coarseUix,
+                     invix=self.coarseInvix):
             i, j = args
             
             # round epsdJ_ to machine precision
@@ -754,11 +746,11 @@ class IsingFisherCurvatureMethod1():
             epsdJ_ = (newhJ - hJ[mxix]) / (dJ[i][mxix]+dJ[j][mxix]) 
 
             newhJ = hJ + (dJ[i]+dJ[j])*epsdJ_
-            modp = p2pk(ising.p(newhJ), allStates)
+            modp = p2pk(ising.p(newhJ), uix, invix)
             dklplus = (log2p-mplog2(modp)).dot(p)
 
             newhJ -= 2*(dJ[i]+dJ[j])*epsdJ_
-            modp = p2pk(ising.p(newhJ), allStates)
+            modp = p2pk(ising.p(newhJ), uix, invix)
             dklminus = (log2p-mplog2(modp)).dot(p)
             
             return (dklplus+dklminus) / 2 / epsdJ_**2
@@ -1689,7 +1681,10 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
         self.allStates = np.vstack(list(xpotts_states(n, kStates))).astype(np.int8)
-        
+        kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
+                          self.allStates))
+        self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
+
         n_cpus = n_cpus or mp.cpu_count()
         self.pool = mp.Pool(n_cpus)
 
@@ -1743,10 +1738,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         ndarray
             p(k)
         """
-         
-        kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
-                          allStates))
-        uix, invix = np.unique(kVotes, return_inverse=True, axis=0)
+        
         pk = np.zeros(len(uix))
         
         for i in range(len(uix)):
