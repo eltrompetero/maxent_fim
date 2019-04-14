@@ -451,7 +451,7 @@ class IsingFisherCurvatureMethod1():
         """
          
         pk = np.zeros(len(uix))
-        for i in uix:
+        for i in range(len(uix)):
             pk[i] = p[invix==i].sum()
 
         return pk
@@ -474,7 +474,7 @@ class IsingFisherCurvatureMethod1():
         """
         
         pk = np.zeros(len(uix), dtype=object)
-        for i in uix:
+        for i in range(len(uix)):
             pk[i] = p[invix==i].sum()
 
         return pk
@@ -1740,7 +1740,6 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         """
         
         pk = np.zeros(len(uix))
-        
         for i in range(len(uix)):
             pk[i] = p[i==invix].sum()
 
@@ -1995,9 +1994,7 @@ def jit_observables_after_perturbation_plus_field(n, si, sisj, i, a, eps):
             sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
 
 @njit
-def jit_observables_after_perturbation_minus_field(si, sisj, i, a, eps):
-    n = len(si)
-
+def jit_observables_after_perturbation_minus_field(n, si, sisj, i, a, eps):
     si[i] = (1-eps)*si[i] - eps
 
     for j in delete(list(range(n)),i):
@@ -2037,7 +2034,7 @@ def jit_observables_after_perturbation_plus_field(n, si, sisj, i, eps):
         sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
 
 @njit
-def jit_observables_after_perturbation_minus_field(si, sisj, i, eps):
+def jit_observables_after_perturbation_minus_field(n, si, sisj, i, eps):
     """        
     Parameters
     ----------
@@ -2047,8 +2044,6 @@ def jit_observables_after_perturbation_minus_field(si, sisj, i, eps):
     eps : float
     """
 
-    n = len(si)
-    
     # observables after perturbations
     si[i]  = (1-eps)*si[i] - eps
 
