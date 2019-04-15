@@ -12,9 +12,9 @@ from itertools import combinations
 np.seterr(divide='ignore')
 
 
-# ==================
-# Functions
-# ==================
+# ========= #
+# Functions #
+# ========= #
 def fisher_subspace(n, result, rtol=.05):
     """Wrapper for extracting individual subspace eigenvalues.
 

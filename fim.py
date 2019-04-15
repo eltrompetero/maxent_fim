@@ -829,7 +829,7 @@ class IsingFisherCurvatureMethod1():
         eigvec *= np.sign(eigvec.T.dot(orientation_vector))[None,:]
         
         # sort by largest eigenvalues
-        sortix = np.argsort(np.abs(eigval))[::-1]
+        sortix = np.argsort(eigval)[::-1]
         eigval = eigval[sortix]
         eigvec = eigvec[:,sortix]
         # orient along direction of mean of individual means change

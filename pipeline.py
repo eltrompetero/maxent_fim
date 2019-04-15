@@ -190,6 +190,7 @@ def solve_inverse_on_data(data, n_cpus=4):
 def calculate_fisher_on_pk(data, system, method,
                            computed_results=None,
                            high_prec_dps=30,
+                           save=True,
                            save_every_loop=True,
                            fi_method=2):
     """
@@ -201,6 +202,8 @@ def calculate_fisher_on_pk(data, system, method,
     computed_results: dict, None
         If given, results will be appended onto this.
     high_prec_dps : int, 30
+    save : bool, True
+        Save to pickle.
     save_every_loop : bool, True
         If False, only save at very end after loops.
     fi_method : int, 2
@@ -251,12 +254,12 @@ def calculate_fisher_on_pk(data, system, method,
             del isingdkl.pool
             fisherResultMaj[k] = [isingdkl, (hess, errflag, err), eigval, eigvec]
         
-            if save_every_loop:
+            if save and save_every_loop:
                 print("Saving into %s"%fname)
                 with open(fname, 'wb') as f:
                     dill.dump({'fisherResultMaj':fisherResultMaj}, f, -1)
 
-    if not save_every_loop:
+    if save and not save_every_loop:
         print("Saving into %s"%fname)
         with open(fname, 'wb') as f:
             dill.dump({'fisherResultMaj':fisherResultMaj}, f, -1)
@@ -413,7 +416,7 @@ def degree_collective(fisherResult,
                 veigvec.append(v)
             # just take max eigval for each voter
             veigval = np.vstack(veigval)[:,0]
-            #degree[i] = veigval.max() / eigval[0]
+            #degree[i] = np.abs(veigval).max() / np.abs(veigval).sum() - 1/veigval.size
             degree[i] = veigval.max()**2 / (veigval**2).sum() - 1/veigval.size
 
     return degree
