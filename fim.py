@@ -615,16 +615,17 @@ class IsingFisherCurvatureMethod1():
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
-                hess[i,j] = hess[j,i] = off_diag((i,j))
+                hess[i,j] = off_diag((i,j))
         else:
             hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
             hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
-            # subtract off linear terms to get Hessian (and not just cross derivative)
-            hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
-                                                            for i,j in combinations(range(len(dJ)),2)])
-            # fill in lower triangle
-            hess += hess.T
-            hess[np.eye(len(dJ))==1] /= 2
+
+        # subtract off linear terms to get Hessian (and not just cross derivative)
+        hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
+                                                        for i,j in combinations(range(len(dJ)),2)])
+        # fill in lower triangle
+        hess += hess.T
+        hess[np.eye(len(dJ))==1] /= 2
 
         # check for precision problems
         assert ~np.isnan(hess).any()
@@ -760,16 +761,17 @@ class IsingFisherCurvatureMethod1():
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
-                hess[i,j] = hess[j,i] = off_diag((i,j))
+                hess[i,j] = off_diag((i,j))
         else:
             hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
             hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
-            # subtract off linear terms to get Hessian (and not just cross derivative)
-            hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
-                                                            for i,j in combinations(range(len(dJ)),2)])
-            # fill in lower triangle
-            hess += hess.T
-            hess[np.eye(len(dJ))==1] /= 2
+
+        # subtract off linear terms to get Hessian (and not just cross derivative)
+        hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
+                                                        for i,j in combinations(range(len(dJ)),2)])
+        # fill in lower triangle
+        hess += hess.T
+        hess[np.eye(len(dJ))==1] /= 2
         
         assert ~np.isnan(hess).any()
         assert ~np.isinf(hess).any()
@@ -794,7 +796,10 @@ class IsingFisherCurvatureMethod1():
             return hess
         return hess, errflag, err
 
-    def hess_eig(self, hess, orientation_vector=None, imag_norm_threshold=1e-10):
+    def hess_eig(self, hess,
+                 orientation_vector=None,
+                 imag_norm_threshold=1e-10,
+                 iprint=True):
         """Get Hessian eigenvalues and eigenvectors corresponds to parameter combinations
         of max curvature. Return them nicely sorted and cleaned and oriented consistently.
         
@@ -805,6 +810,7 @@ class IsingFisherCurvatureMethod1():
             Vector along which to orient all vectors so that they are consistent with
             sign. By default, it is set to the sign of the first entry in the vector.
         imag_norm_threshold : float, 1e-10
+        iprint : bool, True
         
         Returns
         -------
@@ -834,7 +840,7 @@ class IsingFisherCurvatureMethod1():
         eigvec = eigvec[:,sortix]
         # orient along direction of mean of individual means change
         eigvec *= np.sign(eigvec[:self.n,:].mean(0))[None,:]
-        if (eigval<0).any():
+        if iprint and (eigval<0).any():
             print("There are negative eigenvalues.")
             print()
         
