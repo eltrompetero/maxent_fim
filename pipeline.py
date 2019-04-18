@@ -403,8 +403,7 @@ def _extract_voter_subspace(fisherResultValue,
     assert 0<=(voterEigval[0]/pivotalEigval)<=1, "Hessian calculation error. Condition violated."
     return pivotalEigval, voterEigval, voterEigvalSortix
 
-def degree_collective(fisherResult,
-                      remove_first_mode=False):
+def degree_collective(fisherResult, **kwargs):
     """
     Parameters
     ----------
@@ -421,21 +420,24 @@ def degree_collective(fisherResult,
     degree = np.zeros(K)-1
 
     for i,k in enumerate(fisherResult.keys()):
-        degree[i] = _degree_collective(fisherResult[k]) 
+        degree[i] = _degree_collective(fisherResult[k], **kwargs) 
     return degree
 
 def _degree_collective(fisherResultValue,
-                       remove_first_mode=False):
+                       remove_first_mode=False,
+                       voter_eig_rank=0):
     """
     Parameters
     ----------
     fisherResultValue : list
     remove_first_mode : bool, False
-        If True, subtract off principal mode from Hessian.
+        If True, subtract off principal mode from rows of Hessian.
+    voter_eig_rank : int, 0
+        Rank of eigenvalue and eigenvector to return from voter subspaces.
 
     Returns
     -------
-    ndarray
+    float
     """
     
     n = fisherResultValue[0].n
@@ -464,9 +466,12 @@ def _degree_collective(fisherResultValue,
 
             veigval.append(u)
             veigvec.append(v)
-        # just take max eigval for each voter
-        veigval = np.vstack(veigval)[:,0]
+        veigval = np.vstack(veigval)[:,voter_eig_rank]
         degree = veigval.max() / veigval.sum() - 1/n
+
+        # entropy
+        p = veigval / veigval.sum()
+        degree = -np.log2(p).dot(p) / np.log2(p.size)
         #degree = veigval.max()**2 / (veigval**2).sum() - 1/veigval.size
     else:
         degree = np.nan

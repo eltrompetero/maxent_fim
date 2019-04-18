@@ -39,8 +39,9 @@ class IsingFisherCurvatureMethod1():
         self.allStates = bin_states(n, True).astype(np.int8)
         self.coarseUix, self.coarseInvix = np.unique(np.abs(self.allStates.sum(1)), return_inverse=True)
         
-        n_cpus = n_cpus or mp.cpu_count()
-        self.pool = mp.Pool(n_cpus)
+        if n_cpus is None or n_cpus>1:
+            n_cpus = n_cpus or mp.cpu_count()
+            self.pool = mp.Pool(n_cpus)
 
         # cache triplet and quartet products
         self._triplets_and_quartets() 
@@ -632,7 +633,7 @@ class IsingFisherCurvatureMethod1():
         assert ~np.isinf(hess).any()
 
         if check_stability:
-            hess2 = self._maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
+            hess2 = self._maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ, n_cpus=n_cpus)
             # 4/3 ratio predicted from expansion up to 4th order term with eps/2
             err = (hess - hess2)*4/3
             if (np.abs(err/hess) > rtol).any():
@@ -777,7 +778,11 @@ class IsingFisherCurvatureMethod1():
         assert ~np.isinf(hess).any()
 
         if check_stability:
-            hess2 = self._maj_curvature_high_prec(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
+            hess2 = self._maj_curvature_high_prec(epsdJ=epsdJ/2,
+                                                  check_stability=False,
+                                                  hJ=hJ,
+                                                  dJ=dJ,
+                                                  n_cpus=n_cpus)
             err = (hess - hess2)*4/3
             if (np.abs(err/hess) > rtol).any():
                 errflag = 1

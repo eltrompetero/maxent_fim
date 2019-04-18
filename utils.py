@@ -451,3 +451,45 @@ def define_energy_basin_functions(calc_observables):
         return x 
 
     return find_energy_basin, flip_least_stable_spin
+
+def degree_collective_exp(rate, n=9):
+    """Example of entropy of the individual subspaces changes for a simple model where
+    each subspace is simply a single direction in Cartesian coordinates.
+    
+    I construct a diagonal matrix with exponentially decaying diagonal entries. These
+    correspond to the block subspaces of individual perturbations if each subspace were
+    truly independent of the others. In this simplified case, it becomes straightforward
+    to consider how the entropy over the subspace eigenvalues changes after I remove the
+    principal mode (since the eigenvalues are just the eigenvalues of the diagonal
+    matrix).
+    
+    Parameters
+    ----------
+    rate : float
+    n : int, 9
+    
+    Returns
+    -------
+    float
+    float
+    """
+    
+    X = np.zeros((n,n))
+    # X[eye(len(X))==1] = 2.**(-4*arange(len(X)))
+    X[np.eye(len(X))==1] = np.exp(-rate*np.arange(len(X)))
+
+    eigval,_ = np.linalg.eig(X)
+    assert (eigval>=0).all()
+
+    p = eigval/eigval.sum()
+    r1 = -p.dot(np.log2(p))/np.log2(len(p))
+
+    Xp = remove_principal_mode(X)
+
+    eigval,_ = np.linalg.eig(Xp)
+    assert (eigval>=0).all()
+
+    p = eigval/eigval.sum()
+    r2 = np.nansum(-p*np.log2(p))/np.log2(p.size)
+    
+    return r1,r2
