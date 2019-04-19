@@ -578,14 +578,17 @@ class IsingFisherCurvatureMethod1():
         # diagonal entries
         def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p, p2pk=self.p2pk,
                  uix=self.coarseUix, invix=self.coarseInvix):
-            mxix = np.argmax(np.abs(dJ[i]))
+            # round eps step to machine precision
+            mxix = np.abs(dJ[i]).argmax()
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
             epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
-
+            
+            # forward step
             newhJ = hJ + dJ[i]*epsdJ_
             modp = p2pk(ising.p(newhJ), uix, invix)
             dklplus = 2*(log2p-np.log2(modp)).dot(p)
-
+            
+            # backwards step
             newhJ -= 2*dJ[i]*epsdJ_
             modp = p2pk(ising.p(newhJ), uix, invix)
             dklminus = 2*(log2p-np.log2(modp)).dot(p)
@@ -597,14 +600,17 @@ class IsingFisherCurvatureMethod1():
                      uix=self.coarseUix, invix=self.coarseInvix):
             i, j = args
             
-            mxix = np.argmax(np.abs(dJ[i]+dJ[j]))
+            # round eps step to machine precision
+            mxix = np.abs(dJ[i]+dJ[j]).argmax()
             newhJ = hJ[mxix] + (dJ[i]+dJ[j])[mxix]*epsdJ
             epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]
-
+            
+            # forward step
             newhJ = hJ + (dJ[i]+dJ[j])*epsdJ_
             modp = p2pk(ising.p(newhJ), uix, invix)
             dklplus = (log2p-np.log2(modp)).dot(p)
-
+            
+            # backwards step
             newhJ -= 2*(dJ[i]+dJ[j])*epsdJ_
             modp = p2pk(ising.p(newhJ), uix, invix)
             dklminus = (log2p-np.log2(modp)).dot(p)
@@ -623,7 +629,7 @@ class IsingFisherCurvatureMethod1():
 
         # subtract off linear terms to get Hessian (and not just cross derivative)
         hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
-                                                        for i,j in combinations(range(len(dJ)),2)])
+                                                         for i,j in combinations(range(len(dJ)),2)])
         # fill in lower triangle
         hess += hess.T
         hess[np.eye(len(dJ))==1] /= 2
