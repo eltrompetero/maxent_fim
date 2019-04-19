@@ -270,18 +270,15 @@ def calculate_fisher_on_pk(data, system, method,
 
 def extract_voter_subspace(fisherResult,
                            return_n_voters=3,
-                           remove_first_mode=False,
-                           deprecated=False):
+                           remove_n_modes=0):
     """
     Parameters
     ----------
     fisherResult : dict
     return_n_voters : int, False
         If an int is given, number of voter subspace eigenvalues to return.
-    remove_first_mode : bool, False
-        If True, subtract off principal mode from Hessian.
-    deprecated : bool, False
-        If True, use deprecated interface.
+    remove_n_modes : int, 0
+        If True, subtract off principal modes from Hessian.
 
     Returns
     -------
@@ -294,63 +291,30 @@ def extract_voter_subspace(fisherResult,
     """
     
     K = len(fisherResult)
-    if deprecated:
-        primaryEigval = np.zeros(K)-1
-        principleVoter = np.zeros(K)
-        secondaryVoter = np.zeros(K)
-        tertiaryVoter = np.zeros(K)
-
-        for i,k in enumerate(fisherResult.keys()):
-            n = fisherResult[k][0].n
-
-            isingdkl, (hess, errflag, err), eigval, eigvec = fisherResult[k]
-
-            if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
-                # when limited to the subspace of a single justice at a given time (how do we 
-                # optimally tweak a single justice to change the system?)
-                justiceEigval = []
-                justiceEigvec = []
-
-                for j in range(n):
-                    subspaceHess = hess[j*(n-1):(j+1)*(n-1),j*(n-1):(j+1)*(n-1)]
-                    u,v = np.linalg.eig(subspaceHess)
-                    sortix = np.argsort(u)[::-1]
-                    u = u[sortix]
-                    v = v[:,sortix]
-
-                    justiceEigval.append(u)
-                    justiceEigvec.append(v)
-                justiceEigval = np.vstack(justiceEigval)
-
-                primaryEigval[i] = eigval[0]
-                principleVoter[i], secondaryVoter[i], tertiaryVoter[i] = np.sort(justiceEigval[:,0])[::-1][:3]
-                assert (principleVoter[i]/primaryEigval[i])<=1
-        return primaryEigval, principleVoter, secondaryVoter, tertiaryVoter
-
     pivotalEigval = np.zeros(K)-1
     voterEigval = np.zeros((K,return_n_voters))
     voterEigvalSortix = np.zeros((K,return_n_voters), dtype=int)
 
     for i,k in enumerate(fisherResult.keys()):
-        out = _extract_voter_subspace(fisherResult[k], return_n_voters, remove_first_mode) 
+        out = _extract_voter_subspace(fisherResult[k], return_n_voters, remove_n_modes) 
         pivotalEigval[i] = out[0] 
-        voterEigvalSortix[i] = out[1]
-        voterEigval[i] = out[2]
+        voterEigval[i] = out[1]
+        voterEigvalSortix[i] = out[2]
 
         assert 0<=(voterEigval[i,0]/pivotalEigval[i])<=1, "Hessian calculation error. Condition violated."
     return pivotalEigval, voterEigval, voterEigvalSortix
 
 def _extract_voter_subspace(fisherResultValue,
-                           return_n_voters=3,
-                           remove_first_mode=False):
+                            return_n_voters=3,
+                            remove_n_modes=0):
     """
     Parameters
     ----------
     fisherResultValue : list
     return_n_voters : int, False
         If an int is given, number of voter subspace eigenvalues to return.
-    remove_first_mode : bool, False
-        If True, subtract off principal mode from Hessian.
+    remove_n_modes : int, 0
+        If True, subtract off n principal modes from Hessian.
 
     Returns
     -------
@@ -364,13 +328,13 @@ def _extract_voter_subspace(fisherResultValue,
     
     voterEigval = np.zeros(return_n_voters)
     voterEigvalSortix = np.zeros(return_n_voters, dtype=int)
-
     n = fisherResultValue[0].n
     
     # read out results stored in dict
     isingdkl, (hess, errflag, err), eigval, eigvec = fisherResultValue
-    if remove_first_mode:
-        hess = remove_principal_mode(hess)
+    if remove_n_modes>0:
+        for i in range(remove_n_modes):
+            hess = remove_principal_mode(hess)
         eigval, eigvec = np.linalg.eig(hess)
         sortix = np.argsort(eigval)[::-1]
         eigval = eigval[sortix]
@@ -424,7 +388,7 @@ def degree_collective(fisherResult, **kwargs):
     return degree
 
 def _degree_collective(fisherResultValue,
-                       remove_first_mode=False,
+                       remove_n_modes=0,
                        voter_eig_rank=0):
     """
     Parameters
@@ -442,8 +406,9 @@ def _degree_collective(fisherResultValue,
     
     n = fisherResultValue[0].n
     isingdkl, (hess, errflag, err), eigval, eigvec = fisherResultValue
-    if remove_first_mode:
-        hess = remove_principal_mode(hess)
+    if remove_n_modes>0:
+        for i in range(remove_n_modes):
+            hess = remove_principal_mode(hess)
         eigval, eigvec = np.linalg.eig(hess)
         sortix = np.argsort(eigval)[::-1]
         eigval = eigval[sortix]
@@ -467,7 +432,7 @@ def _degree_collective(fisherResultValue,
             veigval.append(u)
             veigvec.append(v)
         veigval = np.vstack(veigval)[:,voter_eig_rank]
-        degree = veigval.max() / veigval.sum() - 1/n
+        #degree = veigval.max() / veigval.sum() - 1/n
 
         # entropy
         p = veigval / veigval.sum()
