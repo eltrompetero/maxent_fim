@@ -195,7 +195,8 @@ def calculate_fisher_on_pk(data, system, method,
                            high_prec_dps=30,
                            save=True,
                            save_every_loop=True,
-                           fi_method=2):
+                           fi_method=2,
+                           allow_high_prec=True):
     """
     Parameters
     ----------
@@ -210,6 +211,8 @@ def calculate_fisher_on_pk(data, system, method,
     save_every_loop : bool, True
         If False, only save at very end after loops.
     fi_method : int, 2
+    allow_high_prec : bool, True
+        If True, allow high precision calculation to run.
 
     Returns
     -------
@@ -243,7 +246,7 @@ def calculate_fisher_on_pk(data, system, method,
             epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
             hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=epsdJ)
             
-            if errflag and np.linalg.norm(err)>2:
+            if allow_high_prec and errflag and np.linalg.norm(err)>2:
                 print("Trying high precision because of norm error of %f."%np.linalg.norm(err))
                 ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym_hp'%n)
                 isingdkl.ising = ising
