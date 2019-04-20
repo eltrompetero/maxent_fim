@@ -581,16 +581,14 @@ class IsingFisherCurvatureMethod1():
         # diagonal entries
         def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p, p2pk=self.p2pk,
                  uix=self.coarseUix, invix=self.coarseInvix,
-                 pAll=self.p,
-                 allStates=self.allStates):
+                 pAll=self.p, n=self.n):
             # round eps step to machine precision
             mxix = np.abs(dJ[i]).argmax()
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
             epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
             
             # forward step
-            #newhJ = hJ + dJ[i]*epsdJ_
-            correction = calc_e(allStates, dJ[i]*epsdJ_)
+            correction = calc_all_energies(n, dJ[i]*epsdJ_)
             modp = p2pk(pAll*(1+correction.dot(pAll)-correction), uix, invix)
             dklplus = 2*(log2p-np.log2(modp)).dot(p)
             
@@ -602,7 +600,8 @@ class IsingFisherCurvatureMethod1():
 
         # theta_j+del) to second order.
         def off_diag(args, hJ=hJ, ising=self.ising, p2pk=self.p2pk, dJ=dJ, p=p,
-                     uix=self.coarseUix, invix=self.coarseInvix):
+                     uix=self.coarseUix, invix=self.coarseInvix,
+                     pAll=self.p, n=self.n):
             i, j = args
             
             # round eps step to machine precision
@@ -611,13 +610,12 @@ class IsingFisherCurvatureMethod1():
             epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]
             
             # forward step
-            newhJ = hJ + (dJ[i]+dJ[j])*epsdJ_
-            modp = p2pk(ising.p(newhJ), uix, invix)
+            correction = calc_all_energies(n, (dJ[i]+dJ[j])*epsdJ_)
+            modp = p2pk(pAll*(1+correction.dot(pAll)-correction), uix, invix)
             dklplus = (log2p-np.log2(modp)).dot(p)
             
             # backwards step
-            newhJ -= 2*(dJ[i]+dJ[j])*epsdJ_
-            modp = p2pk(ising.p(newhJ), uix, invix)
+            modp = p2pk(pAll*(1-correction.dot(pAll)+correction), uix, invix)
             dklminus = (log2p-np.log2(modp)).dot(p)
 
             return (dklplus+dklminus) / 2 / epsdJ_**2
@@ -1604,7 +1602,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         precompute : bool, True
         n_cpus : int, None
         """
-        
+        raise NotImplementedError 
         import multiprocess as mp
         from coniii.utils import xpotts_states
 
@@ -2028,3 +2026,37 @@ def unravel_index(ijk, n):
             ix += np.sum(np.array([int(binom(n-i-1,len(ijk)-d-1)) for i in range(ijk[d-1]+1, ijk[d])]))
     ix += ijk[-1] -ijk[-2] -1
     return ix
+
+@njit(cache=True)
+def fast_sum(J,s):
+    """Helper function for calculating energy in calc_e(). Iterates couplings J."""
+    e = 0
+    k = 0
+    for i in range(len(s)-1):
+        for j in range(i+1,len(s)):
+            e += J[k]*s[i]*s[j]
+            k += 1
+    return e
+
+@njit("float64[:](int64,float64[:])")
+def calc_all_energies(n, params):
+    """Calculate all the energies for the 2^n states in model.
+    
+    Parameters
+    ----------
+    n : int
+    params : ndarray
+        (h,J) vector
+
+    Returns
+    -------
+    E : ndarray
+        Energies of all given states.
+    """
+    
+    e = np.zeros(2**n)
+    for i,s in enumerate(xpotts_states(n, 2)):
+        s_ = np.array([-1 if i=='0' else 1 for i in s], dtype=np.int64)
+        e[i] = -fast_sum(params[n:], s_)
+        e[i] -= np.sum(s_*params[:n])
+    return e
