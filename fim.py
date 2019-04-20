@@ -9,6 +9,9 @@ from .utils import *
 import importlib
 from warnings import warn
 from itertools import combinations
+from coniii.enumerate import fast_logsumexp
+from coniii.utils import define_ising_helper_functions
+calc_e, _, _ = define_ising_helper_functions()
 np.seterr(divide='ignore')
 
 
@@ -36,7 +39,7 @@ class IsingFisherCurvatureMethod1():
         self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
-        self.allStates = bin_states(n, True).astype(np.int8)
+        self.allStates = bin_states(n, True).astype(int)
         self.coarseUix, self.coarseInvix = np.unique(np.abs(self.allStates.sum(1)), return_inverse=True)
         
         if n_cpus is None or n_cpus>1:
@@ -451,8 +454,8 @@ class IsingFisherCurvatureMethod1():
             p(k)
         """
          
-        pk = np.zeros(len(uix))
-        for i in range(len(uix)):
+        pk = np.zeros(uix.size)
+        for i in range(uix.size):
             pk[i] = p[invix==i].sum()
 
         return pk
@@ -564,7 +567,7 @@ class IsingFisherCurvatureMethod1():
         float (optional)
             Norm difference between hessian with step size eps and eps/2.
         """
-        
+
         n = self.n
         if hJ is None:
             hJ = self.hJ
@@ -577,20 +580,22 @@ class IsingFisherCurvatureMethod1():
             
         # diagonal entries
         def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p, p2pk=self.p2pk,
-                 uix=self.coarseUix, invix=self.coarseInvix):
+                 uix=self.coarseUix, invix=self.coarseInvix,
+                 pAll=self.p,
+                 allStates=self.allStates):
             # round eps step to machine precision
             mxix = np.abs(dJ[i]).argmax()
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
             epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
             
             # forward step
-            newhJ = hJ + dJ[i]*epsdJ_
-            modp = p2pk(ising.p(newhJ), uix, invix)
+            #newhJ = hJ + dJ[i]*epsdJ_
+            correction = calc_e(allStates, dJ[i]*epsdJ_)
+            modp = p2pk(pAll*(1+correction.dot(pAll)-correction), uix, invix)
             dklplus = 2*(log2p-np.log2(modp)).dot(p)
             
             # backwards step
-            newhJ -= 2*dJ[i]*epsdJ_
-            modp = p2pk(ising.p(newhJ), uix, invix)
+            modp = p2pk(pAll*(1-correction.dot(pAll)+correction), uix, invix)
             dklminus = 2*(log2p-np.log2(modp)).dot(p)
             
             return (dklplus+dklminus) / 2 / epsdJ_**2
@@ -1612,7 +1617,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_potts'%n)
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
-        self.allStates = np.vstack(list(xpotts_states(n, kStates))).astype(np.int8)
+        self.allStates = np.vstack(list(xpotts_states(n, kStates))).astype(int)
         kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
                           self.allStates))
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
