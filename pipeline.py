@@ -411,6 +411,8 @@ def _degree_collective(fisherResultValue,
     Returns
     -------
     float
+        If 'val' option, then the entropy of the sum of the columns is returned.
+        If 'vec' option, then the fractional weights per column are returned.
     """
     
     n = fisherResultValue[0].n

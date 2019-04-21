@@ -596,7 +596,7 @@ class IsingFisherCurvatureMethod1():
             modp = p2pk(pAll*(1-correction.dot(pAll)+correction), uix, invix)
             dklminus = 2*(log2p-np.log2(modp)).dot(p)
             
-            return (dklplus+dklminus) / 2 / epsdJ_**2
+            return (dklplus+dklminus) / (2 * epsdJ_**2)
 
         # theta_j+del) to second order.
         def off_diag(args, hJ=hJ, ising=self.ising, p2pk=self.p2pk, dJ=dJ, p=p,
@@ -607,7 +607,7 @@ class IsingFisherCurvatureMethod1():
             # round eps step to machine precision
             mxix = np.abs(dJ[i]+dJ[j]).argmax()
             newhJ = hJ[mxix] + (dJ[i]+dJ[j])[mxix]*epsdJ
-            epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]
+            epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]/2
             
             # forward step
             correction = calc_all_energies(n, (dJ[i]+dJ[j])*epsdJ_)
@@ -618,7 +618,7 @@ class IsingFisherCurvatureMethod1():
             modp = p2pk(pAll*(1-correction.dot(pAll)+correction), uix, invix)
             dklminus = (log2p-np.log2(modp)).dot(p)
 
-            return (dklplus+dklminus) / 2 / epsdJ_**2
+            return (dklplus+dklminus) / (2 * epsdJ_**2)
         
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
