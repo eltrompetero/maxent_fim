@@ -17,6 +17,8 @@ np.seterr(divide='ignore')
 
 
 class IsingFisherCurvatureMethod1():
+    """Perturbation of local magnetizations one at a time.
+    """
     def __init__(self, n, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
         Parameters
@@ -108,11 +110,11 @@ class IsingFisherCurvatureMethod1():
         if perturb_up:
             for i_,eps_ in zip(i,eps):
                 # observables after perturbations
-                self._observables_after_perturbation_up(siNew, sisjNew, i_, eps_)
+                jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
         else:
             for i_,eps_ in zip(i,eps):
                 # observables after perturbations
-                self._observables_after_perturbation_down(siNew, sisjNew, i_, eps_)
+                jit_observables_after_perturbation_minus_field(n, siNew, sisjNew, i_, eps_)
 
         return np.concatenate((siNew, sisjNew))
    
@@ -167,7 +169,7 @@ class IsingFisherCurvatureMethod1():
         ----------
         iStar : int
         eps : float, None
-        perturb_up : bool, True
+        perturb_up : bool, False
 
         Returns
         -------
@@ -223,6 +225,7 @@ class IsingFisherCurvatureMethod1():
             (A,C)
         """
         
+        perturb_up = False
         eps = eps or self.eps
         n = self.n
         if p is None:
@@ -280,7 +283,7 @@ class IsingFisherCurvatureMethod1():
             # print if relative change is more than .1% for any entry
             relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
             if (relerr>-3).any():
-                print("Unstable solution. Recommend shrinking eps. %E"%(10**relerr))
+                print("Unstable solution. Recommend shrinking eps. %E"%(10**relerr.max()))
                    
         if np.linalg.cond(A)>1e15:
             warn("A is badly conditioned.")
@@ -1037,6 +1040,8 @@ class IsingFisherCurvatureMethod1():
 
 
 class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
+    """Perturbation to increase symmetry between pairs of spins.
+    """
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
         dJ = np.zeros((self.n*(self.n-1), self.n+(self.n-1)*self.n//2))
@@ -1533,7 +1538,7 @@ class IsingFisherCurvatureMethod3(IsingFisherCurvatureMethod1):
 
 
 class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
-    """Tweaked for ternary states like C. elegans."""
+    """Method2 tweaked for ternary states like C. elegans."""
     def __init__(self, n, kStates, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
         Parameters
@@ -1833,84 +1838,28 @@ def jit_observables_after_perturbation_minus(n, si, sisj, i, a, eps):
             sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + osisj[jaix])
 
 @njit
-def jit_observables_after_perturbation_plus_field(n, si, sisj, i, a, eps):
-    si[i] = (1-eps)*si[i] + eps
-
-    for j in delete(list(range(n)),i):
-        if i<j:
-            ijix = unravel_index((i,j),n)
-        else:
-            ijix = unravel_index((j,i),n)
-
-        if j==a:
-            sisj[ijix] = (1-eps)*sisj[ijix] + eps
-        else:
-            if j<a:
-                jaix = unravel_index((j,a),n)
-            else:
-                jaix = unravel_index((a,j),n)
-            sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
-
-@njit
-def jit_observables_after_perturbation_minus_field(n, si, sisj, i, a, eps):
-    si[i] = (1-eps)*si[i] - eps
-
-    for j in delete(list(range(n)),i):
-        if i<j:
-            ijix = unravel_index((i,j),n)
-        else:
-            ijix = unravel_index((j,i),n)
-
-        if j==a:
-            sisj[ijix] = (1-eps)*sisj[ijix] - eps
-        else:
-            if j<a:
-                jaix = unravel_index((j,a),n)
-            else:
-                jaix = unravel_index((a,j),n)
-            sisj[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
-
-@njit
 def jit_observables_after_perturbation_plus_field(n, si, sisj, i, eps):
-    """        
-    Parameters
-    ----------
-    si : ndarray
-    sisj : ndarray
-    i : int
-    eps : float
-    """
-
-    # observables after perturbations
-    si[i]  = (1-eps)*si[i] + eps
+    si[i] = si[i] - eps*(si[i] - 1)
 
     for j in delete(list(range(n)),i):
         if i<j:
             ijix = unravel_index((i,j),n)
         else:
             ijix = unravel_index((j,i),n)
-        sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
+
+        sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] - si[j])
 
 @njit
 def jit_observables_after_perturbation_minus_field(n, si, sisj, i, eps):
-    """        
-    Parameters
-    ----------
-    si : ndarray
-    sisj : ndarray
-    i : int
-    eps : float
-    """
-
-    # observables after perturbations
-    si[i]  = (1-eps)*si[i] - eps
+    si[i] = si[i] - eps*(si[i] + 1)
 
     for j in delete(list(range(n)),i):
         if i<j:
             ijix = unravel_index((i,j),n)
         else:
             ijix = unravel_index((j,i),n)
-        sisj[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
+
+        sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + si[j])
 
 @njit
 def delete(X, i):
