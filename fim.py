@@ -77,8 +77,7 @@ class IsingFisherCurvatureMethod1():
         return dJ
 
     def observables_after_perturbation(self, i,
-                                       eps=None,
-                                       perturb_up=False):
+                                       eps=None):
         """Perturb all specified spin by forcing it point upwards with probability eps/2.
         Perturb the corresponding mean and the correlations with other spins j.
         
@@ -86,13 +85,13 @@ class IsingFisherCurvatureMethod1():
         ----------
         i : int
         eps : float, None
-        perturb_up : bool, True
-            If True, make the specified spin point up +1. If False, make it point down -1.
 
         Returns
         -------
         ndarray
             Observables <si> and <sisj> after perturbation.
+        bool, True
+            If True, made the specified spin point up +1. If False, made it point down -1.
         """
         
         if not hasattr(i,'__len__'):
@@ -107,16 +106,15 @@ class IsingFisherCurvatureMethod1():
         siNew = si.copy()
         sisjNew = sisj.copy()
         
-        if perturb_up:
-            for i_,eps_ in zip(i,eps):
-                # observables after perturbations
-                jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
-        else:
-            for i_,eps_ in zip(i,eps):
-                # observables after perturbations
-                jit_observables_after_perturbation_minus_field(n, siNew, sisjNew, i_, eps_)
+        #for i_,eps_ in zip(i,eps):
+        #    # observables after perturbations
+        #    jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
+        for i_,eps_ in zip(i,eps):
+            # observables after perturbations
+            jit_observables_after_perturbation_minus_field(n, siNew, sisjNew, i_, eps_)
+        perturb_up = False
 
-        return np.concatenate((siNew, sisjNew))
+        return np.concatenate((siNew, sisjNew)), perturb_up
    
     def _observables_after_perturbation_up(self, si, sisj, i, eps):
         """        
@@ -162,7 +160,7 @@ class IsingFisherCurvatureMethod1():
                 ijix = unravel_index((j,i),n)
             sisj[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
 
-    def _solve_linearized_perturbation(self, iStar, eps=None, perturb_up=False):
+    def _solve_linearized_perturbation(self, iStar, eps=None):
         """Consider a perturbation to a single spin.
         
         Parameters
@@ -183,16 +181,14 @@ class IsingFisherCurvatureMethod1():
         p = self.p
         if eps is None:
             eps = self.eps
-        C = self.observables_after_perturbation(iStar, eps=eps, perturb_up=perturb_up)
+        C, perturb_up = self.observables_after_perturbation(iStar, eps=eps)
 
         solver = Enumerate(n, calc_observables_multipliers=self.ising.calc_observables)
         if perturb_up:
             return (solver.solve(C)-self.hJ)/eps
 
         # account for sign of perturbation on fields
-        dJ = (solver.solve(C)-self.hJ)/eps
-        if not perturb_up:
-            dJ *= -1
+        dJ = -(solver.solve(C)-self.hJ)/eps
         return dJ
 
     def solve_linearized_perturbation(self, iStar,
@@ -237,7 +233,7 @@ class IsingFisherCurvatureMethod1():
             si = sisj[:n]
             sisj = sisj[n:]
         A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2))
-        C = self.observables_after_perturbation(iStar, eps=eps, perturb_up=False)
+        C, perturb_up = self.observables_after_perturbation(iStar, eps=eps)
         
         # mean constraints
         for i in range(n):
@@ -271,7 +267,8 @@ class IsingFisherCurvatureMethod1():
         else:
             dJ = np.linalg.lstsq(A,C)[0]/eps
         # Since default is to perturb down
-        dJ *= -1
+        if not perturb_up:
+            dJ *= -1
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
@@ -1037,6 +1034,156 @@ class IsingFisherCurvatureMethod1():
                       precompute=False)
         self.dJ = state_dict['dJ']
 #end IsingFisherCurvatureMethod1
+
+
+class IsingFisherCurvatureMethod1a(IsingFisherCurvatureMethod1):
+    """Perturbation of local magnetizations one at a time keeping fixed the amount of
+    perturbation (this is akin to replacing only states that are contrary to the objective
+    direction.
+    """
+    def observables_after_perturbation(self, i, eps=None):
+        """Perturb all specified spin by forcing its magnetization by eps.
+        
+        Parameters
+        ----------
+        i : int
+        eps : float, None
+
+        Returns
+        -------
+        ndarray
+            Observables <si> and <sisj> after perturbation.
+        bool
+            If True, made the specified spin point up +1. If False, made it point down -1.
+        """
+        
+        if not hasattr(i,'__len__'):
+            i = (i,)
+        if not hasattr(eps,'__len__'):
+            eps = eps or self.eps
+            eps = [eps]*len(i)
+        n = self.n
+        si = self.sisj[:n]
+        sisj = self.sisj[n:]
+        
+        # try perturbing up first
+        siNew = si.copy()
+        sisjNew = sisj.copy()
+        perturb_up = True
+        for i_,eps_ in zip(i,eps):
+            # observables after perturbations
+            jit_observables_after_perturbation_plus_mean(n, siNew, sisjNew, i_, eps_)
+        # if we've surpassed the allowed values for correlations then try perturbing down
+        # there is no check to make sure this perturbation doesn't lead to impossible values
+        if (np.abs(siNew)>1).any() or (np.abs(sisjNew)>1).any():
+            siNew = si.copy()
+            sisjNew = sisj.copy()
+            perturb_up = False
+            for i_,eps_ in zip(i,eps):
+                # observables after perturbations
+                jit_observables_after_perturbation_minus_mean(n, siNew, sisjNew, i_, eps_)
+
+        return np.concatenate((siNew, sisjNew)), perturb_up
+   
+    def solve_linearized_perturbation(self, iStar,
+                                      p=None,
+                                      sisj=None,
+                                      full_output=False,
+                                      eps=None,
+                                      check_stability=True,
+                                      method='inverse'):
+        """Consider a perturbation to a single spin.
+        
+        Parameters
+        ----------
+        iStar : int
+        p : ndarray, None
+        sisj : ndarray, None
+        full_output : bool, False
+        eps : float, None
+        check_stability : bool, False
+        method : str, 'inverse'
+            Can be 'inverse' or 'lstsq'
+
+        Returns
+        -------
+        ndarray
+            dJ
+        int
+            Error flag. Returns 0 by default. 1 means badly conditioned matrix A.
+        tuple (optional)
+            (A,C)
+        """
+        
+        eps = eps or self.eps
+        n = self.n
+        if p is None:
+            p = self.p
+        if sisj is None:
+            si = self.sisj[:n]
+            sisj = self.sisj[n:]
+        else:
+            si = sisj[:n]
+            sisj = sisj[n:]
+        A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2))
+        C, perturb_up = self.observables_after_perturbation(iStar, eps=eps)
+        
+        # mean constraints
+        for i in range(n):
+            for k in range(n):
+                if i==k:
+                    A[i,i] = 1 - C[i]*si[i]
+                else:
+                    if i<k:
+                        ikix = unravel_index((i,k),n)
+                    else:
+                        ikix = unravel_index((k,i),n)
+                    A[i,k] = sisj[ikix] - C[i]*si[k]
+
+            for klcount,(k,l) in enumerate(combinations(range(n),2)):
+                A[i,n+klcount] = self.triplets[(i,k,l)].dot(p) - C[i]*sisj[klcount]
+        
+        # pair constraints
+        for ijcount,(i,j) in enumerate(combinations(range(n),2)):
+            for k in range(n):
+                A[n+ijcount,k] = self.triplets[(i,j,k)].dot(p) - C[n+ijcount]*si[k]
+            for klcount,(k,l) in enumerate(combinations(range(n),2)):
+                A[n+ijcount,n+klcount] = self.quartets[(i,j,k,l)].dot(p) - C[n+ijcount]*sisj[klcount]
+    
+        C -= self.sisj
+        if method=='inverse':
+            # factor out linear dependence on eps
+            try:
+                dJ = np.linalg.solve(A,C)/eps
+            except np.linalg.LinAlgError:
+                dJ = np.zeros(C.size)+np.nan
+        else:
+            dJ = np.linalg.lstsq(A,C)[0]/eps
+        # Since default is to perturb down
+        if not perturb_up:
+            dJ *= -1
+
+        if check_stability:
+            # double epsilon and make sure solution does not change by a large amount
+            dJtwiceEps, errflag = self.solve_linearized_perturbation(iStar,
+                                                                     eps=eps/2,
+                                                                     check_stability=False,
+                                                                     p=p,
+                                                                     sisj=np.concatenate((si,sisj)))
+            # print if relative change is more than .1% for any entry
+            relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
+            if (relerr>-3).any():
+                print("Unstable solution. Recommend shrinking eps. %E"%(10**relerr.max()))
+                   
+        if np.linalg.cond(A)>1e15:
+            warn("A is badly conditioned.")
+            errflag = 1
+        else:
+            errflag = 0
+        if full_output:
+            return dJ, errflag, (A, C)
+        return dJ, errflag
+#end IsingFisherCurvatureMethod1a
 
 
 class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
@@ -1860,6 +2007,30 @@ def jit_observables_after_perturbation_minus_field(n, si, sisj, i, eps):
             ijix = unravel_index((j,i),n)
 
         sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + si[j])
+
+@njit
+def jit_observables_after_perturbation_plus_mean(n, si, sisj, i, eps):
+    si[i] = si[i] + eps
+
+    for j in delete(list(range(n)),i):
+        if i<j:
+            ijix = unravel_index((i,j),n)
+        else:
+            ijix = unravel_index((j,i),n)
+
+        sisj[ijix] = sisj[ijix] + eps*si[j]
+
+@njit
+def jit_observables_after_perturbation_minus_mean(n, si, sisj, i, eps):
+    si[i] = si[i] - eps
+
+    for j in delete(list(range(n)),i):
+        if i<j:
+            ijix = unravel_index((i,j),n)
+        else:
+            ijix = unravel_index((j,i),n)
+
+        sisj[ijix] = sisj[ijix] - eps*si[j]
 
 @njit
 def delete(X, i):
