@@ -225,6 +225,7 @@ class IsingFisherCurvatureMethod1():
             (A,C)
         """
         
+        perturb_up = False
         eps = eps or self.eps
         n = self.n
         if p is None:
@@ -282,7 +283,7 @@ class IsingFisherCurvatureMethod1():
             # print if relative change is more than .1% for any entry
             relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
             if (relerr>-3).any():
-                print("Unstable solution. Recommend shrinking eps. %E"%(10**relerr))
+                print("Unstable solution. Recommend shrinking eps. %E"%(10**relerr.max()))
                    
         if np.linalg.cond(A)>1e15:
             warn("A is badly conditioned.")
@@ -1850,7 +1851,7 @@ def jit_observables_after_perturbation_plus_field(n, si, sisj, i, eps):
 
 @njit
 def jit_observables_after_perturbation_minus_field(n, si, sisj, i, eps):
-    si[i] = (1-eps)*si[i] - eps
+    si[i] = si[i] - eps*(si[i] + 1)
 
     for j in delete(list(range(n)),i):
         if i<j:

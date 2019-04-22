@@ -235,7 +235,9 @@ def calculate_fisher_on_pk(data, system, method,
             n = len(data[k][0])
             hJ = data[k][2]
             
-            if fi_method==2:
+            if fi_method==1:
+                isingdkl = IsingFisherCurvatureMethod1(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+            elif fi_method==2:
                 isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
             elif fi_method==3:
                 isingdkl = IsingFisherCurvatureMethod3(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
