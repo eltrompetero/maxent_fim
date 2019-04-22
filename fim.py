@@ -988,6 +988,10 @@ class IsingFisherCurvatureMethod1():
         return minimize(f, hJ0, options={'eps':1e-5, 'ftol':1e-4}, bounds=[(-1,1)]*len(hJ0))
 
     def __get_state__(self):
+        # always close multiprocess pool when pickling
+        if 'pool' in self.__dict__.keys():
+            self.pool.close()
+
         return {'n':self.n,
                 'h':self.hJ[:self.n],
                 'J':self.hJ[self.n:],
