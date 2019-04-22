@@ -108,11 +108,11 @@ class IsingFisherCurvatureMethod1():
         if perturb_up:
             for i_,eps_ in zip(i,eps):
                 # observables after perturbations
-                self._observables_after_perturbation_up(siNew, sisjNew, i_, eps_)
+                jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
         else:
             for i_,eps_ in zip(i,eps):
                 # observables after perturbations
-                self._observables_after_perturbation_down(siNew, sisjNew, i_, eps_)
+                jit_observables_after_perturbation_minus_field(n, siNew, sisjNew, i_, eps_)
 
         return np.concatenate((siNew, sisjNew))
    
@@ -1833,8 +1833,8 @@ def jit_observables_after_perturbation_minus(n, si, sisj, i, a, eps):
             sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + osisj[jaix])
 
 @njit
-def jit_observables_after_perturbation_plus_field(n, si, sisj, i, a, eps):
-    si[i] = (1-eps)*si[i] + eps
+def jit_observables_after_perturbation_plus_field(n, si, sisj, i, eps):
+    si[i] = si[i] - eps*(si[i] - 1)
 
     for j in delete(list(range(n)),i):
         if i<j:
@@ -1842,17 +1842,10 @@ def jit_observables_after_perturbation_plus_field(n, si, sisj, i, a, eps):
         else:
             ijix = unravel_index((j,i),n)
 
-        if j==a:
-            sisj[ijix] = (1-eps)*sisj[ijix] + eps
-        else:
-            if j<a:
-                jaix = unravel_index((j,a),n)
-            else:
-                jaix = unravel_index((a,j),n)
-            sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
+        sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] - si[j])
 
 @njit
-def jit_observables_after_perturbation_minus_field(n, si, sisj, i, a, eps):
+def jit_observables_after_perturbation_minus_field(n, si, sisj, i, eps):
     si[i] = (1-eps)*si[i] - eps
 
     for j in delete(list(range(n)),i):
@@ -1861,56 +1854,7 @@ def jit_observables_after_perturbation_minus_field(n, si, sisj, i, a, eps):
         else:
             ijix = unravel_index((j,i),n)
 
-        if j==a:
-            sisj[ijix] = (1-eps)*sisj[ijix] - eps
-        else:
-            if j<a:
-                jaix = unravel_index((j,a),n)
-            else:
-                jaix = unravel_index((a,j),n)
-            sisj[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
-
-@njit
-def jit_observables_after_perturbation_plus_field(n, si, sisj, i, eps):
-    """        
-    Parameters
-    ----------
-    si : ndarray
-    sisj : ndarray
-    i : int
-    eps : float
-    """
-
-    # observables after perturbations
-    si[i]  = (1-eps)*si[i] + eps
-
-    for j in delete(list(range(n)),i):
-        if i<j:
-            ijix = unravel_index((i,j),n)
-        else:
-            ijix = unravel_index((j,i),n)
-        sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
-
-@njit
-def jit_observables_after_perturbation_minus_field(n, si, sisj, i, eps):
-    """        
-    Parameters
-    ----------
-    si : ndarray
-    sisj : ndarray
-    i : int
-    eps : float
-    """
-
-    # observables after perturbations
-    si[i]  = (1-eps)*si[i] - eps
-
-    for j in delete(list(range(n)),i):
-        if i<j:
-            ijix = unravel_index((i,j),n)
-        else:
-            ijix = unravel_index((j,i),n)
-        sisj[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
+        sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + si[j])
 
 @njit
 def delete(X, i):
