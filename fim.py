@@ -586,6 +586,7 @@ class IsingFisherCurvatureMethod1():
             mxix = np.abs(dJ[i]).argmax()
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
             epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
+            if np.isnan(epsdJ_): return 0.
             
             # forward step
             correction = calc_all_energies(n, dJ[i]*epsdJ_)
@@ -608,6 +609,7 @@ class IsingFisherCurvatureMethod1():
             mxix = np.abs(dJ[i]+dJ[j]).argmax()
             newhJ = hJ[mxix] + (dJ[i]+dJ[j])[mxix]*epsdJ
             epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]/2
+            if np.isnan(epsdJ_): return 0.
             
             # forward step
             correction = calc_all_energies(n, (dJ[i]+dJ[j])*epsdJ_)
@@ -728,7 +730,8 @@ class IsingFisherCurvatureMethod1():
             # round epsdJ_ to machine precision
             mxix = np.argmax(np.abs(dJ[i]))
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
-            epsdJ_ = (newhJ - hJ[mxix]) / dJ[i][mxix]
+            epsdJ_ = (newhJ - hJ[mxix]) / dJ[i][mxix] / 2
+            if np.isnan(epsdJ_): return 0.
 
             newhJ = hJ + dJ[i]*epsdJ_
             modp = p2pk(ising.p(newhJ), uix, invix)
@@ -754,7 +757,8 @@ class IsingFisherCurvatureMethod1():
             # round epsdJ_ to machine precision
             mxix = np.argmax(np.abs(dJ[i]+dJ[j]))
             newhJ = hJ[mxix] + (dJ[i][mxix]+dJ[j][mxix])*epsdJ
-            epsdJ_ = (newhJ - hJ[mxix]) / (dJ[i][mxix]+dJ[j][mxix]) 
+            epsdJ_ = (newhJ - hJ[mxix]) / (dJ[i][mxix]+dJ[j][mxix]) / 2
+            if np.isnan(epsdJ_): return 0.
 
             newhJ = hJ + (dJ[i]+dJ[j])*epsdJ_
             modp = p2pk(ising.p(newhJ), uix, invix)
@@ -1020,7 +1024,7 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
     def _observables_after_perturbation_up(si, sisj, i, a, eps):
         n = len(si)
 
-        si[i] = (1-eps)*si[i] + eps*si[a]
+        si[i] = 1 - eps*(si[i] - si[a])
 
         for j in delete(list(range(n)),i):
             if i<j:
@@ -1029,19 +1033,19 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
                 ijix = unravel_index((j,i),n)
 
             if j==a:
-                sisj[ijix] = (1-eps)*sisj[ijix] + eps
+                sisj[ijix] = 1 - eps*(sisj[ijix] - 1)
             else:
                 if j<a:
                     jaix = unravel_index((j,a),n)
                 else:
                     jaix = unravel_index((a,j),n)
-                sisj[ijix] = (1-eps)*sisj[ijix] + eps*sisj[jaix]
+                sisj[ijix] = 1 - eps*(sisj[ijix] - sisj[jaix])
     
     @staticmethod
     def _observables_after_perturbation_down(si, sisj, i, a, eps):
         n = len(si)
 
-        si[i] = (1-eps)*si[i] - eps*si[a]
+        si[i] = 1 - eps*(si[i] + si[a])
 
         for j in delete(list(range(n)),i):
             if i<j:
@@ -1050,15 +1054,15 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
                 ijix = unravel_index((j,i),n)
 
             if j==a:
-                sisj[ijix] = (1-eps)*sisj[ijix] - eps
+                sisj[ijix] = 1 - eps*(sisj[ijix] + 1)
             else:
                 if j<a:
                     jaix = unravel_index((j,a),n)
                 else:
                     jaix = unravel_index((a,j),n)
-                sisj[ijix] = (1-eps)*sisj[ijix] - eps*sisj[jaix]
+                sisj[ijix] = 1 - eps*(sisj[ijix] + sisj[jaix])
 
-    def observables_after_perturbation(self, i, a, eps=None, perturb_up=False):
+    def observables_after_perturbation(self, i, a, eps=None):
         """Make spin index i more like spin a by eps. Perturb the corresponding mean and
         the correlations with other spins j.
         
@@ -1069,7 +1073,6 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         a : int
             Spin to mimic.
         eps : float, None
-        perturb_up : bool, False
 
         Returns
         -------
@@ -1094,12 +1097,8 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         siNew = si.copy()
         sisjNew = sisj.copy()
         
-        if perturb_up:
-            for i_,a_,eps_ in zip(i,a,eps):
-                jit_observables_after_perturbation_plus(n, siNew, sisjNew, i_, a_, eps_)
-        else:
-            for i_,a_,eps_ in zip(i,a,eps):
-                jit_observables_after_perturbation_minus(n, siNew, sisjNew, i_, a_, eps_)
+        for i_,a_,eps_ in zip(i,a,eps):
+            jit_observables_after_perturbation_plus(n, siNew, sisjNew, i_, a_, eps_)
 
         return np.concatenate((siNew, sisjNew))
     
@@ -1854,7 +1853,8 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
 # ============= #
 @njit
 def jit_observables_after_perturbation_plus(n, si, sisj, i, a, eps):
-    si[i] = (1-eps)*si[i] + eps*si[a]
+    osisj = sisj.copy()
+    si[i] = si[i] - eps*(si[i] - si[a])
 
     for j in delete(list(range(n)),i):
         if i<j:
@@ -1863,17 +1863,18 @@ def jit_observables_after_perturbation_plus(n, si, sisj, i, a, eps):
             ijix = unravel_index((j,i),n)
 
         if j==a:
-            sisj[ijix] = (1-eps)*sisj[ijix] + eps
+            sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] - 1)
         else:
             if j<a:
                 jaix = unravel_index((j,a),n)
             else:
                 jaix = unravel_index((a,j),n)
-            sisj[ijix] = (1-eps)*sisj[ijix] + eps*sisj[jaix]
+            sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] - osisj[jaix])
 
 @njit
 def jit_observables_after_perturbation_minus(n, si, sisj, i, a, eps):
-    si[i] = (1-eps)*si[i] - eps*si[a]
+    osisj = sisj.copy()
+    si[i] = si[i] - eps*(si[i] + si[a])
 
     for j in delete(list(range(n)),i):
         if i<j:
@@ -1882,13 +1883,13 @@ def jit_observables_after_perturbation_minus(n, si, sisj, i, a, eps):
             ijix = unravel_index((j,i),n)
 
         if j==a:
-            sisj[ijix] = (1-eps)*sisj[ijix] - eps
+            sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + 1)
         else:
             if j<a:
                 jaix = unravel_index((j,a),n)
             else:
                 jaix = unravel_index((a,j),n)
-            sisj[ijix] = (1-eps)*sisj[ijix] - eps*sisj[jaix]
+            sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + osisj[jaix])
 
 @njit
 def jit_observables_after_perturbation_plus_field(n, si, sisj, i, a, eps):
