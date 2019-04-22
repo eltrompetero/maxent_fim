@@ -17,6 +17,8 @@ np.seterr(divide='ignore')
 
 
 class IsingFisherCurvatureMethod1():
+    """Perturbation of local magnetizations one at a time.
+    """
     def __init__(self, n, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
         Parameters
@@ -167,7 +169,7 @@ class IsingFisherCurvatureMethod1():
         ----------
         iStar : int
         eps : float, None
-        perturb_up : bool, True
+        perturb_up : bool, False
 
         Returns
         -------
@@ -1037,6 +1039,8 @@ class IsingFisherCurvatureMethod1():
 
 
 class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
+    """Perturbation to increase symmetry between pairs of spins.
+    """
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
         dJ = np.zeros((self.n*(self.n-1), self.n+(self.n-1)*self.n//2))
@@ -1533,7 +1537,7 @@ class IsingFisherCurvatureMethod3(IsingFisherCurvatureMethod1):
 
 
 class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
-    """Tweaked for ternary states like C. elegans."""
+    """Method2 tweaked for ternary states like C. elegans."""
     def __init__(self, n, kStates, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
         Parameters
