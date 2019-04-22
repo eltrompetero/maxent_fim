@@ -461,6 +461,29 @@ class IsingFisherCurvatureMethod1():
         return pk
 
     @staticmethod
+    def logp2pk(E, uix, invix):
+        """Convert the full probability distribution to the probability of having k votes
+        in the majority.
+
+        Parameters
+        ----------
+        E : ndarray
+            Energies of each configuration.
+        uix : ndarray
+        invix : ndarray
+
+        Returns
+        -------
+        ndarray
+            The unnormalized log probability: log p(k) + logZ.
+        """
+         
+        logsumEk = np.zeros(uix.size)
+        for i in range(uix.size):
+            logsumEk[i] = fast_logsumexp(-E[invix==i])[0]
+        return logsumEk
+
+    @staticmethod
     def p2pk_high_prec(p, uix, invix):
         """Convert the full probability distribution to the probability of having k votes
         in the majority. Assuming that n is odd.
@@ -571,38 +594,40 @@ class IsingFisherCurvatureMethod1():
         n = self.n
         if hJ is None:
             hJ = self.hJ
-            p = self.p2pk(self.p, self.coarseUix, self.coarseInvix)
-        else:
-            p = self.p2pk(self.ising.p(hJ), self.coarseUix, self.coarseInvix)
-        log2p = np.log2(p)
+        E = calc_all_energies(n, hJ)
+        logZ = fast_logsumexp(-E)[0]
+        logsumEk = self.logp2pk(E, self.coarseUix, self.coarseInvix)
+        p = np.exp(logsumEk - logZ)
+        assert np.isclose(p.sum(),1)
         if dJ is None:
             dJ = self.dJ
             
         # diagonal entries
-        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p, p2pk=self.p2pk,
+        def diag(i, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
                  uix=self.coarseUix, invix=self.coarseInvix,
-                 pAll=self.p, n=self.n):
+                 n=self.n, E=E, logZ=logZ):
             # round eps step to machine precision
             mxix = np.abs(dJ[i]).argmax()
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
             epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
             if np.isnan(epsdJ_): return 0.
+            correction = calc_all_energies(n, dJ[i]*epsdJ_)
             
             # forward step
-            correction = calc_all_energies(n, dJ[i]*epsdJ_)
-            modp = p2pk(pAll*(1+correction.dot(pAll)-correction), uix, invix)
-            dklplus = 2*(log2p-np.log2(modp)).dot(p)
+            Enew = E+correction
+            modlogsumEk = logp2pk(Enew, uix, invix)
+            dklplus = 2*(logsumEk-logZ-modlogsumEk+fast_logsumexp(-Enew)[0]).dot(p)
             
             # backwards step
-            modp = p2pk(pAll*(1-correction.dot(pAll)+correction), uix, invix)
-            dklminus = 2*(log2p-np.log2(modp)).dot(p)
+            Enew = E-correction
+            modlogsumEk = logp2pk(Enew, uix, invix)
+            dklminus = 2*(logsumEk-logZ-modlogsumEk+fast_logsumexp(-Enew)[0]).dot(p)
             
-            return (dklplus+dklminus) / (2 * epsdJ_**2)
+            return (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
 
-        # theta_j+del) to second order.
-        def off_diag(args, hJ=hJ, ising=self.ising, p2pk=self.p2pk, dJ=dJ, p=p,
+        def off_diag(args, hJ=hJ, dJ=dJ, p=p,
                      uix=self.coarseUix, invix=self.coarseInvix,
-                     pAll=self.p, n=self.n):
+                     E=E, logZ=logZ, logp2pk=self.logp2pk, n=self.n):
             i, j = args
             
             # round eps step to machine precision
@@ -610,17 +635,19 @@ class IsingFisherCurvatureMethod1():
             newhJ = hJ[mxix] + (dJ[i]+dJ[j])[mxix]*epsdJ
             epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]/2
             if np.isnan(epsdJ_): return 0.
+            correction = calc_all_energies(n, (dJ[i]+dJ[j])*epsdJ_)
             
             # forward step
-            correction = calc_all_energies(n, (dJ[i]+dJ[j])*epsdJ_)
-            modp = p2pk(pAll*(1+correction.dot(pAll)-correction), uix, invix)
-            dklplus = (log2p-np.log2(modp)).dot(p)
+            Enew = E+correction
+            modlogsumEk = logp2pk(Enew, uix, invix)
+            dklplus = (logsumEk-logZ-modlogsumEk+fast_logsumexp(-Enew)[0]).dot(p)
             
             # backwards step
-            modp = p2pk(pAll*(1-correction.dot(pAll)+correction), uix, invix)
-            dklminus = (log2p-np.log2(modp)).dot(p)
+            Enew = E-correction
+            modlogsumEk = logp2pk(Enew, uix, invix)
+            dklminus = (logsumEk-logZ-modlogsumEk+fast_logsumexp(-Enew)[0]).dot(p)
 
-            return (dklplus+dklminus) / (2 * epsdJ_**2)
+            return (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
         
         hess = np.zeros((len(dJ),len(dJ)))
         if (not n_cpus is None) and n_cpus<=1:
