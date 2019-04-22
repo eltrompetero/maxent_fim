@@ -616,7 +616,7 @@ class IsingFisherCurvatureMethod1():
             # forward step
             Enew = E+correction
             modlogsumEk = logp2pk(Enew, uix, invix)
-            dklplus = 2*(logsumEk-logZ-modlogsumEk+fast_logsumexp(-Enew)[0]).dot(p)
+            dklplus = 2*(logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
             
             # backwards step
             Enew = E-correction
@@ -625,9 +625,9 @@ class IsingFisherCurvatureMethod1():
             
             return (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
 
-        def off_diag(args, hJ=hJ, dJ=dJ, p=p,
+        def off_diag(args, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
                      uix=self.coarseUix, invix=self.coarseInvix,
-                     E=E, logZ=logZ, logp2pk=self.logp2pk, n=self.n):
+                     n=self.n, E=E, logZ=logZ):
             i, j = args
             
             # round eps step to machine precision
@@ -640,12 +640,12 @@ class IsingFisherCurvatureMethod1():
             # forward step
             Enew = E+correction
             modlogsumEk = logp2pk(Enew, uix, invix)
-            dklplus = (logsumEk-logZ-modlogsumEk+fast_logsumexp(-Enew)[0]).dot(p)
+            dklplus = (logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
             
             # backwards step
             Enew = E-correction
             modlogsumEk = logp2pk(Enew, uix, invix)
-            dklminus = (logsumEk-logZ-modlogsumEk+fast_logsumexp(-Enew)[0]).dot(p)
+            dklminus = (logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
 
             return (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
         
