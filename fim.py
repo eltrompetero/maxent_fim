@@ -621,7 +621,7 @@ class IsingFisherCurvatureMethod1():
             # backwards step
             Enew = E-correction
             modlogsumEk = logp2pk(Enew, uix, invix)
-            dklminus = 2*(logsumEk-logZ-modlogsumEk+fast_logsumexp(-Enew)[0]).dot(p)
+            dklminus = 2*(logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
             
             return (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
 

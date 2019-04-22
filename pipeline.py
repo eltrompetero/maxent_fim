@@ -426,36 +426,36 @@ def _degree_collective(fisherResultValue,
         eigvec = eigvec[:,sortix]
     
     # only consider hessians that are well-estimated
-    if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
-        if method=='vec':
-            v = np.insert(eigvec[:,0], range(0,n*n,n), 0).reshape(n,n)
-            p = (v**2).sum(1)
-            p /= p.sum()
+    #if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
+    if method=='vec':
+        v = np.insert(eigvec[:,0], range(0,n*n,n), 0).reshape(n,n)
+        p = (v**2).sum(1)
+        p /= p.sum()
 
-        elif method=='val':
-            # when limited to the subspace of a single voter at a given time (how do we 
-            # optimally tweak a single voter to change the system?)
-            veigval = []
-            veigvec = []
-            
-            # iterate through subspace for each voter (assuming each voter is connected n-1 others
-            for j in range(n):
-                subspaceHess = hess[j*(n-1):(j+1)*(n-1), j*(n-1):(j+1)*(n-1)]
-                u, v = np.linalg.eig(subspaceHess)
-                sortix = np.argsort(u)[::-1]
-                u = u[sortix]
-                v = v[:,sortix]
+    elif method=='val':
+        # when limited to the subspace of a single voter at a given time (how do we 
+        # optimally tweak a single voter to change the system?)
+        veigval = []
+        veigvec = []
+        
+        # iterate through subspace for each voter (assuming each voter is connected n-1 others
+        for j in range(n):
+            subspaceHess = hess[j*(n-1):(j+1)*(n-1), j*(n-1):(j+1)*(n-1)]
+            u, v = np.linalg.eig(subspaceHess)
+            sortix = np.argsort(u)[::-1]
+            u = u[sortix]
+            v = v[:,sortix]
 
-                veigval.append(u)
-                veigvec.append(v)
-            veigval = np.vstack(veigval)[:,voter_eig_rank]
-            
-            # entropy
-            p = veigval / veigval.sum()
+            veigval.append(u)
+            veigvec.append(v)
+        veigval = np.vstack(veigval)[:,voter_eig_rank]
+        
+        # entropy
+        p = veigval / veigval.sum()
 
-        else:
-            raise Exception("Invalid choice for method.")
-        degree = -np.log2(p).dot(p) / np.log2(p.size)
     else:
-        degree = np.nan
+        raise Exception("Invalid choice for method.")
+    degree = -np.log2(p).dot(p) / np.log2(p.size)
+    #else:
+    #    degree = np.nan
     return degree
