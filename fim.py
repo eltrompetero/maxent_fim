@@ -1727,22 +1727,6 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         else:
             self.dJ = np.zeros((self.n,self.n*self.kStates+(self.n-1)*self.n//2))
 
-    def _triplets_and_quartets(self):
-        n = self.n
-        self.triplets = {}
-        self.quartets = {}
-        for i in range(n):
-            for j,k in combinations(range(n),2):
-                self.triplets[(i,j,k)] = (self.allStates[:,(j,k)]==
-                                            self.allStates[:,i][:,None]).all(1).astype(np.int8)
-        for i,j in combinations(range(n),2):
-            for k in range(n):
-                self.triplets[(i,j,k)] = (self.allStates[:,(j,k)]==
-                                            self.allStates[:,i][:,None]).all(1).astype(np.int8)
-            for k,l in combinations(range(n),2):
-                self.quartets[(i,j,k,l)] = (self.allStates[:,(j,k,l)]==
-                                                self.allStates[:,i][:,None]).all(1).astype(np.int8)
-
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
         dJ = np.zeros((self.n*(self.n-1), 3*self.n+(self.n-1)*self.n//2))
