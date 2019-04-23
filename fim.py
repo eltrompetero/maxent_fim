@@ -1698,7 +1698,6 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         precompute : bool, True
         n_cpus : int, None
         """
-        raise NotImplementedError 
         import multiprocess as mp
         from coniii.utils import xpotts_states
 
@@ -1725,7 +1724,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         if precompute:
             self.dJ = self.compute_dJ()
         else:
-            self.dJ = np.zeros((self.n,self.n*self.kStates+(self.n-1)*self.n//2))
+            self.dJ = None
 
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
@@ -1737,49 +1736,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
                 counter += 1
         return dJ
     
-    @staticmethod
-    def _observables_after_perturbation_up(si, sisj, i, a, eps):
-        n = len(si)
-
-        si[i] = (1-eps)*si[i] + eps*si[a]
-
-        for j in delete(list(range(n)),i):
-            if i<j:
-                ijix = unravel_index((i,j),n)
-            else:
-                ijix = unravel_index((j,i),n)
-
-            if j==a:
-                sisj[ijix] = (1-eps)*sisj[ijix] + eps
-            else:
-                if j<a:
-                    jaix = unravel_index((j,a),n)
-                else:
-                    jaix = unravel_index((a,j),n)
-                sisj[ijix] = (1-eps)*sisj[ijix] + eps*sisj[jaix]
-    
-    @staticmethod
-    def _observables_after_perturbation_down(si, sisj, i, a, eps):
-        n = len(si)
-
-        si[i] = (1-eps)*si[i] - eps*si[a]
-
-        for j in delete(list(range(n)),i):
-            if i<j:
-                ijix = unravel_index((i,j),n)
-            else:
-                ijix = unravel_index((j,i),n)
-
-            if j==a:
-                sisj[ijix] = (1-eps)*sisj[ijix] - eps
-            else:
-                if j<a:
-                    jaix = unravel_index((j,a),n)
-                else:
-                    jaix = unravel_index((a,j),n)
-                sisj[ijix] = (1-eps)*sisj[ijix] - eps*sisj[jaix]
-
-    def observables_after_perturbation(self, i, a, eps=None, perturb_up=False):
+    def observables_after_perturbation(self, i, a, eps=None):
         """Make spin index i more like spin a by eps. Perturb the corresponding mean and
         the correlations with other spins j.
         
@@ -1790,12 +1747,13 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         a : int
             Spin to mimic.
         eps : float, None
-        perturb_up : bool, False
 
         Returns
         -------
         ndarray
             Observables <si> and <sisj> after perturbation.
+        bool
+            perturb_up
         """
         
         if not hasattr(i,'__len__'):
@@ -1815,14 +1773,13 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         siNew = si.copy()
         sisjNew = sisj.copy()
         
-        if perturb_up:
-            for i_,a_,eps_ in zip(i,a,eps):
-                jit_observables_after_perturbation_plus(n, siNew, sisjNew, i_, a_, eps_)
-        else:
-            for i_,a_,eps_ in zip(i,a,eps):
-                jit_observables_after_perturbation_minus(n, siNew, sisjNew, i_, a_, eps_)
+        #for i_,a_,eps_ in zip(i,a,eps):
+        #    jit_observables_after_perturbation_plus(n, siNew, sisjNew, i_, a_, eps_)
+        perturb_up = False
+        for i_,a_,eps_ in zip(i,a,eps):
+            jit_observables_after_perturbation_minus(n, siNew, sisjNew, i_, a_, eps_)
 
-        return np.concatenate((siNew, sisjNew))
+        return np.concatenate((siNew, sisjNew)), perturb_up
     
     def _solve_linearized_perturbation(self, iStar, aStar,
                                       p=None,
@@ -1922,6 +1879,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
             return dJ, errflag, (A, C)
         return dJ, errflag
 #end IsingFisherCurvatureMethod4
+
 
 
 
