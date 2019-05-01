@@ -161,7 +161,7 @@ class IsingFisherCurvatureMethod1():
                 ijix = unravel_index((j,i),n)
             sisj[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
 
-    def _solve_linearized_perturbation(self, iStar, eps=None):
+    def _solve_linearized_perturbation_tester(self, iStar, eps=None):
         """Consider a perturbation to a single spin.
         
         Parameters
@@ -897,128 +897,6 @@ class IsingFisherCurvatureMethod1():
             dJ = self.dJ
         return dJ.T.dot(eigvec)
 
-    def map_trajectory(self, n_steps, step_size, eigix=0, hJ0=None, initial_direction_sign=1):
-        """Move along steepest directions of parameter step and keep a record of local
-        landscape.
-        
-        Parameters
-        ----------
-        n_steps : int
-        step_size : float
-            Amount to move in specified direction accounting for the curvature. In other
-            words, the distance moved, eps, will be step_size / eigval[eigix], such that
-            steps are smaller in steeper regions.
-        eigix : int, 0
-            eigenvector direction in which to move. Default specifies principal direction.
-        hJ0 : ndarray, None
-        initial_direction_sign : int, 1
-            -1 or 1.
-
-        Returns
-        -------
-        dJ, hess, eigval, eigvec, hJTraj
-        """
-
-        if hJ0 is None:
-            hJ0 = self.hJ
-
-        dJ = []
-        hess = []
-        eigval = []
-        eigvec = []
-        hJTraj = [hJ0]
-        flipRecord = np.ones(n_steps)
-        prevStepFlipped = False
-
-        for i in range(n_steps):
-            p = self.ising.p(hJTraj[i])
-            sisj = self.ising.calc_observables(hJTraj[i])
-
-            dJ.append(np.zeros_like(self.dJ))
-            for iStar in range(self.n):
-                dJ[i][iStar], errflag = self.solve_linearized_perturbation(iStar, p=p, sisj=sisj)
-
-            hess.append( self.dkl_curvature( hJ=hJTraj[i], dJ=dJ[i], epsdJ=1e-5) )
-            out = self.hess_eig(hess[i])
-            eigval.append(out[0])
-            eigvec.append(out[1])
-            
-            # take a step in the steepest direction while moving in the same direction as the previous step
-            #moveDirection = eigvec[i][:,eigix]
-            # weighted average direction
-            moveDirection = eigvec[i].dot(eigval[i]/np.linalg.norm(eigval[i]))
-            dJcombo = self.hess_eig2dJ(moveDirection, dJ[-1])
-            if i==0 and initial_direction_sign==-1:
-                dJcombo *= -1
-                flipRecord[0] = -1
-                prevStepFlipped = True
-            elif i>0:
-                if prevStepFlipped:
-                    if (prevMoveDirection.dot(moveDirection)<=0):
-                        prevStepFlipped = False
-                    else:
-                        dJcombo *= -1
-                        flipRecord[i] = -1
-                        prevStepFlipped = True
-                else:
-                    if (prevMoveDirection.dot(moveDirection)<=0):
-                        dJcombo *= -1
-                        flipRecord[i] = -1
-                        prevStepFlipped = True
-                    else:
-                        prevStepFlipped = False
-            prevMoveDirection = moveDirection
-                
-            #hJTraj.append(hJTraj[-1] + dJcombo*step_size/eigval[-1][eigix])
-            hJTraj.append(hJTraj[-1] + dJcombo*step_size/eigval[-1].sum())
-            print("Done with step %d."%i)
-        
-        # apply sign change to return eigenvector direction
-        for i in range(n_steps):
-            #eigvec[i][:,eigix] *= flipRecord[i]
-            eigvec[i] *= flipRecord[i]
-        return dJ, hess, eigval, eigvec, hJTraj
-
-    def find_peak_dkl_curvature(self, hJ0=None):
-        """Use scipy.optimize to find peak in DKL curvature. Regions of parameter space
-        where the matrix A describing the linearized perturbations is badly conditioned
-        will be ignored by the algorithm.
-
-        Parameters
-        ----------
-        hJ0 : ndarray, None
-
-        Returns
-        -------
-        scipy.optimize.minimize dict
-        """
-
-        from scipy.optimize import minimize
-
-        if hJ0 is None:
-            hJ0 = self.hJ
-
-        def f(hJ):
-            p = self.ising.p(hJ)
-            sisj = self.ising.calc_observables(hJ)
-            dJ = np.zeros_like(self.dJ)
-            for i in range(self.n):
-                dJ[i], errflag = self.solve_linearized_perturbation(i,
-                                                                    p=p,
-                                                                    sisj=sisj,
-                                                                    check_stability=False)
-                if errflag:
-                    return np.inf
-            try:
-                hessEigSum = np.linalg.eig(self.dkl_curvature(hJ=hJ, dJ=dJ))[0].sum()
-            except np.linalg.LinAlgError:
-                print("Problem with finding Hessian.")
-                print(hJ)
-                return np.inf
-            return -hessEigSum
-
-        return minimize(f, hJ0, options={'eps':1e-5, 'ftol':1e-4}, bounds=[(-1,1)]*len(hJ0))
-
     def __get_state__(self):
         # always close multiprocess pool when pickling
         if 'pool' in self.__dict__.keys():
@@ -1452,6 +1330,8 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
 class IsingFisherCurvatureMethod3(IsingFisherCurvatureMethod1):
     """Considering perturbations in both fields and couplings. Perturbations in means are
     asymmetric where ones in pairwise correlations are symmetric wrt {-1,1}.
+
+    NOTE: This needs to be fixed up to be made compatible with latest updates to Method 1.
     """
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
