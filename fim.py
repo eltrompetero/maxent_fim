@@ -31,13 +31,13 @@ class IsingFisherCurvatureMethod1():
         n_cpus : int, None
         """
         
-        import multiprocess as mp
 
         assert n>1 and 0<eps<.1
         self.n = n
         self.kStates = 2
         self.eps = eps
         self.hJ = np.concatenate((h,J))
+        self.n_cpus = n_cpus
 
         self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
         self.sisj = self.ising.calc_observables(self.hJ)
@@ -45,10 +45,6 @@ class IsingFisherCurvatureMethod1():
         self.allStates = bin_states(n, True).astype(int)
         self.coarseUix, self.coarseInvix = np.unique(np.abs(self.allStates.sum(1)), return_inverse=True)
         
-        if n_cpus is None or n_cpus>1:
-            n_cpus = n_cpus or mp.cpu_count()
-            self.pool = mp.Pool(n_cpus)
-
         # cache triplet and quartet products
         self._triplets_and_quartets() 
     
@@ -510,6 +506,8 @@ class IsingFisherCurvatureMethod1():
     def maj_curvature(self, *args, **kwargs):
         """Wrapper for _dkl_curvature() to find best finite diff step size."""
 
+        import multiprocess as mp
+
         if not 'epsdJ' in kwargs.keys():
             kwargs['epsdJ'] = 1e-4
         if not 'check_stability' in kwargs.keys():
@@ -526,25 +524,35 @@ class IsingFisherCurvatureMethod1():
         kwargs['full_output'] = True
         epsDecreaseFactor = 10
         
-        # start loop for finding optimal eps for Hessian with num diff
-        converged = False
-        if high_prec:
-            prevHess, errflag, preverr = self._maj_curvature_high_prec(*args, **kwargs)
-        else:
-            prevHess, errflag, preverr = self._maj_curvature(*args, **kwargs)
-        kwargs['epsdJ'] /= epsDecreaseFactor
-        while (not converged) and errflag:
+        try:
+            if self.n_cpus is None or self.n_cpus>1:
+                n_cpus = self.n_cpus or mp.cpu_count()
+                self.pool = mp.Pool(n_cpus)
+
+            # start loop for finding optimal eps for Hessian with num diff
+            converged = False
             if high_prec:
-                hess, errflag, err = self._maj_curvature_high_prec(*args, **kwargs)
+                prevHess, errflag, preverr = self._maj_curvature_high_prec(*args, **kwargs)
             else:
-                hess, errflag, err = self._maj_curvature(*args, **kwargs)
-            # end loop if error starts increasing again
-            if errflag and np.linalg.norm(err)<np.linalg.norm(preverr):
-                prevHess = hess
-                preverr = err
-                kwargs['epsdJ'] /= epsDecreaseFactor
-            else:
-                converged = True
+                prevHess, errflag, preverr = self._maj_curvature(*args, **kwargs)
+            kwargs['epsdJ'] /= epsDecreaseFactor
+            while (not converged) and errflag:
+                if high_prec:
+                    hess, errflag, err = self._maj_curvature_high_prec(*args, **kwargs)
+                else:
+                    hess, errflag, err = self._maj_curvature(*args, **kwargs)
+                # end loop if error starts increasing again
+                if errflag and np.linalg.norm(err)<np.linalg.norm(preverr):
+                    prevHess = hess
+                    preverr = err
+                    kwargs['epsdJ'] /= epsDecreaseFactor
+                else:
+                    converged = True
+        finally:
+            if self.n_cpus is None or self.n_cpus>1:
+                self.pool.close()
+                del self.pool
+
         hess = prevHess
         err = preverr
         
@@ -553,13 +561,12 @@ class IsingFisherCurvatureMethod1():
         return hess
 
     def _maj_curvature(self,
-                      hJ=None,
-                      dJ=None,
-                      epsdJ=1e-4,
-                      n_cpus=None,
-                      check_stability=False,
-                      rtol=1e-3,
-                      full_output=False):
+                       hJ=None,
+                       dJ=None,
+                       epsdJ=1e-4,
+                       check_stability=False,
+                       rtol=1e-3,
+                       full_output=False):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
         the theta_{ij} parameters replacing the spin i by sampling from j for the number
         of k votes in the majority.
@@ -575,7 +582,6 @@ class IsingFisherCurvatureMethod1():
             These can be calculuated using self.solve_linearized_perturbation().
         epsdJ : float, 1e-4
             Step size for taking linear perturbation wrt parameters.
-        n_cpus : int, None
         check_stability : bool, False
         rtol : float, 1e-3
             Relative tolerance for each entry in Hessian when checking stability.
@@ -602,7 +608,7 @@ class IsingFisherCurvatureMethod1():
         assert np.isclose(p.sum(),1), p.sum()
         if dJ is None:
             dJ = self.dJ
-            
+        
         # diagonal entries
         def diag(i, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
                  uix=self.coarseUix, invix=self.coarseInvix,
@@ -1588,6 +1594,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         self.eps = eps
         assert (h[:n]==0).all()
         self.hJ = np.concatenate((h,J))
+        self.n_cpus = n_cpus
 
         self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_potts'%n)
         self.sisj = self.ising.calc_observables(self.hJ)
@@ -1597,9 +1604,6 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
                           self.allStates))
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         
-        n_cpus = n_cpus or mp.cpu_count()
-        self.pool = mp.Pool(n_cpus)
-
         # cache triplet and quartet products
         self._triplets_and_quartets() 
     
