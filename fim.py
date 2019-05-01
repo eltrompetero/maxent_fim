@@ -35,6 +35,7 @@ class IsingFisherCurvatureMethod1():
 
         assert n>1 and 0<eps<.1
         self.n = n
+        self.kStates = 2
         self.eps = eps
         self.hJ = np.concatenate((h,J))
 
@@ -454,8 +455,8 @@ class IsingFisherCurvatureMethod1():
             p(k)
         """
          
-        pk = np.zeros(uix.size)
-        for i in range(uix.size):
+        pk = np.zeros(len(uix))
+        for i in range(len(uix)):
             pk[i] = p[invix==i].sum()
 
         return pk
@@ -478,8 +479,8 @@ class IsingFisherCurvatureMethod1():
             The unnormalized log probability: log p(k) + logZ.
         """
          
-        logsumEk = np.zeros(uix.size)
-        for i in range(uix.size):
+        logsumEk = np.zeros(len(uix))
+        for i in range(len(uix)):
             logsumEk[i] = fast_logsumexp(-E[invix==i])[0]
         return logsumEk
 
@@ -594,24 +595,24 @@ class IsingFisherCurvatureMethod1():
         n = self.n
         if hJ is None:
             hJ = self.hJ
-        E = calc_all_energies(n, hJ)
+        E = calc_all_energies(n, self.kStates, hJ)
         logZ = fast_logsumexp(-E)[0]
         logsumEk = self.logp2pk(E, self.coarseUix, self.coarseInvix)
         p = np.exp(logsumEk - logZ)
-        assert np.isclose(p.sum(),1)
+        assert np.isclose(p.sum(),1), p.sum()
         if dJ is None:
             dJ = self.dJ
             
         # diagonal entries
         def diag(i, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
                  uix=self.coarseUix, invix=self.coarseInvix,
-                 n=self.n, E=E, logZ=logZ):
+                 n=self.n, E=E, logZ=logZ, kStates=self.kStates):
             # round eps step to machine precision
             mxix = np.abs(dJ[i]).argmax()
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
             epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
             if np.isnan(epsdJ_): return 0.
-            correction = calc_all_energies(n, dJ[i]*epsdJ_)
+            correction = calc_all_energies(n, kStates, dJ[i]*epsdJ_)
             
             # forward step
             Enew = E+correction
@@ -627,7 +628,7 @@ class IsingFisherCurvatureMethod1():
 
         def off_diag(args, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
                      uix=self.coarseUix, invix=self.coarseInvix,
-                     n=self.n, E=E, logZ=logZ):
+                     n=self.n, E=E, logZ=logZ, kStates=self.kStates):
             i, j = args
             
             # round eps step to machine precision
@@ -635,7 +636,7 @@ class IsingFisherCurvatureMethod1():
             newhJ = hJ[mxix] + (dJ[i]+dJ[j])[mxix]*epsdJ
             epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]/2
             if np.isnan(epsdJ_): return 0.
-            correction = calc_all_energies(n, (dJ[i]+dJ[j])*epsdJ_)
+            correction = calc_all_energies(n, kStates, (dJ[i]+dJ[j])*epsdJ_)
             
             # forward step
             Enew = E+correction
@@ -1075,13 +1076,13 @@ class IsingFisherCurvatureMethod1a(IsingFisherCurvatureMethod1):
             jit_observables_after_perturbation_plus_mean(n, siNew, sisjNew, i_, eps_)
         # if we've surpassed the allowed values for correlations then try perturbing down
         # there is no check to make sure this perturbation doesn't lead to impossible values
-        if (np.abs(siNew)>1).any() or (np.abs(sisjNew)>1).any():
-            siNew = si.copy()
-            sisjNew = sisj.copy()
-            perturb_up = False
-            for i_,eps_ in zip(i,eps):
-                # observables after perturbations
-                jit_observables_after_perturbation_minus_mean(n, siNew, sisjNew, i_, eps_)
+        #if (np.abs(siNew)>1).any() or (np.abs(sisjNew)>1).any():
+        #    siNew = si.copy()
+        #    sisjNew = sisj.copy()
+        #    perturb_up = False
+        #    for i_,eps_ in zip(i,eps):
+        #        # observables after perturbations
+        #        jit_observables_after_perturbation_minus_mean(n, siNew, sisjNew, i_, eps_)
 
         return np.concatenate((siNew, sisjNew)), perturb_up
    
@@ -1281,7 +1282,7 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
 
         return np.concatenate((siNew, sisjNew))
     
-    def __solve_linearized_perturbation(self, iStar, aStar):
+    def _solve_linearized_perturbation_tester(self, iStar, aStar):
         """
         ***FOR DEBUGGING ONLY***
         
@@ -1418,7 +1419,7 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
     
         C -= self.sisj
         # factor out linear dependence on eps
-        dJ = np.linalg.solve(A,C)/-eps
+        dJ = np.linalg.solve(A,C)/eps
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
@@ -1705,6 +1706,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         self.n = n
         self.kStates = kStates
         self.eps = eps
+        assert (h[:n]==0).all()
         self.hJ = np.concatenate((h,J))
 
         self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_potts'%n)
@@ -1714,7 +1716,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
                           self.allStates))
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
-
+        
         n_cpus = n_cpus or mp.cpu_count()
         self.pool = mp.Pool(n_cpus)
 
@@ -1725,6 +1727,33 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
             self.dJ = self.compute_dJ()
         else:
             self.dJ = None
+
+    def _triplets_and_quartets(self):
+        from itertools import product
+
+        n = self.n
+        self.pairs = {}
+        self.triplets = {}
+        self.quartets = {}
+        
+        # <d_{i,gammai} * d_{j,gammaj}> where i<j
+        for i,j in combinations(range(n),2):
+            for gammai,gammaj in product(range(self.kStates),range(self.kStates)):
+                ix = (self.allStates[:,i]==gammai)&(self.allStates[:,j]==gammaj)
+                self.pairs[(gammai,i,gammaj,j)] = ix
+
+        # triplets that matter are when one spin is in a particular state and the remaining two agree with
+        # each other
+        for gamma in range(self.kStates):
+            for i in range(n):
+                for j,k in combinations(range(n),2):
+                    ix = (self.allStates[:,i]==gamma)&(self.allStates[:,j]==self.allStates[:,k])
+                    self.triplets[(gamma,i,j,k)] = ix
+        for i,j in combinations(range(n),2):
+            for k,l in combinations(range(n),2):
+                ix1 = self.allStates[:,i]==self.allStates[:,j]
+                ix2 = self.allStates[:,k]==self.allStates[:,l]
+                self.quartets[(i,j,k,l)] = ix1&ix2
 
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
@@ -1882,6 +1911,231 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
 
 
 
+class IsingFisherCurvatureMethod4a(IsingFisherCurvatureMethod4):
+    """Method4 (ternary states) with mean perturbations."""
+    def compute_dJ(self, p=None, sisj=None):
+        # precompute linear change to parameters for small perturbation
+        dJ = np.zeros((self.kStates*self.n, self.kStates*self.n+(self.n-1)*self.n//2))
+        counter = 0
+        for k in range(self.kStates):
+            for i in range(self.n):
+                dJ[counter], errflag = self.solve_linearized_perturbation(i, k, p=p, sisj=sisj)
+                counter += 1
+        return dJ
+        
+    def _observables_after_perturbation(self, si, sisj, i, gamma, eps):
+        """Make component i point in k state by eps more.
+
+        Parameters
+        ----------
+        si : ndarray
+            Mean probability of being in each k state.
+        sisj : ndarray
+            Pairwise correlations.
+        i : int
+            Spin index.
+        gamma : int
+            Objective state.
+        eps : float
+            Perturbation.
+        """
+        
+        n = self.n
+        siCopy = si.copy()
+        sisjCopy = sisj.copy()
+
+        if gamma==0:
+            si[i] = siCopy[i] + eps*(siCopy[n+i]+siCopy[2*n+i])
+            si[n+i] = (1-eps)*siCopy[n+i]
+            si[2*n+i] = (1-eps)*siCopy[2*n+i]
+        elif gamma==1:
+            si[n+i] = siCopy[n+i] + eps*(siCopy[i]+siCopy[2*n+i])
+            si[i] = (1-eps)*siCopy[i]
+            si[2*n+i] = (1-eps)*siCopy[2*n+i]
+        elif gamma==2:
+            si[2*n+i] = siCopy[2*n+i] + eps*(siCopy[i]+siCopy[n+i])
+            si[i] = (1-eps)*siCopy[i]
+            si[n+i] = (1-eps)*siCopy[n+i]
+
+        for j in range(n):
+            if i!=j:
+                if i<j:
+                    ijix = unravel_index((i, j), n)
+                    sisj[ijix] = self.pairs[(gamma,i,gamma,j)].dot(self.p)
+                    
+                    for k in range(self.kStates):
+                        if k!=gamma:
+                            sisj[ijix] += eps*self.pairs[(k,i,gamma,j)].dot(self.p)
+                            sisj[ijix] += (1-eps)*self.pairs[(k,i,k,j)].dot(self.p)
+
+                elif j<i:
+                    ijix = unravel_index((j, i), n)
+                    sisj[ijix] = self.pairs[(gamma,j,gamma,i)].dot(self.p)
+
+                    for k in range(self.kStates):
+                        if k!=gamma:
+                            sisj[ijix] += eps*self.pairs[(gamma,j,k,i)].dot(self.p)
+                            sisj[ijix] += (1-eps)*self.pairs[(k,j,k,i)].dot(self.p)
+
+    def observables_after_perturbation(self, i, k, eps=None):
+        """Make spin index i more like spin a by eps. Perturb the corresponding mean and
+        the correlations with other spins j.
+        
+        Parameters
+        ----------
+        i : int
+            Spin being perturbed.
+        k : int
+            Index of state type.
+        eps : float, None
+
+        Returns
+        -------
+        ndarray
+            Observables <si> and <sisj> after perturbation.
+        bool
+            perturb_up
+        """
+        
+        if not hasattr(i,'__len__'):
+            i = (i,)
+        if not hasattr(eps,'__len__'):
+            eps = eps or self.eps
+            eps = [eps]*len(i)
+        n = self.n
+        si = self.sisj[:n*self.kStates]
+        sisj = self.sisj[self.kStates*n:]
+
+        # observables after perturbations
+        siNew = si.copy()
+        sisjNew = sisj.copy()
+        for i_,eps_ in zip(i,eps):
+            self._observables_after_perturbation(siNew, sisjNew, i_, k, eps_)
+
+        return np.concatenate((siNew, sisjNew)), True
+    
+    def _solve_linearized_perturbation(self, iStar, kStar,
+                                       p=None,
+                                       sisj=None,
+                                       full_output=False,
+                                       eps=None,
+                                       check_stability=True,
+                                       disp=False):
+        """Consider a perturbation to a single spin to make it more likely be in a
+        particular state. Remember that this assumes that the fields for the first state
+        are set to zero to remove the translation symmetry.
+        
+        Parameters
+        ----------
+        iStar : int
+        kStar : int
+        p : ndarray, None
+        sisj : ndarray, None
+        full_output : bool, False
+        eps : float, None
+        check_stability : bool, False
+
+        Returns
+        -------
+        ndarray
+            dJ
+        int
+            Error flag. Returns 0 by default. 1 means badly conditioned matrix A.
+        tuple (optional)
+            (A,C)
+        float (optional)
+            Relative error to log10.
+        """
+        
+        eps = eps or self.eps
+        n = self.n
+        kStates = self.kStates
+        if p is None:
+            p = self.p
+        if sisj is None:
+            si = self.sisj[:n*kStates]
+            sisj = self.sisj[kStates*n:]
+        else:
+            si = sisj[:kStates*n]
+            sisj = sisj[kStates*n:]
+        # matrix that will be multiplied by the vector of canonical parameter perturbations
+        A = np.zeros((kStates*n+n*(n-1)//2, (kStates-1)*n+n*(n-1)//2))
+        C, perturb_up = self.observables_after_perturbation(iStar, kStar, eps=eps)
+        errflag = 0
+        
+        # mean constraints (remember that A does not include changes in first set of fields)
+        for i in range(kStates*n):
+            for j in range(n,kStates*n):
+                if i==j:
+                    A[i,j-n] = si[i] - C[i]*si[j]
+                # if they're in different states but the same spin
+                elif (i%n)==(j%n):
+                    A[i,j-n] = -C[i]*si[j]
+                else:
+                    if (i%n)<(j%n):
+                        A[i,j-n] = self.pairs[(i//n,i%n,j//n,j%n)].dot(p) - C[i]*si[j]
+                    else:
+                        A[i,j-n] = self.pairs[(j//n,j%n,i//n,i%n)].dot(p) - C[i]*si[j]
+
+            for klcount,(k,l) in enumerate(combinations(range(n),2)):
+                A[i,(kStates-1)*n+klcount] = self.triplets[(i//n,i%n,k,l)].dot(p) - C[i]*sisj[klcount]
+        
+        # pair constraints
+        for ijcount,(i,j) in enumerate(combinations(range(n),2)):
+            for k in range(kStates*n):
+                A[kStates*n+ijcount,k-n] = (self.triplets[(k//n,k%n,i,j)].dot(p) -
+                                            C[kStates*n+ijcount]*si[k])
+            for klcount,(k,l) in enumerate(combinations(range(n),2)):
+                A[kStates*n+ijcount,(kStates-1)*n+klcount] = (self.quartets[(i,j,k,l)].dot(p) -
+                                                              C[kStates*n+ijcount]*sisj[klcount])
+        C -= self.sisj
+        # factor out linear dependence on eps
+        dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
+        # put back in fields that we've fixed
+        dJ = np.concatenate((np.zeros(n), dJ))
+
+        if check_stability:
+            # double epsilon and make sure solution does not change by a large amount
+            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, kStar,
+                                                                      p=p,
+                                                                      sisj=np.concatenate((si,sisj)),
+                                                                      eps=eps/2,
+                                                                      check_stability=False)
+            # print if relative change is more than .1% for any entry
+            relerr = np.log10(np.abs(dJ[n:]-dJtwiceEps[n:]))-np.log10(np.abs(dJ[n:]))
+            if (relerr>-3).any():
+                if disp:
+                    print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
+                errflag = 2
+        
+        if np.linalg.cond(A)>1e15:
+            warn("A is badly conditioned.")
+            # this takes precedence over relerr over threshold
+            errflag = 1
+
+        if full_output:
+            if check_stability:
+                return dJ, errflag, (A, C), relerr
+            return dJ, errflag, (A, C)
+        return dJ, errflag
+
+    def _solve_linearized_perturbation_tester(self, iStar, gamma):
+        """
+        ***FOR DEBUGGING ONLY***
+        """
+        
+        n = self.n
+        k = self.kStates
+        p = self.p
+        C = self.observables_after_perturbation(iStar, gamma, eps=self.eps)[0]
+
+        from coniii.solvers import Enumerate
+        solver = Enumerate(n, calc_observables_multipliers=self.ising.calc_observables)
+        soln = solver.solve(C, initial_guess=self.hJ, scipy_solver_kwargs={'method':'hybr'})
+        soln[:n*k] -= np.tile(soln[:n], k)
+        return (soln - self.hJ)/(self.eps)
+#end IsingFisherCurvatureMethod4a
+
 
 # ============= #
 # JIT functions #
@@ -2036,7 +2290,7 @@ def unravel_index(ijk, n):
     return ix
 
 @njit(cache=True)
-def fast_sum(J,s):
+def fast_sum(J, s):
     """Helper function for calculating energy in calc_e(). Iterates couplings J."""
     e = 0
     k = 0
@@ -2046,13 +2300,28 @@ def fast_sum(J,s):
             k += 1
     return e
 
-@njit("float64[:](int64,float64[:])")
-def calc_all_energies(n, params):
-    """Calculate all the energies for the 2^n states in model.
+@njit(cache=True)
+def fast_sum_ternary(J, s):
+    """Helper function for calculating energy in calc_e(). Iterates couplings J."""
+    e = 0
+    k = 0
+    for i in range(len(s)-1):
+        for j in range(i+1,len(s)):
+            if s[i]==s[j]:
+                e += J[k]
+            k += 1
+    return e
+
+@njit("float64[:](int64,int64,float64[:])")
+def calc_all_energies(n, k, params):
+    """Calculate all the energies for the 2^n or 3^n states in model.
     
     Parameters
     ----------
     n : int
+        Number of spins.
+    k : int
+        Number of distinct states.
     params : ndarray
         (h,J) vector
 
@@ -2062,9 +2331,30 @@ def calc_all_energies(n, params):
         Energies of all given states.
     """
     
-    e = np.zeros(2**n)
-    for i,s in enumerate(xpotts_states(n, 2)):
-        s_ = np.array([-1 if i=='0' else 1 for i in s], dtype=np.int64)
-        e[i] = -fast_sum(params[n:], s_)
-        e[i] -= np.sum(s_*params[:n])
+    e = np.zeros(k**n)
+    s_ = np.zeros(n, dtype=np.int64)
+    if k==2:
+        for i,s in enumerate(xpotts_states(n, k)):
+            for ix in range(n):
+                if s[ix]=='0':
+                    s_[ix] = -1
+                else:
+                    s_[ix] = 1
+            e[i] -= fast_sum(params[n:], s_)
+            e[i] -= np.sum(s_*params[:n])
+    elif k==3:
+        for i,s in enumerate(xpotts_states(n, k)):
+            for ix in range(n):
+                if s[ix]=='0':
+                    s_[ix] = 0
+                elif s[ix]=='1':
+                    s_[ix] = 1
+                elif s[ix]=='2':
+                    s_[ix] = 2
+                else:
+                    raise Exception
+                # fields
+                e[i] -= params[ix+s_[ix]*n]
+            e[i] -= fast_sum_ternary(params[-n:], s_)
+    else: raise NotImplementedError
     return e
