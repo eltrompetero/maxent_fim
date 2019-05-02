@@ -921,11 +921,13 @@ class IsingFisherCurvatureMethod1():
                 'h':self.hJ[:self.n],
                 'J':self.hJ[self.n:],
                 'dJ':self.dJ,
-                'eps':self.eps}
+                'eps':self.eps,
+                'n_cpus':self.n_cpus}
 
     def __set_state__(self, state_dict):
         self.__init__(state_dict['n'], state_dict['h'], state_dict['J'], state_dict['eps'],
-                      precompute=False)
+                      precompute=False,
+                      n_cpus=state_dict.get('n_cpus',None))
         self.dJ = state_dict['dJ']
 #end IsingFisherCurvatureMethod1
 
@@ -1594,14 +1596,16 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         precompute : bool, True
         n_cpus : int, None
         """
-        import multiprocess as mp
+
         from coniii.utils import xpotts_states
 
-        assert n>1 and 0<eps<.1
+        assert n>1 and 0<eps<1e-2
+        assert (h[:n]==0).all()
+        assert h.size==kStates*n and J.size==n*(n-1)//2
+
         self.n = n
         self.kStates = kStates
         self.eps = eps
-        assert (h[:n]==0).all()
         self.hJ = np.concatenate((h,J))
         self.n_cpus = n_cpus
 
@@ -1812,14 +1816,16 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
                 'h':self.hJ[:self.n*self.kStates],
                 'J':self.hJ[self.n*self.kStates:],
                 'dJ':self.dJ,
-                'eps':self.eps}
+                'eps':self.eps,
+                'n_cpus':self.n_cpus}
 
     def __set_state__(self, state_dict):
         self.__init__(state_dict['n'], state_dict['k'],
                       h=state_dict['h'],
                       J=state_dict['J'],
                       eps=state_dict['eps'],
-                      precompute=False)
+                      precompute=False,
+                      n_cpus=state_dict.get('n_cpus',None))
         self.dJ = state_dict['dJ']
 #end IsingFisherCurvatureMethod4
 
