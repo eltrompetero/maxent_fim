@@ -11,6 +11,7 @@ from warnings import warn
 from itertools import combinations
 from coniii.enumerate import fast_logsumexp
 from coniii.utils import define_ising_helper_functions
+from multiprocess import Pool, cpu_count
 calc_e, _, _ = define_ising_helper_functions()
 np.seterr(divide='ignore')
 
@@ -523,9 +524,9 @@ class IsingFisherCurvatureMethod1():
         epsDecreaseFactor = 10
         
         try:
-            if self.n_cpus is None or self.n_cpus>1:
+            if self.n_cpus is None or self.n_cpus>0:
                 n_cpus = self.n_cpus or mp.cpu_count()
-                self.pool = mp.Pool(n_cpus)
+                self.pool = mp.Pool(n_cpus,maxtasksperchild=1)
 
             # start loop for finding optimal eps for Hessian with num diff
             converged = False
@@ -547,7 +548,7 @@ class IsingFisherCurvatureMethod1():
                 else:
                     converged = True
         finally:
-            if self.n_cpus is None or self.n_cpus>1:
+            if self.n_cpus is None or self.n_cpus>0:
                 self.pool.close()
                 del self.pool
 
@@ -666,6 +667,7 @@ class IsingFisherCurvatureMethod1():
         
         hess = np.zeros((len(dJ),len(dJ)))
         if not 'pool' in self.__dict__.keys():
+            warn("Not using processes can lead to excessive memory usage.")
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             if iprint:
@@ -678,7 +680,11 @@ class IsingFisherCurvatureMethod1():
                 print("Done with off diag.")
         else:
             hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+            if iprint:
+                print("Done with diag.")
             hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
+            if iprint:
+                print("Done with off diag.")
 
         # subtract off linear terms to get Hessian (and not just cross derivative)
         hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
@@ -1661,14 +1667,44 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
                 ix2 = allStates[:,k]==allStates[:,l]
                 self.quartets[(i,j,k,l)] = ix1&ix2
 
-    def compute_dJ(self, p=None, sisj=None):
-        # precompute linear change to parameters for small perturbation
-        dJ = np.zeros((self.n*(self.n-1), 3*self.n+(self.n-1)*self.n//2))
-        counter = 0
-        for i in range(self.n):
-            for a in np.delete(range(self.n),i):
-                dJ[counter], errflag = self.solve_linearized_perturbation(i, a, p=p, sisj=sisj)
-                counter += 1
+    def compute_dJ(self, p=None, sisj=None, n_cpus=0):
+        """Compute linear change to parameters for small perturbation.
+        
+        Parameters
+        ----------
+        p : ndarray, None
+        sisj : ndarray, None
+        n_cpus : int, 0
+            This is not any faster with multiprocessing.
+
+        Returns
+        -------
+        dJ : ndarray
+            (n_perturbation_parameters, n_maxent_parameters)
+        """
+
+        n_cpus = n_cpus or self.n_cpus
+
+        def wrapper(params):
+            i,a = params
+            return self.solve_linearized_perturbation(i, a, p=p, sisj=sisj)[0]
+
+        def args():
+            for i in range(self.n):
+                for a in np.delete(range(self.n),i):
+                    yield (i,a)
+
+        if self.n_cpus is None or self.n_cpus>0:
+            try: 
+                # don't use all the cpus since lin alg calculations will be slower
+                pool = Pool(self.n_cpus or cpu_count()//2)
+                dJ = np.vstack(( pool.map(wrapper, args()) ))
+            finally:
+                pool.close()
+        else:
+            dJ = np.zeros((self.n*(self.n-1), 3*self.n+(self.n-1)*self.n//2))
+            for counter,(i,a) in enumerate(args):
+                dJ[counter] = wrapper((i,a))
         return dJ
     
     def observables_after_perturbation(self, i, a, eps=None):
