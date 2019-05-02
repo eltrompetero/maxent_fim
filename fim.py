@@ -630,7 +630,10 @@ class IsingFisherCurvatureMethod1():
             modlogsumEk = logp2pk(Enew, uix, invix)
             dklminus = 2*(logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
             
-            return (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
+            dd = (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
+            if np.isnan(dd):
+                print('nan for diag', i, epsdJ_, dklplus, dklminus)
+            return dd
 
         def off_diag(args, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
                      uix=self.coarseUix, invix=self.coarseInvix,
@@ -654,10 +657,13 @@ class IsingFisherCurvatureMethod1():
             modlogsumEk = logp2pk(Enew, uix, invix)
             dklminus = (logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
 
-            return (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
+            dd = (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
+            if np.isnan(dd):
+                print('nan for off diag', args, epsdJ_, dklplus, dklminus)
+            return dd
         
         hess = np.zeros((len(dJ),len(dJ)))
-        if (not n_cpus is None) and n_cpus<=1:
+        if not 'pool' in self.__dict__.keys():
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             for i,j in combinations(range(len(dJ)),2):
@@ -678,7 +684,7 @@ class IsingFisherCurvatureMethod1():
         assert ~np.isinf(hess).any()
 
         if check_stability:
-            hess2 = self._maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ, n_cpus=n_cpus)
+            hess2 = self._maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
             # 4/3 ratio predicted from expansion up to 4th order term with eps/2
             err = (hess - hess2)*4/3
             if (np.abs(err/hess) > rtol).any():
@@ -2173,7 +2179,7 @@ def unravel_index(ijk, n):
     ix += ijk[-1] -ijk[-2] -1
     return ix
 
-@njit(cache=True)
+@njit
 def fast_sum(J, s):
     """Helper function for calculating energy in calc_e(). Iterates couplings J."""
     e = 0
@@ -2184,9 +2190,11 @@ def fast_sum(J, s):
             k += 1
     return e
 
-@njit(cache=True)
+@njit
 def fast_sum_ternary(J, s):
     """Helper function for calculating energy in calc_e(). Iterates couplings J."""
+    assert len(J)==(len(s)*(len(s)-1)//2)
+
     e = 0
     k = 0
     for i in range(len(s)-1):
@@ -2239,6 +2247,6 @@ def calc_all_energies(n, k, params):
                     raise Exception
                 # fields
                 e[i] -= params[ix+s_[ix]*n]
-            e[i] -= fast_sum_ternary(params[-n:], s_)
+            e[i] -= fast_sum_ternary(params[n*k:], s_)
     else: raise NotImplementedError
     return e
