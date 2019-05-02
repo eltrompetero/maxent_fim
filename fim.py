@@ -608,7 +608,9 @@ class IsingFisherCurvatureMethod1():
         assert np.isclose(p.sum(),1), p.sum()
         if dJ is None:
             dJ = self.dJ
-        
+        if iprint:
+            print('Done with preamble.')
+
         # diagonal entries
         def diag(i, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
                  uix=self.coarseUix, invix=self.coarseInvix,
@@ -631,7 +633,7 @@ class IsingFisherCurvatureMethod1():
             dklminus = 2*(logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
             
             dd = (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
-            if np.isnan(dd):
+            if iprint and np.isnan(dd):
                 print('nan for diag', i, epsdJ_, dklplus, dklminus)
             return dd
 
@@ -658,7 +660,7 @@ class IsingFisherCurvatureMethod1():
             dklminus = (logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
 
             dd = (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
-            if np.isnan(dd):
+            if iprint and np.isnan(dd):
                 print('nan for off diag', args, epsdJ_, dklplus, dklminus)
             return dd
         
@@ -666,8 +668,14 @@ class IsingFisherCurvatureMethod1():
         if not 'pool' in self.__dict__.keys():
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
+            if iprint:
+                print("Done with diag.")
             for i,j in combinations(range(len(dJ)),2):
                 hess[i,j] = off_diag((i,j))
+                if iprint:
+                    print("Done with off diag (%d,%d)."%(i,j))
+            if iprint:
+                print("Done with off diag.")
         else:
             hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
             hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
