@@ -523,9 +523,9 @@ class IsingFisherCurvatureMethod1():
         epsDecreaseFactor = 10
         
         try:
-            if self.n_cpus is None or self.n_cpus>1:
+            if self.n_cpus is None or self.n_cpus>0:
                 n_cpus = self.n_cpus or mp.cpu_count()
-                self.pool = mp.Pool(n_cpus)
+                self.pool = mp.Pool(n_cpus,maxtasksperchild=1)
 
             # start loop for finding optimal eps for Hessian with num diff
             converged = False
@@ -547,7 +547,7 @@ class IsingFisherCurvatureMethod1():
                 else:
                     converged = True
         finally:
-            if self.n_cpus is None or self.n_cpus>1:
+            if self.n_cpus is None or self.n_cpus>0:
                 self.pool.close()
                 del self.pool
 
@@ -666,6 +666,7 @@ class IsingFisherCurvatureMethod1():
         
         hess = np.zeros((len(dJ),len(dJ)))
         if not 'pool' in self.__dict__.keys():
+            warn("Not using processes can lead to excessive memory usage.")
             for i in range(len(dJ)):
                 hess[i,i] = diag(i)
             if iprint:
@@ -678,7 +679,11 @@ class IsingFisherCurvatureMethod1():
                 print("Done with off diag.")
         else:
             hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+            if iprint:
+                print("Done with diag.")
             hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
+            if iprint:
+                print("Done with off diag.")
 
         # subtract off linear terms to get Hessian (and not just cross derivative)
         hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
