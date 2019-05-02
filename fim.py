@@ -566,7 +566,8 @@ class IsingFisherCurvatureMethod1():
                        epsdJ=1e-4,
                        check_stability=False,
                        rtol=1e-3,
-                       full_output=False):
+                       full_output=False,
+                       iprint=True):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
         the theta_{ij} parameters replacing the spin i by sampling from j for the number
         of k votes in the majority.
@@ -586,6 +587,7 @@ class IsingFisherCurvatureMethod1():
         rtol : float, 1e-3
             Relative tolerance for each entry in Hessian when checking stability.
         full_output : bool, False
+        iprint : bool, True
             
         Returns
         -------
@@ -689,13 +691,15 @@ class IsingFisherCurvatureMethod1():
             err = (hess - hess2)*4/3
             if (np.abs(err/hess) > rtol).any():
                 errflag = 1
-                msg = ("Finite difference estimate has not converged with rtol=%f. "+
-                       "May want to shrink epsdJ. Norm error %f.")
-                print(msg%(rtol,np.linalg.norm(err)))
+                if iprint:
+                    msg = ("Finite difference estimate has not converged with rtol=%f. "+
+                           "May want to shrink epsdJ. Norm error %f.")
+                    print(msg%(rtol,np.linalg.norm(err)))
             else:
                 errflag = 0
-                msg = "Finite difference estimate converged with rtol=%f."
-                print(msg%rtol)
+                if iprint:
+                    msg = "Finite difference estimate converged with rtol=%f."
+                    print(msg%rtol)
         else:
             errflag = None
             err = None
