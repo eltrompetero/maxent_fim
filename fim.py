@@ -1676,6 +1676,11 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         sisj : ndarray, None
         n_cpus : int, 0
             This is not any faster with multiprocessing.
+
+        Returns
+        -------
+        dJ : ndarray
+            (n_perturbation_parameters, n_maxent_parameters)
         """
 
         n_cpus = n_cpus or self.n_cpus
