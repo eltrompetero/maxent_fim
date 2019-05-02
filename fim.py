@@ -1805,7 +1805,8 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
 
 
 class IsingFisherCurvatureMethod4a(IsingFisherCurvatureMethod4):
-    """Method4 (ternary states) with mean perturbations."""
+    """Method4 (ternary states) with mean perturbations (uniform and random substitution
+    of each spin with a each possible discrete state."""
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
         dJ = np.zeros((self.kStates*self.n, self.kStates*self.n+(self.n-1)*self.n//2))

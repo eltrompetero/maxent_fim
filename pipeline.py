@@ -245,19 +245,21 @@ def calculate_fisher_on_pk(data, system, method,
                 isingdkl = IsingFisherCurvatureMethod3(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
             elif fi_method==4:
                 isingdkl = IsingFisherCurvatureMethod4(n, 3, h=hJ[:n], J=hJ[n:], eps=1e-6)
+            elif fi_method=='4a':
+                isingdkl = IsingFisherCurvatureMethod4(n, 3, h=hJ[:n], J=hJ[n:], eps=1e-6)
             else:
                 raise Exception("Invalid method.")
             epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
             hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=epsdJ)
             
-            if allow_high_prec and errflag and np.linalg.norm(err)>2:
-                print("Trying high precision because of norm error of %f."%np.linalg.norm(err))
-                ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym_hp'%n)
-                isingdkl.ising = ising
-                hess, errflag, err = isingdkl.maj_curvature(full_output=True,
-                                                            high_prec=True,
-                                                            epsdJ=epsdJ,
-                                                            dps=high_prec_dps)
+            #if allow_high_prec and errflag and np.linalg.norm(err)>2:
+            #    print("Trying high precision because of norm error of %f."%np.linalg.norm(err))
+            #    ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym_hp'%n)
+            #    isingdkl.ising = ising
+            #    hess, errflag, err = isingdkl.maj_curvature(full_output=True,
+            #                                                high_prec=True,
+            #                                                epsdJ=epsdJ,
+            #                                                dps=high_prec_dps)
             eigval, eigvec = isingdkl.hess_eig(hess)
             
             isingdkl.pool.close()
