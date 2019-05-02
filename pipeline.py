@@ -246,7 +246,7 @@ def calculate_fisher_on_pk(data, system, method,
             elif fi_method==4:
                 isingdkl = IsingFisherCurvatureMethod4(n, 3, h=hJ[:n], J=hJ[n:], eps=1e-6)
             elif fi_method=='4a':
-                isingdkl = IsingFisherCurvatureMethod4(n, 3, h=hJ[:n], J=hJ[n:], eps=1e-6)
+                isingdkl = IsingFisherCurvatureMethod4a(n, 3, h=hJ[:n], J=hJ[n:], eps=1e-6)
             else:
                 raise Exception("Invalid method.")
             epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
@@ -262,8 +262,6 @@ def calculate_fisher_on_pk(data, system, method,
             #                                                dps=high_prec_dps)
             eigval, eigvec = isingdkl.hess_eig(hess)
             
-            isingdkl.pool.close()
-            del isingdkl.pool
             fisherResultMaj[k] = [isingdkl, (hess, errflag, err), eigval, eigvec]
         
             if save and save_every_loop:

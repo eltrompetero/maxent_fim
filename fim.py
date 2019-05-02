@@ -1746,7 +1746,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
             si = sisj[:kStates*n]
             sisj = sisj[kStates*n:]
         A = np.zeros((kStates*n+n*(n-1)//2, kStates*n+n*(n-1)//2))
-        C = self.observables_after_perturbation(iStar, aStar, eps=eps)
+        C, perturb_up = self.observables_after_perturbation(iStar, aStar, eps=eps)
         errflag = 0
         
         # mean constraints (this needs to be fixed to properly handle ternary states)
@@ -1800,6 +1800,27 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
                 return dJ, errflag, (A, C), relerr
             return dJ, errflag, (A, C)
         return dJ, errflag
+
+    def __get_state__(self):
+        # always close multiprocess pool when pickling
+        if 'pool' in self.__dict__.keys():
+            self.pool.close()
+            del self.pool
+
+        return {'n':self.n,
+                'k':self.kStates,
+                'h':self.hJ[:self.n*self.kStates],
+                'J':self.hJ[self.n*self.kStates:],
+                'dJ':self.dJ,
+                'eps':self.eps}
+
+    def __set_state__(self, state_dict):
+        self.__init__(state_dict['n'], state_dict['k'],
+                      h=state_dict['h'],
+                      J=state_dict['J'],
+                      eps=state_dict['eps'],
+                      precompute=False)
+        self.dJ = state_dict['dJ']
 #end IsingFisherCurvatureMethod4
 
 
