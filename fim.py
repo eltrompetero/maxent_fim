@@ -1612,9 +1612,8 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_potts'%n)
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
-        self.allStates = np.vstack(list(xpotts_states(n, kStates))).astype(int)
         kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
-                          self.allStates))
+                          xpotts_states(n,kStates)))
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         
         # cache triplet and quartet products
@@ -1629,27 +1628,29 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         from itertools import product
 
         n = self.n
+        kStates = self.kStates
         self.pairs = {}
         self.triplets = {}
         self.quartets = {}
-        
+        allStates = np.vstack(list(xpotts_states(n, kStates))).astype(int)
+
         # <d_{i,gammai} * d_{j,gammaj}> where i<j
         for i,j in combinations(range(n),2):
-            for gammai,gammaj in product(range(self.kStates),range(self.kStates)):
-                ix = (self.allStates[:,i]==gammai)&(self.allStates[:,j]==gammaj)
+            for gammai,gammaj in product(range(kStates),range(kStates)):
+                ix = (allStates[:,i]==gammai)&(allStates[:,j]==gammaj)
                 self.pairs[(gammai,i,gammaj,j)] = ix
 
         # triplets that matter are when one spin is in a particular state and the remaining two agree with
         # each other
-        for gamma in range(self.kStates):
+        for gamma in range(kStates):
             for i in range(n):
                 for j,k in combinations(range(n),2):
-                    ix = (self.allStates[:,i]==gamma)&(self.allStates[:,j]==self.allStates[:,k])
+                    ix = (allStates[:,i]==gamma)&(allStates[:,j]==allStates[:,k])
                     self.triplets[(gamma,i,j,k)] = ix
         for i,j in combinations(range(n),2):
             for k,l in combinations(range(n),2):
-                ix1 = self.allStates[:,i]==self.allStates[:,j]
-                ix2 = self.allStates[:,k]==self.allStates[:,l]
+                ix1 = allStates[:,i]==allStates[:,j]
+                ix2 = allStates[:,k]==allStates[:,l]
                 self.quartets[(i,j,k,l)] = ix1&ix2
 
     def compute_dJ(self, p=None, sisj=None):
