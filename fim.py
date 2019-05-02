@@ -1,7 +1,7 @@
-# ============================================================================================ #
-# Classes for calculating FIM on Ising model.
+# ====================================================================================== # 
+# Classes for calculating FIM on Ising and Potts models.
 # Author : Eddie Lee, edlee@alumni.princeton.edu
-# ============================================================================================ # 
+# ====================================================================================== # 
 import numpy as np
 from numba import njit
 from coniii.utils import *
@@ -17,7 +17,8 @@ np.seterr(divide='ignore')
 
 
 class IsingFisherCurvatureMethod1():
-    """Perturbation of local magnetizations one at a time.
+    """Perturbation of local magnetizations one at a time. By default, perturbation is
+    towards +1 and not -1.
     """
     def __init__(self, n, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
@@ -30,7 +31,6 @@ class IsingFisherCurvatureMethod1():
         precompute : bool, True
         n_cpus : int, None
         """
-        
 
         assert n>1 and 0<eps<.1
         self.n = n
@@ -81,6 +81,7 @@ class IsingFisherCurvatureMethod1():
         Parameters
         ----------
         i : int
+            Spin to perturb.
         eps : float, None
 
         Returns
@@ -103,12 +104,9 @@ class IsingFisherCurvatureMethod1():
         siNew = si.copy()
         sisjNew = sisj.copy()
         
-        #for i_,eps_ in zip(i,eps):
-        #    # observables after perturbations
-        #    jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
         for i_,eps_ in zip(i,eps):
             # observables after perturbations
-            jit_observables_after_perturbation_minus_field(n, siNew, sisjNew, i_, eps_)
+            jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
         perturb_up = False
 
         return np.concatenate((siNew, sisjNew)), perturb_up
@@ -917,6 +915,7 @@ class IsingFisherCurvatureMethod1():
         # always close multiprocess pool when pickling
         if 'pool' in self.__dict__.keys():
             self.pool.close()
+            del self.pool
 
         return {'n':self.n,
                 'h':self.hJ[:self.n],
@@ -2026,9 +2025,11 @@ class IsingFisherCurvatureMethod4a(IsingFisherCurvatureMethod4):
         from coniii.solvers import Enumerate
         solver = Enumerate(n, calc_observables_multipliers=self.ising.calc_observables)
         soln = solver.solve(C, initial_guess=self.hJ, scipy_solver_kwargs={'method':'hybr'})
+        # remove translational offset for first set of fields
         soln[:n*k] -= np.tile(soln[:n], k)
         return (soln - self.hJ)/(self.eps)
 #end IsingFisherCurvatureMethod4a
+
 
 
 # ============= #
