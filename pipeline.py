@@ -126,6 +126,7 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
     """
     
     from coniii.utils import pair_corr, define_ising_helper_functions, define_pseudo_ising_helpers
+    from data_sets.neuron.data import potts_pair_corr
     from coniii.solvers import Enumerate, Pseudo
     import importlib
     from multiprocess import Pool, cpu_count
@@ -136,12 +137,13 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
         name = item[0]
         X = item[1][1]
         n = X.shape[1]
-        sisj = pair_corr(X, concat=True)
-
         print("Solving %s."%name)
         if potts:
+            assert np.array_equal(np.unique(X), [0,1,2])
+            sisj = potts_pair_corr(X, k=3, concat=True)
             ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_potts'%n)
         else:
+            sisj = pair_corr(X, concat=True)
             ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
         enumSolver = Enumerate(n, calc_observables_multipliers=ising.calc_observables)
 
@@ -149,7 +151,7 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
                                     max_param_value=50*n/9,
                                     full_output=True,
                                     scipy_solver_kwargs={'method':'hybr'})
-        if np.linalg.norm(soln['fun'])>1e-3:
+        if not potts and np.linalg.norm(soln['fun'])>1e-3:
             # try Pseudo (non-ergodic?)
             print("Entering pseudo %s."%name)
             get_multipliers_r, calc_observables_r = define_pseudo_ising_helpers(n)
@@ -168,6 +170,11 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
             # this occurs when Jacobian inverse returns zero vector
             except ValueError:
                 soln = None
+        elif potts and np.linalg.norm(soln['fun'])>1e-3:
+            hJ, soln = enumSolver.solve(sisj,
+                                        max_param_value=50*n/9,
+                                        full_output=True,
+                                        scipy_solver_kwargs={'method':'krylov'})
         return hJ, soln
     
     if n_cpus>1:
@@ -186,6 +193,8 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
     # update data dict
     keys = [i[0] for i in data.items() if len(i[1])==2]
     for i,k in enumerate(keys):
+        if potts:
+            hJ[i][:n*3] -= np.tile(hJ[i][:n],3)
         data[k].append(hJ[i])
         data[k].append(soln[i])
     assert all([len(i)==4 for i in data.values()])
@@ -246,7 +255,7 @@ def calculate_fisher_on_pk(data, system, method,
             elif fi_method==4:
                 isingdkl = IsingFisherCurvatureMethod4(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)
             elif fi_method=='4a':
-                isingdkl = IsingFisherCurvatureMethod4a(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6, n_cpus=1)
+                isingdkl = IsingFisherCurvatureMethod4a(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)
             else:
                 raise Exception("Invalid method.")
             epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
@@ -436,6 +445,11 @@ def _degree_collective(fisherResultValue,
         p = (v**2).sum(1)
         p /= p.sum()
 
+    if method=='vec4a':
+        v = eigvec[:,voter_eig_rank].reshape(3,n)
+        p = (v**2).sum(0)
+        p /= p.sum()
+
     elif method=='val':
         # when limited to the subspace of a single voter at a given time (how do we 
         # optimally tweak a single voter to change the system?)
@@ -445,6 +459,27 @@ def _degree_collective(fisherResultValue,
         # iterate through subspace for each voter (assuming each voter is connected n-1 others
         for j in range(n):
             subspaceHess = hess[j*(n-1):(j+1)*(n-1), j*(n-1):(j+1)*(n-1)]
+            u, v = np.linalg.eig(subspaceHess)
+            sortix = np.argsort(u)[::-1]
+            u = u[sortix]
+            v = v[:,sortix]
+
+            veigval.append(u)
+            veigvec.append(v)
+        veigval = np.vstack(veigval)[:,voter_eig_rank]
+        
+        # entropy
+        p = veigval / veigval.sum()
+
+    elif method=='val4a':
+        # when limited to the subspace of a single voter at a given time (how do we 
+        # optimally tweak a single voter to change the system?)
+        veigval = []
+        veigvec = []
+        
+        # iterate through subspace for each voter (assuming each voter is connected n-1 others
+        for j in range(n):
+            subspaceHess = hess[[j,j+n,j+2*n],:][:,[j,j+n,j+2*n]]
             u, v = np.linalg.eig(subspaceHess)
             sortix = np.argsort(u)[::-1]
             u = u[sortix]
