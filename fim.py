@@ -12,6 +12,7 @@ from itertools import combinations
 from coniii.enumerate import fast_logsumexp, mp_fast_logsumexp
 from coniii.utils import define_ising_helper_functions
 from multiprocess import Pool, cpu_count
+import mpmath as mp
 calc_e, _, _ = define_ising_helper_functions()
 np.seterr(divide='ignore')
 
@@ -21,7 +22,13 @@ class IsingFisherCurvatureMethod1():
     """Perturbation of local magnetizations one at a time. By default, perturbation is
     towards +1 and not -1.
     """
-    def __init__(self, n, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
+    def __init__(self, n,
+                 h=None,
+                 J=None,
+                 eps=1e-7,
+                 precompute=True,
+                 n_cpus=None,
+                 high_prec=False):
         """
         Parameters
         ----------
@@ -31,6 +38,7 @@ class IsingFisherCurvatureMethod1():
         eps : float, 1e-7
         precompute : bool, True
         n_cpus : int, None
+        high_prec : bool, False
         """
 
         assert n>1 and 0<eps<.1
@@ -39,8 +47,12 @@ class IsingFisherCurvatureMethod1():
         self.eps = eps
         self.hJ = np.concatenate((h,J))
         self.n_cpus = n_cpus
+        self.high_prec = high_prec
 
-        self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
+        if high_prec: 
+            self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym_hp'%n)
+        else:
+            self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
         self.allStates = bin_states(n, True).astype(int)
@@ -69,7 +81,7 @@ class IsingFisherCurvatureMethod1():
 
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
-        dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
+        dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2), dtype=self.p.dtype)
         for i in range(self.n):
             dJ[i], errflag = self.solve_linearized_perturbation(i, p=p, sisj=sisj)
         return dJ
@@ -105,25 +117,28 @@ class IsingFisherCurvatureMethod1():
         siNew = si.copy()
         sisjNew = sisj.copy()
         
-        for i_,eps_ in zip(i,eps):
-            # observables after perturbations
-            jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
+        # observables after perturbations
+        if self.high_prec:
+            for i_,eps_ in zip(i,eps):
+                self._observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
+        else:
+            for i_,eps_ in zip(i,eps):
+                jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
         perturb_up = True
 
         return np.concatenate((siNew, sisjNew)), perturb_up
    
-    def _observables_after_perturbation_up(self, si, sisj, i, eps):
+    def _observables_after_perturbation_plus_field(self, n, si, sisj, i, eps):
         """        
         Parameters
         ----------
+        n : int
         si : ndarray
         sisj : ndarray
         i : int
         eps : float
         """
 
-        n = self.n
-        
         # observables after perturbations
         si[i]  = (1-eps)*si[i] + eps
 
@@ -133,28 +148,6 @@ class IsingFisherCurvatureMethod1():
             else:
                 ijix = unravel_index((j,i),n)
             sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
-
-    def _observables_after_perturbation_down(self, si, sisj, i, eps):
-        """        
-        Parameters
-        ----------
-        si : ndarray
-        sisj : ndarray
-        i : int
-        eps : float
-        """
-
-        n = self.n
-        
-        # observables after perturbations
-        si[i]  = (1-eps)*si[i] - eps
-
-        for j in delete(list(range(n)),i):
-            if i<j:
-                ijix = unravel_index((i,j),n)
-            else:
-                ijix = unravel_index((j,i),n)
-            sisj[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
 
     def _solve_linearized_perturbation_tester(self, iStar, eps=None):
         """Consider a perturbation to a single spin.
@@ -187,7 +180,52 @@ class IsingFisherCurvatureMethod1():
         dJ = -(solver.solve(C)-self.hJ)/eps
         return dJ
 
-    def solve_linearized_perturbation(self, iStar,
+    def solve_linearized_perturbation(self, *args, **kwargs):
+        """Wrapper for automating search for best eps value for given perturbation.
+        """
+        
+        # settings
+        epsChangeFactor = 10
+        
+        # check whether error increases or decreases with eps
+        eps0 = kwargs.get('eps', self.eps)
+        kwargs['check_stability'] = True
+        kwargs['full_output'] = True
+        
+        dJ, errflag, (A,C), relerr = self._solve_linearized_perturbation(*args, **kwargs)
+
+        kwargs['eps'] = eps0*epsChangeFactor
+        dJUp, errflagUp, _, relerrUp = self._solve_linearized_perturbation(*args, **kwargs)
+
+        kwargs['eps'] = eps0/epsChangeFactor
+        dJDown, errflagDown, _, relerrDown = self._solve_linearized_perturbation(*args, **kwargs)
+        
+        # if changing eps doesn't help, just return estimate at current eps
+        if relerr.max()<relerrUp.max() and relerr.max()<relerrDown.max():
+            return dJ, errflag
+        
+        # if error decreases more sharpy going down
+        if relerrDown.max()<=relerrUp.max():
+            epsChangeFactor = 1/epsChangeFactor
+            prevdJ, errflag, prevRelErr = dJDown, errflagDown, relerrDown
+        # if error decreases more sharpy going up, no need to change eps
+        else:
+            prevdJ, errflag, prevRelErr = dJUp, errflagUp, relerrUp
+        
+        # decrease/increase eps til error starts increasing
+        converged = False
+        while (not converged) and errflag:
+            kwargs['eps'] *= epsChangeFactor
+            dJ, errflag, (A,C), relerr = self._solve_linearized_perturbation(*args, **kwargs)
+            if errflag and relerr.max()<prevRelErr.max():
+                prevdJ = dJ
+                prevRelErr = relerr
+            else:
+                converged = True
+        
+        return dJ, errflag
+
+    def _solve_linearized_perturbation(self, iStar,
                                       p=None,
                                       sisj=None,
                                       full_output=False,
@@ -228,7 +266,7 @@ class IsingFisherCurvatureMethod1():
         else:
             si = sisj[:n]
             sisj = sisj[n:]
-        A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2))
+        A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2), dtype=si.dtype)
         C, perturb_up = self.observables_after_perturbation(iStar, eps=eps)
         
         # mean constraints
@@ -257,34 +295,46 @@ class IsingFisherCurvatureMethod1():
         if method=='inverse':
             # factor out linear dependence on eps
             try:
-                dJ = np.linalg.solve(A,C)/eps
+                if self.high_prec:
+                    A = mp.matrix(A)
+                    C = mp.matrix(C)
+                    dJ = A**-1 * C / eps
+                else:
+                    dJ = np.linalg.solve(A,C)/eps
             except np.linalg.LinAlgError:
                 dJ = np.zeros(C.size)+np.nan
         else:
-            dJ = np.linalg.lstsq(A,C)[0]/eps
+            dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
         # Since default is to perturb down
         if not perturb_up:
             dJ *= -1
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
-            dJtwiceEps, errflag = self.solve_linearized_perturbation(iStar,
-                                                                     eps=eps/2,
-                                                                     check_stability=False,
-                                                                     p=p,
-                                                                     sisj=np.concatenate((si,sisj)))
+            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar,
+                                                                      eps=eps/2,
+                                                                      check_stability=False,
+                                                                      p=p,
+                                                                      sisj=np.concatenate((si,sisj)))
             # print if relative change is more than .1% for any entry
-            relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
+            if self.high_prec:
+                relerr = (list(map(mp.log10, np.abs(dJ-dJtwiceEps))) -
+                          np.array(list(map(mp.log10, np.abs(dJ)))))
+            else:
+                relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
             if (relerr>-3).any():
                 print("Unstable solution. Recommend shrinking eps. %E"%(10**relerr.max()))
+        else:
+            relerr = None
                    
-        if np.linalg.cond(A)>1e15:
+        if ((self.high_prec and mp.norm(A)*mp.norm(A**-1)>1e15) or
+            (not self.high_prec and np.linalg.cond(A)>1e15)):
             warn("A is badly conditioned.")
             errflag = 1
         else:
             errflag = 0
         if full_output:
-            return dJ, errflag, (A, C)
+            return dJ, errflag, (A, C), relerr
         return dJ, errflag
     
     def dkl_curvature(self, *args, **kwargs):
