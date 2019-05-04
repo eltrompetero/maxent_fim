@@ -365,10 +365,14 @@ def _extract_voter_subspace(fisherResultValue,
     veigval = []
     veigvec = []
     
-    if not type(fisherResultValue[0]) is IsingFisherCurvatureMethod4a:
-        # iterate through subspace for each voter (assuming each voter is connected n-1 others
+    
+    if type(fisherResultValue[0]) is IsingFisherCurvatureMethod1:
         for j in range(n):
-            subspaceHess = hess[j*(n-1):(j+1)*(n-1), j*(n-1):(j+1)*(n-1)]
+            veigval.append(hess[j,j])
+            veigvec.append(np.ones(1))
+    elif type(fisherResultValue[0]) is IsingFisherCurvatureMethod4a:
+        for j in range(n):
+            subspaceHess = hess[[j,j+n,j+2*n],:][:,[j,j+n,j+2*n]]
             u, v = np.linalg.eig(subspaceHess)
             sortix = np.argsort(u)[::-1]
             u = u[sortix]
@@ -376,9 +380,10 @@ def _extract_voter_subspace(fisherResultValue,
 
             veigval.append(u)
             veigvec.append(v)
-    else:
+    elif not type(fisherResultValue[0]) is IsingFisherCurvatureMethod4a:
+        # iterate through subspace for each voter (assuming each voter is connected n-1 others
         for j in range(n):
-            subspaceHess = hess[[j,j+n,j+2*n],:][:,[j,j+n,j+2*n]]
+            subspaceHess = hess[j*(n-1):(j+1)*(n-1), j*(n-1):(j+1)*(n-1)]
             u, v = np.linalg.eig(subspaceHess)
             sortix = np.argsort(u)[::-1]
             u = u[sortix]
@@ -415,14 +420,77 @@ def degree_collective(fisherResult, **kwargs):
     degree = np.zeros(K)-1
     
     for i,k in enumerate(fisherResult.keys()):
-        degree[i] = _degree_collective(fisherResult[k], **kwargs) 
-
+        if type(fisherResult[k][0]) is IsingFisherCurvatureMethod1:
+            degree[i] = _degree_collective1(fisherResult[k], **kwargs) 
+        elif type(fisherResult[k][0]) is IsingFisherCurvatureMethod2:
+            degree[i] = _degree_collective2(fisherResult[k], **kwargs) 
+        elif type(fisherResult[k][0]) is IsingFisherCurvatureMethod4a:
+            degree[i] = _degree_collective4a(fisherResult[k], **kwargs) 
+        else:
+            raise Exception("Invalid type for key %s."%k)
     return degree
 
-def _degree_collective(fisherResultValue,
-                       remove_n_modes=0,
-                       voter_eig_rank=0,
-                       method='val'):
+def _degree_collective1(fisherResultValue,
+                        remove_n_modes=0,
+                        voter_eig_rank=0,
+                        method='val'):
+    """
+    Parameters
+    ----------
+    fisherResultValue : list
+    remove_first_mode : bool, False
+        If True, subtract off principal mode from rows of Hessian.
+    voter_eig_rank : int, 0
+        Rank of eigenvalue and eigenvector to return from voter subspaces.
+    method : str, 'val'
+
+    Returns
+    -------
+    float
+        If 'val' option, then the entropy of the sum of the columns is returned.
+        If 'vec' option, then the fractional weights per column are returned.
+    """
+    
+    n = fisherResultValue[0].n
+    isingdkl, (hess, errflag, err), eigval, eigvec = fisherResultValue
+    if remove_n_modes>0:
+        for i in range(remove_n_modes):
+            hess = remove_principal_mode(hess)
+        eigval, eigvec = np.linalg.eig(hess)
+        sortix = np.argsort(eigval)[::-1]
+        eigval = eigval[sortix]
+        eigvec = eigvec[:,sortix]
+    
+    # only consider hessians that are well-estimated
+    #if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
+    if method=='vec':
+        p = eigvec[:,0]**2
+        p /= p.sum()
+
+    elif method=='val':
+        # when limited to the subspace of a single voter at a given time (how do we 
+        # optimally tweak a single voter to change the system?)
+        veigval = []
+        veigvec = []
+        
+        # iterate through subspace for each voter (assuming each voter is connected n-1 others
+        for j in range(n):
+            veigval.append(hess[j,j])
+            veigvec.append(np.ones(1))
+        veigval = np.vstack(veigval)[:,voter_eig_rank]
+        
+        # entropy
+        p = veigval / veigval.sum()
+
+    else:
+        raise Exception("Invalid choice for method.")
+    degree = -np.log2(p).dot(p) / np.log2(p.size)
+    return degree
+
+def _degree_collective2(fisherResultValue,
+                        remove_n_modes=0,
+                        voter_eig_rank=0,
+                        method='val'):
     """
     Parameters
     ----------
@@ -457,11 +525,6 @@ def _degree_collective(fisherResultValue,
         p = (v**2).sum(1)
         p /= p.sum()
 
-    elif method=='vec4a':
-        v = eigvec[:,voter_eig_rank].reshape(3,n)
-        p = (v**2).sum(0)
-        p /= p.sum()
-
     elif method=='val':
         # when limited to the subspace of a single voter at a given time (how do we 
         # optimally tweak a single voter to change the system?)
@@ -483,7 +546,50 @@ def _degree_collective(fisherResultValue,
         # entropy
         p = veigval / veigval.sum()
 
-    elif method=='val4a':
+    else:
+        raise Exception("Invalid choice for method.")
+    degree = -np.log2(p).dot(p) / np.log2(p.size)
+    return degree
+
+def _degree_collective4a(fisherResultValue,
+                         remove_n_modes=0,
+                         voter_eig_rank=0,
+                         method='val'):
+    """
+    Parameters
+    ----------
+    fisherResultValue : list
+    remove_first_mode : bool, False
+        If True, subtract off principal mode from rows of Hessian.
+    voter_eig_rank : int, 0
+        Rank of eigenvalue and eigenvector to return from voter subspaces.
+    method : str, 'val'
+
+    Returns
+    -------
+    float
+        If 'val' option, then the entropy of the sum of the columns is returned.
+        If 'vec' option, then the fractional weights per column are returned.
+    """
+    
+    n = fisherResultValue[0].n
+    isingdkl, (hess, errflag, err), eigval, eigvec = fisherResultValue
+    if remove_n_modes>0:
+        for i in range(remove_n_modes):
+            hess = remove_principal_mode(hess)
+        eigval, eigvec = np.linalg.eig(hess)
+        sortix = np.argsort(eigval)[::-1]
+        eigval = eigval[sortix]
+        eigvec = eigvec[:,sortix]
+    
+    # only consider hessians that are well-estimated
+    #if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
+    if method=='vec':
+        v = eigvec[:,voter_eig_rank].reshape(3,n)
+        p = (v**2).sum(0)
+        p /= p.sum()
+
+    elif method=='val':
         # when limited to the subspace of a single voter at a given time (how do we 
         # optimally tweak a single voter to change the system?)
         veigval = []
@@ -507,6 +613,4 @@ def _degree_collective(fisherResultValue,
     else:
         raise Exception("Invalid choice for method.")
     degree = -np.log2(p).dot(p) / np.log2(p.size)
-    #else:
-    #    degree = np.nan
     return degree
