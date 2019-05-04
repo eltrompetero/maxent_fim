@@ -9,7 +9,7 @@ from .utils import *
 import importlib
 from warnings import warn
 from itertools import combinations
-from coniii.enumerate import fast_logsumexp
+from coniii.enumerate import fast_logsumexp, mp_fast_logsumexp
 from coniii.utils import define_ising_helper_functions
 from multiprocess import Pool, cpu_count
 calc_e, _, _ = define_ising_helper_functions()
@@ -108,7 +108,7 @@ class IsingFisherCurvatureMethod1():
         for i_,eps_ in zip(i,eps):
             # observables after perturbations
             jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
-        perturb_up = False
+        perturb_up = True
 
         return np.concatenate((siNew, sisjNew)), perturb_up
    
@@ -502,8 +502,31 @@ class IsingFisherCurvatureMethod1():
 
         return pk
 
+    @staticmethod
+    def logp2pk_high_prec(E, uix, invix):
+        """Convert the full probability distribution to the probability of having k votes
+        in the majority.
+
+        Parameters
+        ----------
+        E : ndarray
+            Energies of each configuration.
+        uix : ndarray
+        invix : ndarray
+
+        Returns
+        -------
+        ndarray
+            The unnormalized log probability: log p(k) + logZ.
+        """
+         
+        logsumEk = np.zeros(len(uix), dtype=object)
+        for i in range(len(uix)):
+            logsumEk[i] = mp_fast_logsumexp(-E[invix==i])[0]
+        return logsumEk
+
     def maj_curvature(self, *args, **kwargs):
-        """Wrapper for _dkl_curvature() to find best finite diff step size."""
+        """Wrapper for _maj_curvature() to find best finite diff step size."""
 
         import multiprocess as mp
 
@@ -612,7 +635,7 @@ class IsingFisherCurvatureMethod1():
         if iprint:
             print('Done with preamble.')
 
-        # diagonal entries
+        # diagonal entries of hessian
         def diag(i, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
                  uix=self.coarseUix, invix=self.coarseInvix,
                  n=self.n, E=E, logZ=logZ, kStates=self.kStates):
@@ -638,6 +661,7 @@ class IsingFisherCurvatureMethod1():
                 print('nan for diag', i, epsdJ_, dklplus, dklminus)
             return dd
 
+        # off-diagonal entries of hessian
         def off_diag(args, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
                      uix=self.coarseUix, invix=self.coarseInvix,
                      n=self.n, E=E, logZ=logZ, kStates=self.kStates):
