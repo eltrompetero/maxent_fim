@@ -193,6 +193,7 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
     # update data dict
     keys = [i[0] for i in data.items() if len(i[1])==2]
     for i,k in enumerate(keys):
+        n = len(data[k][0])
         if potts:
             hJ[i][:n*3] -= np.tile(hJ[i][:n],3)
         data[k].append(hJ[i])
@@ -230,7 +231,7 @@ def calculate_fisher_on_pk(data, system, method,
     
     import importlib
 
-    fname = 'cache/%s/%s/fisherResultMaj.p'%(system,method)
+    fname = 'cache/Method%s/%s/%s/fisherResultMaj.p'%(str(fi_method),system,method)
     
     if computed_results is None:
         fisherResultMaj = {}
@@ -364,16 +365,27 @@ def _extract_voter_subspace(fisherResultValue,
     veigval = []
     veigvec = []
     
-    # iterate through subspace for each voter (assuming each voter is connected n-1 others
-    for j in range(n):
-        subspaceHess = hess[j*(n-1):(j+1)*(n-1), j*(n-1):(j+1)*(n-1)]
-        u, v = np.linalg.eig(subspaceHess)
-        sortix = np.argsort(u)[::-1]
-        u = u[sortix]
-        v = v[:,sortix]
+    if not type(fisherResultValue[0]) is IsingFisherCurvatureMethod4a:
+        # iterate through subspace for each voter (assuming each voter is connected n-1 others
+        for j in range(n):
+            subspaceHess = hess[j*(n-1):(j+1)*(n-1), j*(n-1):(j+1)*(n-1)]
+            u, v = np.linalg.eig(subspaceHess)
+            sortix = np.argsort(u)[::-1]
+            u = u[sortix]
+            v = v[:,sortix]
 
-        veigval.append(u)
-        veigvec.append(v)
+            veigval.append(u)
+            veigvec.append(v)
+    else:
+        for j in range(n):
+            subspaceHess = hess[[j,j+n,j+2*n],:][:,[j,j+n,j+2*n]]
+            u, v = np.linalg.eig(subspaceHess)
+            sortix = np.argsort(u)[::-1]
+            u = u[sortix]
+            v = v[:,sortix]
+
+            veigval.append(u)
+            veigvec.append(v)
     voterEigval_ = np.vstack(veigval)
 
     # sort voters by largest voter eigenvalue
@@ -445,7 +457,7 @@ def _degree_collective(fisherResultValue,
         p = (v**2).sum(1)
         p /= p.sum()
 
-    if method=='vec4a':
+    elif method=='vec4a':
         v = eigvec[:,voter_eig_rank].reshape(3,n)
         p = (v**2).sum(0)
         p /= p.sum()

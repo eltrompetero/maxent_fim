@@ -1744,13 +1744,10 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         siNew = si.copy()
         sisjNew = sisj.copy()
         
-        #for i_,a_,eps_ in zip(i,a,eps):
-        #    jit_observables_after_perturbation_plus(n, siNew, sisjNew, i_, a_, eps_)
-        perturb_up = False
         for i_,a_,eps_ in zip(i,a,eps):
             jit_observables_after_perturbation_minus(n, siNew, sisjNew, i_, a_, eps_)
 
-        return np.concatenate((siNew, sisjNew)), perturb_up
+        return np.concatenate((siNew, sisjNew)), True
     
     def _solve_linearized_perturbation(self, iStar, aStar,
                                       p=None,
