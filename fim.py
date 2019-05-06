@@ -635,10 +635,12 @@ class IsingFisherCurvatureMethod1():
     def _maj_curvature(self,
                        hJ=None,
                        dJ=None,
-                       epsdJ=1e-4,
+                       epsdJ=1e-7,
                        check_stability=False,
                        rtol=1e-3,
                        full_output=False,
+                       calc_off_diag=True,
+                       calc_diag=True,
                        iprint=True):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
         the theta_{ij} parameters replacing the spin i by sampling from j for the number
@@ -659,6 +661,8 @@ class IsingFisherCurvatureMethod1():
         rtol : float, 1e-3
             Relative tolerance for each entry in Hessian when checking stability.
         full_output : bool, False
+        calc_off_diag : bool, True
+        calc_diag : bool, True
         iprint : bool, True
             
         Returns
@@ -696,20 +700,23 @@ class IsingFisherCurvatureMethod1():
             if np.isnan(epsdJ_): return 0.
             correction = calc_all_energies(n, kStates, dJ[i]*epsdJ_)
             
-            # forward step
             Enew = E+correction
-            modlogsumEk = logp2pk(Enew, uix, invix)
-            dklplus = 2*(logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
+            modlogsumEkplus = logp2pk(Enew, uix, invix)
             
             # backwards step
-            Enew = E-correction
-            modlogsumEk = logp2pk(Enew, uix, invix)
-            dklminus = 2*(logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
-            
-            dd = (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
+            #Enew = E-correction
+            #modlogsumEkminus = logp2pk(Enew, uix, invix)
+
+            dE = modlogsumEkplus - logsumEk
+            num = ((dE.dot(p) - dE)**2).dot(p)
+            dd = num / np.log(2) / epsdJ_**2
             if iprint and np.isnan(dd):
-                print('nan for diag', i, epsdJ_, dklplus, dklminus)
-            return dd
+                print('nan for diag', i, epsdJ_)
+            
+            # can be used to estimate error
+            #dE = modlogsumEkminus - logsumEk
+            #num = ((dE.dot(p) - dE)**2).dot(p)
+            return dd#, dd - num / np.log(2) / epsdJ_**2
 
         # off-diagonal entries of hessian
         def off_diag(args, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
@@ -718,61 +725,74 @@ class IsingFisherCurvatureMethod1():
             i, j = args
             
             # round eps step to machine precision
-            mxix = np.abs(dJ[i]+dJ[j]).argmax()
-            newhJ = hJ[mxix] + (dJ[i]+dJ[j])[mxix]*epsdJ
-            epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]/2
-            if np.isnan(epsdJ_): return 0.
-            correction = calc_all_energies(n, kStates, (dJ[i]+dJ[j])*epsdJ_)
-            
-            # forward step
+            mxix = np.abs(dJ[i]).argmax()
+            newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
+            epsdJi = (newhJ - hJ[mxix])/dJ[i][mxix]/2
+            if np.isnan(epsdJi): return 0.
+            correction = calc_all_energies(n, kStates, dJ[i]*epsdJi)
             Enew = E+correction
-            modlogsumEk = logp2pk(Enew, uix, invix)
-            dklplus = (logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
+            modlogsumEki = logp2pk(Enew, uix, invix)
             
-            # backwards step
-            Enew = E-correction
-            modlogsumEk = logp2pk(Enew, uix, invix)
-            dklminus = (logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
-
-            dd = (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
+            # round eps step to machine precision
+            mxix = np.abs(dJ[j]).argmax()
+            newhJ = hJ[mxix] + dJ[j][mxix]*epsdJ
+            epsdJj = (newhJ - hJ[mxix])/dJ[j][mxix]/2
+            if np.isnan(epsdJj): return 0.
+            correction = calc_all_energies(n, kStates, dJ[j]*epsdJj)
+            Enew = E+correction
+            modlogsumEkj = logp2pk(Enew, uix, invix)
+            
+            dEi = modlogsumEki - logsumEk
+            dEj = modlogsumEkj - logsumEk
+            num = ((dEi.dot(p) - dEi)*(dEj.dot(p) - dEj)).dot(p)
+            dd = num / np.log(2) / epsdJi / epsdJj
             if iprint and np.isnan(dd):
-                print('nan for off diag', args, epsdJ_, dklplus, dklminus)
+                print('nan for off diag', args, epsdJi, epsdJj)
             return dd
         
         hess = np.zeros((len(dJ),len(dJ)))
         if not 'pool' in self.__dict__.keys():
-            warn("Not using processes can lead to excessive memory usage.")
-            for i in range(len(dJ)):
-                hess[i,i] = diag(i)
-            if iprint:
-                print("Done with diag.")
-            for i,j in combinations(range(len(dJ)),2):
-                hess[i,j] = off_diag((i,j))
+            warn("Not using multiprocess can lead to excessive memory usage.")
+            if calc_diag:
+                for i in range(len(dJ)):
+                    hess[i,i] = diag(i)[0]
                 if iprint:
-                    print("Done with off diag (%d,%d)."%(i,j))
-            if iprint:
-                print("Done with off diag.")
+                    print("Done with diag.")
+            if calc_off_diag:
+                for i,j in combinations(range(len(dJ)),2):
+                    hess[i,j] = off_diag((i,j))
+                    if iprint:
+                        print("Done with off diag (%d,%d)."%(i,j))
+                if iprint:
+                    print("Done with off diag.")
         else:
-            hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
-            if iprint:
-                print("Done with diag.")
-            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
-            if iprint:
-                print("Done with off diag.")
+            if calc_diag:
+                hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+                if iprint:
+                    print("Done with diag.")
+            if calc_off_diag:
+                hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
+                if iprint:
+                    print("Done with off diag.")
 
         # subtract off linear terms to get Hessian (and not just cross derivative)
-        hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
-                                                         for i,j in combinations(range(len(dJ)),2)])
-        # fill in lower triangle
-        hess += hess.T
-        hess[np.eye(len(dJ))==1] /= 2
+        if calc_off_diag:
+            # fill in lower triangle
+            hess += hess.T
+            hess[np.eye(len(dJ))==1] /= 2
 
         # check for precision problems
         assert ~np.isnan(hess).any()
         assert ~np.isinf(hess).any()
 
         if check_stability:
-            hess2 = self._maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
+            hess2 = self._maj_curvature(epsdJ=epsdJ/2,
+                                        check_stability=False,
+                                        iprint=iprint,
+                                        hJ=hJ,
+                                        dJ=dJ,
+                                        calc_diag=calc_diag,
+                                        calc_off_diag=calc_off_diag)
             # 4/3 ratio predicted from expansion up to 4th order term with eps/2
             err = (hess - hess2)*4/3
             if (np.abs(err/hess) > rtol).any():
@@ -793,6 +813,47 @@ class IsingFisherCurvatureMethod1():
         if not full_output:
             return hess
         return hess, errflag, err
+
+    def _test_maj_curvature(self):
+        n = self.n
+        hJ = self.hJ
+        E = calc_all_energies(n, self.kStates, hJ)
+        logZ = fast_logsumexp(-E)[0]
+        logsumEk = self.logp2pk(E, self.coarseUix, self.coarseInvix)
+        p = np.exp(logsumEk - logZ)
+        dJ = self.dJ
+
+        # diagonal entries of hessian
+        def diag(i, eps, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
+                 uix=self.coarseUix, invix=self.coarseInvix,
+                 n=self.n, E=E, logZ=logZ, kStates=self.kStates):
+            # round eps step to machine precision
+            mxix = np.abs(dJ[i]).argmax()
+            newhJ = hJ[mxix] + dJ[i][mxix]*eps
+            eps = (newhJ-hJ[mxix]) / dJ[i][mxix]
+            if np.isnan(eps): return 0.
+            correction = calc_all_energies(n, kStates, dJ[i]*eps)
+            
+            # forward step
+            Enew = E+correction
+            modlogsumEkplus = logp2pk(Enew, uix, invix)
+            #Zkplus = fast_logsumexp(-Enew)[0]
+            
+            # backwards step
+            Enew = E-correction
+            modlogsumEkminus = logp2pk(Enew, uix, invix)
+            #Zkminus = fast_logsumexp(-Enew)[0]
+
+            num = (logsumEk - modlogsumEkplus)**2
+            ddplus = num.dot(p) / np.log(2) / eps**2
+
+            num = (logsumEk - modlogsumEkminus)**2
+            ddminus = num.dot(p) / np.log(2) / eps**2
+
+            #num_ = 2*(logsumEk - logZ) + (Zkplus - modlogsumEkplus) + (Zkminus - modlogsumEkminus)
+            #print( num_.dot(p) / np.log(2) / 2 / eps**2 )
+            return ddplus, ddplus-ddminus
+        return diag
 
     def _maj_curvature_high_prec(self,
                                  hJ=None,
