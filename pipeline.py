@@ -232,6 +232,8 @@ def calculate_fisher_on_pk(data, system, method,
     import importlib
 
     fname = 'cache/Method%s/%s/%s/fisherResultMaj.p'%(str(fi_method),system,method)
+    if not os.path.isdir('cache/Method%s/%s/%s'%(str(fi_method),system,method)):
+        os.makedirs('cache/Method%s/%s/%s'%(str(fi_method),system,method))
     
     if computed_results is None:
         fisherResultMaj = {}
@@ -245,15 +247,15 @@ def calculate_fisher_on_pk(data, system, method,
             n = len(data[k][0])
             hJ = data[k][2]
             
-            if fi_method==1:
+            if str(fi_method)=='1':
                 isingdkl = IsingFisherCurvatureMethod1(n, h=hJ[:n], J=hJ[n:], eps=1e-6, high_prec=high_prec)
             elif fi_method=='1a':
                 isingdkl = IsingFisherCurvatureMethod1a(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
-            elif fi_method==2:
+            elif str(fi_method)=='2':
                 isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
-            elif fi_method==3:
+            elif str(fi_method)=='3':
                 isingdkl = IsingFisherCurvatureMethod3(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
-            elif fi_method==4:
+            elif str(fi_method)=='4':
                 isingdkl = IsingFisherCurvatureMethod4(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)
             elif fi_method=='4a':
                 isingdkl = IsingFisherCurvatureMethod4a(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)

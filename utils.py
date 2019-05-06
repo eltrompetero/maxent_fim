@@ -57,14 +57,19 @@ def fisher_subspace(n, result, rtol=.05):
     
     return primaryEigval, topVoterEigvals
 
-def multi_info(X, hJ, n_boot=10_000, disp=True, **Squad_kwargs):
+def multi_info(X, hJ, method, n_boot=10_000, disp=True, **Spoly_kwargs):
     """
     Parameters
     ----------
     X : ndarray
+        Data.
     hJ : ndarray
+        Maxent parameters.
+    method : str
+        IsingFisherCurvatureMethod used.
     n_boot : int, 10_000
     disp : bool, True
+    **Spoly_kwargs
 
     Returns
     -------
@@ -76,17 +81,20 @@ def multi_info(X, hJ, n_boot=10_000, disp=True, **Squad_kwargs):
         fit
     """
 
-    from entropy.estimators import S_quad
+    from entropy.estimators import S_poly
     import importlib
     
     # estimate the data entropy (enforcing symmetrization of prob)
-    Sdata, fit, err = S_quad(np.unique(X, axis=0, return_counts=True)[1],
+    Sdata, fit, err = S_poly(np.unique(X, axis=0, return_counts=True)[1],
                              np.logspace(.5,1,10), n_boot,
                              X_is_count=True, parallel=True, return_fit=True,
-                             **Squad_kwargs)
+                             **Spoly_kwargs)
     
     # measure pairwise model entropy
-    ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%X.shape[1])
+    if not '4' in method:
+        ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%X.shape[1])
+    else:
+        ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_potts'%X.shape[1])
     p = ising.p(hJ)
     
     Spair = -p.dot(np.log2(p))
