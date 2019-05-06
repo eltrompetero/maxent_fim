@@ -12,6 +12,7 @@ from itertools import combinations
 from coniii.enumerate import fast_logsumexp, mp_fast_logsumexp
 from coniii.utils import define_ising_helper_functions
 from multiprocess import Pool, cpu_count
+import mpmath as mp
 calc_e, _, _ = define_ising_helper_functions()
 np.seterr(divide='ignore')
 
@@ -21,7 +22,13 @@ class IsingFisherCurvatureMethod1():
     """Perturbation of local magnetizations one at a time. By default, perturbation is
     towards +1 and not -1.
     """
-    def __init__(self, n, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
+    def __init__(self, n,
+                 h=None,
+                 J=None,
+                 eps=1e-7,
+                 precompute=True,
+                 n_cpus=None,
+                 high_prec=False):
         """
         Parameters
         ----------
@@ -31,6 +38,7 @@ class IsingFisherCurvatureMethod1():
         eps : float, 1e-7
         precompute : bool, True
         n_cpus : int, None
+        high_prec : bool, False
         """
 
         assert n>1 and 0<eps<.1
@@ -39,8 +47,12 @@ class IsingFisherCurvatureMethod1():
         self.eps = eps
         self.hJ = np.concatenate((h,J))
         self.n_cpus = n_cpus
+        self.high_prec = high_prec
 
-        self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
+        if high_prec: 
+            self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym_hp'%n)
+        else:
+            self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
         self.allStates = bin_states(n, True).astype(int)
@@ -105,25 +117,28 @@ class IsingFisherCurvatureMethod1():
         siNew = si.copy()
         sisjNew = sisj.copy()
         
-        for i_,eps_ in zip(i,eps):
-            # observables after perturbations
-            jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
+        # observables after perturbations
+        if self.high_prec:
+            for i_,eps_ in zip(i,eps):
+                self._observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
+        else:
+            for i_,eps_ in zip(i,eps):
+                jit_observables_after_perturbation_plus_field(n, siNew, sisjNew, i_, eps_)
         perturb_up = True
 
         return np.concatenate((siNew, sisjNew)), perturb_up
    
-    def _observables_after_perturbation_up(self, si, sisj, i, eps):
+    def _observables_after_perturbation_plus_field(self, n, si, sisj, i, eps):
         """        
         Parameters
         ----------
+        n : int
         si : ndarray
         sisj : ndarray
         i : int
         eps : float
         """
 
-        n = self.n
-        
         # observables after perturbations
         si[i]  = (1-eps)*si[i] + eps
 
@@ -133,28 +148,6 @@ class IsingFisherCurvatureMethod1():
             else:
                 ijix = unravel_index((j,i),n)
             sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
-
-    def _observables_after_perturbation_down(self, si, sisj, i, eps):
-        """        
-        Parameters
-        ----------
-        si : ndarray
-        sisj : ndarray
-        i : int
-        eps : float
-        """
-
-        n = self.n
-        
-        # observables after perturbations
-        si[i]  = (1-eps)*si[i] - eps
-
-        for j in delete(list(range(n)),i):
-            if i<j:
-                ijix = unravel_index((i,j),n)
-            else:
-                ijix = unravel_index((j,i),n)
-            sisj[ijix] = (1-eps)*sisj[ijix] - eps*si[j]
 
     def _solve_linearized_perturbation_tester(self, iStar, eps=None):
         """Consider a perturbation to a single spin.
@@ -187,7 +180,52 @@ class IsingFisherCurvatureMethod1():
         dJ = -(solver.solve(C)-self.hJ)/eps
         return dJ
 
-    def solve_linearized_perturbation(self, iStar,
+    def solve_linearized_perturbation(self, *args, **kwargs):
+        """Wrapper for automating search for best eps value for given perturbation.
+        """
+        
+        # settings
+        epsChangeFactor = 10
+        
+        # check whether error increases or decreases with eps
+        eps0 = kwargs.get('eps', self.eps)
+        kwargs['check_stability'] = True
+        kwargs['full_output'] = True
+        
+        dJ, errflag, (A,C), relerr = self._solve_linearized_perturbation(*args, **kwargs)
+
+        kwargs['eps'] = eps0*epsChangeFactor
+        dJUp, errflagUp, _, relerrUp = self._solve_linearized_perturbation(*args, **kwargs)
+
+        kwargs['eps'] = eps0/epsChangeFactor
+        dJDown, errflagDown, _, relerrDown = self._solve_linearized_perturbation(*args, **kwargs)
+        
+        # if changing eps doesn't help, just return estimate at current eps
+        if relerr.max()<relerrUp.max() and relerr.max()<relerrDown.max():
+            return dJ, errflag
+        
+        # if error decreases more sharpy going down
+        if relerrDown.max()<=relerrUp.max():
+            epsChangeFactor = 1/epsChangeFactor
+            prevdJ, errflag, prevRelErr = dJDown, errflagDown, relerrDown
+        # if error decreases more sharpy going up, no need to change eps
+        else:
+            prevdJ, errflag, prevRelErr = dJUp, errflagUp, relerrUp
+        
+        # decrease/increase eps til error starts increasing
+        converged = False
+        while (not converged) and errflag:
+            kwargs['eps'] *= epsChangeFactor
+            dJ, errflag, (A,C), relerr = self._solve_linearized_perturbation(*args, **kwargs)
+            if errflag and relerr.max()<prevRelErr.max():
+                prevdJ = dJ
+                prevRelErr = relerr
+            else:
+                converged = True
+        
+        return dJ, errflag
+
+    def _solve_linearized_perturbation(self, iStar,
                                       p=None,
                                       sisj=None,
                                       full_output=False,
@@ -228,7 +266,7 @@ class IsingFisherCurvatureMethod1():
         else:
             si = sisj[:n]
             sisj = sisj[n:]
-        A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2))
+        A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2), dtype=si.dtype)
         C, perturb_up = self.observables_after_perturbation(iStar, eps=eps)
         
         # mean constraints
@@ -257,34 +295,46 @@ class IsingFisherCurvatureMethod1():
         if method=='inverse':
             # factor out linear dependence on eps
             try:
-                dJ = np.linalg.solve(A,C)/eps
+                if self.high_prec:
+                    A = mp.matrix(A)
+                    C = mp.matrix(C)
+                    dJ = A**-1 * C / eps
+                else:
+                    dJ = np.linalg.solve(A,C)/eps
             except np.linalg.LinAlgError:
                 dJ = np.zeros(C.size)+np.nan
         else:
-            dJ = np.linalg.lstsq(A,C)[0]/eps
+            dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
         # Since default is to perturb down
         if not perturb_up:
             dJ *= -1
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
-            dJtwiceEps, errflag = self.solve_linearized_perturbation(iStar,
-                                                                     eps=eps/2,
-                                                                     check_stability=False,
-                                                                     p=p,
-                                                                     sisj=np.concatenate((si,sisj)))
+            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar,
+                                                                      eps=eps/2,
+                                                                      check_stability=False,
+                                                                      p=p,
+                                                                      sisj=np.concatenate((si,sisj)))
             # print if relative change is more than .1% for any entry
-            relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
+            if self.high_prec:
+                relerr = (list(map(mp.log10, np.abs(dJ-dJtwiceEps))) -
+                          np.array(list(map(mp.log10, np.abs(dJ)))))
+            else:
+                relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
             if (relerr>-3).any():
                 print("Unstable solution. Recommend shrinking eps. %E"%(10**relerr.max()))
+        else:
+            relerr = None
                    
-        if np.linalg.cond(A)>1e15:
+        if ((self.high_prec and mp.norm(A)*mp.norm(A**-1)>1e15) or
+            (not self.high_prec and np.linalg.cond(A)>1e15)):
             warn("A is badly conditioned.")
             errflag = 1
         else:
             errflag = 0
         if full_output:
-            return dJ, errflag, (A, C)
+            return dJ, errflag, (A, C), relerr
         return dJ, errflag
     
     def dkl_curvature(self, *args, **kwargs):
@@ -585,10 +635,12 @@ class IsingFisherCurvatureMethod1():
     def _maj_curvature(self,
                        hJ=None,
                        dJ=None,
-                       epsdJ=1e-4,
+                       epsdJ=1e-7,
                        check_stability=False,
                        rtol=1e-3,
                        full_output=False,
+                       calc_off_diag=True,
+                       calc_diag=True,
                        iprint=True):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
         the theta_{ij} parameters replacing the spin i by sampling from j for the number
@@ -609,6 +661,8 @@ class IsingFisherCurvatureMethod1():
         rtol : float, 1e-3
             Relative tolerance for each entry in Hessian when checking stability.
         full_output : bool, False
+        calc_off_diag : bool, True
+        calc_diag : bool, True
         iprint : bool, True
             
         Returns
@@ -646,20 +700,23 @@ class IsingFisherCurvatureMethod1():
             if np.isnan(epsdJ_): return 0.
             correction = calc_all_energies(n, kStates, dJ[i]*epsdJ_)
             
-            # forward step
             Enew = E+correction
-            modlogsumEk = logp2pk(Enew, uix, invix)
-            dklplus = 2*(logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
+            modlogsumEkplus = logp2pk(Enew, uix, invix)
             
             # backwards step
-            Enew = E-correction
-            modlogsumEk = logp2pk(Enew, uix, invix)
-            dklminus = 2*(logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
-            
-            dd = (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
+            #Enew = E-correction
+            #modlogsumEkminus = logp2pk(Enew, uix, invix)
+
+            dE = modlogsumEkplus - logsumEk
+            num = ((dE.dot(p) - dE)**2).dot(p)
+            dd = num / np.log(2) / epsdJ_**2
             if iprint and np.isnan(dd):
-                print('nan for diag', i, epsdJ_, dklplus, dklminus)
-            return dd
+                print('nan for diag', i, epsdJ_)
+            
+            # can be used to estimate error
+            #dE = modlogsumEkminus - logsumEk
+            #num = ((dE.dot(p) - dE)**2).dot(p)
+            return dd#, dd - num / np.log(2) / epsdJ_**2
 
         # off-diagonal entries of hessian
         def off_diag(args, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
@@ -668,61 +725,74 @@ class IsingFisherCurvatureMethod1():
             i, j = args
             
             # round eps step to machine precision
-            mxix = np.abs(dJ[i]+dJ[j]).argmax()
-            newhJ = hJ[mxix] + (dJ[i]+dJ[j])[mxix]*epsdJ
-            epsdJ_ = (newhJ - hJ[mxix])/(dJ[i]+dJ[j])[mxix]/2
-            if np.isnan(epsdJ_): return 0.
-            correction = calc_all_energies(n, kStates, (dJ[i]+dJ[j])*epsdJ_)
-            
-            # forward step
+            mxix = np.abs(dJ[i]).argmax()
+            newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
+            epsdJi = (newhJ - hJ[mxix])/dJ[i][mxix]/2
+            if np.isnan(epsdJi): return 0.
+            correction = calc_all_energies(n, kStates, dJ[i]*epsdJi)
             Enew = E+correction
-            modlogsumEk = logp2pk(Enew, uix, invix)
-            dklplus = (logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
+            modlogsumEki = logp2pk(Enew, uix, invix)
             
-            # backwards step
-            Enew = E-correction
-            modlogsumEk = logp2pk(Enew, uix, invix)
-            dklminus = (logsumEk - logZ - modlogsumEk + fast_logsumexp(-Enew)[0]).dot(p)
-
-            dd = (dklplus+dklminus) / np.log(2) / (2 * epsdJ_**2)
+            # round eps step to machine precision
+            mxix = np.abs(dJ[j]).argmax()
+            newhJ = hJ[mxix] + dJ[j][mxix]*epsdJ
+            epsdJj = (newhJ - hJ[mxix])/dJ[j][mxix]/2
+            if np.isnan(epsdJj): return 0.
+            correction = calc_all_energies(n, kStates, dJ[j]*epsdJj)
+            Enew = E+correction
+            modlogsumEkj = logp2pk(Enew, uix, invix)
+            
+            dEi = modlogsumEki - logsumEk
+            dEj = modlogsumEkj - logsumEk
+            num = ((dEi.dot(p) - dEi)*(dEj.dot(p) - dEj)).dot(p)
+            dd = num / np.log(2) / epsdJi / epsdJj
             if iprint and np.isnan(dd):
-                print('nan for off diag', args, epsdJ_, dklplus, dklminus)
+                print('nan for off diag', args, epsdJi, epsdJj)
             return dd
         
         hess = np.zeros((len(dJ),len(dJ)))
         if not 'pool' in self.__dict__.keys():
-            warn("Not using processes can lead to excessive memory usage.")
-            for i in range(len(dJ)):
-                hess[i,i] = diag(i)
-            if iprint:
-                print("Done with diag.")
-            for i,j in combinations(range(len(dJ)),2):
-                hess[i,j] = off_diag((i,j))
+            warn("Not using multiprocess can lead to excessive memory usage.")
+            if calc_diag:
+                for i in range(len(dJ)):
+                    hess[i,i] = diag(i)[0]
                 if iprint:
-                    print("Done with off diag (%d,%d)."%(i,j))
-            if iprint:
-                print("Done with off diag.")
+                    print("Done with diag.")
+            if calc_off_diag:
+                for i,j in combinations(range(len(dJ)),2):
+                    hess[i,j] = off_diag((i,j))
+                    if iprint:
+                        print("Done with off diag (%d,%d)."%(i,j))
+                if iprint:
+                    print("Done with off diag.")
         else:
-            hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
-            if iprint:
-                print("Done with diag.")
-            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
-            if iprint:
-                print("Done with off diag.")
+            if calc_diag:
+                hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+                if iprint:
+                    print("Done with diag.")
+            if calc_off_diag:
+                hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
+                if iprint:
+                    print("Done with off diag.")
 
         # subtract off linear terms to get Hessian (and not just cross derivative)
-        hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
-                                                         for i,j in combinations(range(len(dJ)),2)])
-        # fill in lower triangle
-        hess += hess.T
-        hess[np.eye(len(dJ))==1] /= 2
+        if calc_off_diag:
+            # fill in lower triangle
+            hess += hess.T
+            hess[np.eye(len(dJ))==1] /= 2
 
         # check for precision problems
         assert ~np.isnan(hess).any()
         assert ~np.isinf(hess).any()
 
         if check_stability:
-            hess2 = self._maj_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
+            hess2 = self._maj_curvature(epsdJ=epsdJ/2,
+                                        check_stability=False,
+                                        iprint=iprint,
+                                        hJ=hJ,
+                                        dJ=dJ,
+                                        calc_diag=calc_diag,
+                                        calc_off_diag=calc_off_diag)
             # 4/3 ratio predicted from expansion up to 4th order term with eps/2
             err = (hess - hess2)*4/3
             if (np.abs(err/hess) > rtol).any():
@@ -743,6 +813,47 @@ class IsingFisherCurvatureMethod1():
         if not full_output:
             return hess
         return hess, errflag, err
+
+    def _test_maj_curvature(self):
+        n = self.n
+        hJ = self.hJ
+        E = calc_all_energies(n, self.kStates, hJ)
+        logZ = fast_logsumexp(-E)[0]
+        logsumEk = self.logp2pk(E, self.coarseUix, self.coarseInvix)
+        p = np.exp(logsumEk - logZ)
+        dJ = self.dJ
+
+        # diagonal entries of hessian
+        def diag(i, eps, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
+                 uix=self.coarseUix, invix=self.coarseInvix,
+                 n=self.n, E=E, logZ=logZ, kStates=self.kStates):
+            # round eps step to machine precision
+            mxix = np.abs(dJ[i]).argmax()
+            newhJ = hJ[mxix] + dJ[i][mxix]*eps
+            eps = (newhJ-hJ[mxix]) / dJ[i][mxix]
+            if np.isnan(eps): return 0.
+            correction = calc_all_energies(n, kStates, dJ[i]*eps)
+            
+            # forward step
+            Enew = E+correction
+            modlogsumEkplus = logp2pk(Enew, uix, invix)
+            #Zkplus = fast_logsumexp(-Enew)[0]
+            
+            # backwards step
+            Enew = E-correction
+            modlogsumEkminus = logp2pk(Enew, uix, invix)
+            #Zkminus = fast_logsumexp(-Enew)[0]
+
+            num = (logsumEk - modlogsumEkplus)**2
+            ddplus = num.dot(p) / np.log(2) / eps**2
+
+            num = (logsumEk - modlogsumEkminus)**2
+            ddminus = num.dot(p) / np.log(2) / eps**2
+
+            #num_ = 2*(logsumEk - logZ) + (Zkplus - modlogsumEkplus) + (Zkminus - modlogsumEkminus)
+            #print( num_.dot(p) / np.log(2) / 2 / eps**2 )
+            return ddplus, ddplus-ddminus
+        return diag
 
     def _maj_curvature_high_prec(self,
                                  hJ=None,
