@@ -81,7 +81,7 @@ class IsingFisherCurvatureMethod1():
 
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
-        dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2), dtype=self.p.dtype)
+        dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
         for i in range(self.n):
             dJ[i], errflag = self.solve_linearized_perturbation(i, p=p, sisj=sisj)
         return dJ
