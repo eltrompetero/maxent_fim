@@ -775,7 +775,6 @@ class IsingFisherCurvatureMethod1():
                 if iprint:
                     print("Done with off diag.")
 
-        # subtract off linear terms to get Hessian (and not just cross derivative)
         if calc_off_diag:
             # fill in lower triangle
             hess += hess.T
@@ -793,8 +792,7 @@ class IsingFisherCurvatureMethod1():
                                         dJ=dJ,
                                         calc_diag=calc_diag,
                                         calc_off_diag=calc_off_diag)
-            # 4/3 ratio predicted from expansion up to 4th order term with eps/2
-            err = (hess - hess2)*4/3
+            err = hess - hess2
             if (np.abs(err/hess) > rtol).any():
                 errflag = 1
                 if iprint:
