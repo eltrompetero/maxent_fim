@@ -247,31 +247,35 @@ def calculate_fisher_on_pk(data, system, method,
             n = len(data[k][0])
             hJ = data[k][2]
             
-            if str(fi_method)=='1':
-                isingdkl = IsingFisherCurvatureMethod1(n, h=hJ[:n], J=hJ[n:], eps=1e-6, high_prec=high_prec)
-            elif fi_method=='1a':
-                isingdkl = IsingFisherCurvatureMethod1a(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
-            elif str(fi_method)=='2':
-                isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
-            elif str(fi_method)=='3':
-                isingdkl = IsingFisherCurvatureMethod3(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
-            elif str(fi_method)=='4':
-                isingdkl = IsingFisherCurvatureMethod4(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)
-            elif fi_method=='4a':
-                isingdkl = IsingFisherCurvatureMethod4a(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)
-            else:
-                raise Exception("Invalid method.")
-            epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
-            hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=epsdJ)
+            try:
+                if str(fi_method)=='1':
+                    isingdkl = IsingFisherCurvatureMethod1(n, h=hJ[:n], J=hJ[n:], eps=1e-6, high_prec=high_prec)
+                elif fi_method=='1a':
+                    isingdkl = IsingFisherCurvatureMethod1a(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+                elif str(fi_method)=='2':
+                    isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+                elif str(fi_method)=='3':
+                    isingdkl = IsingFisherCurvatureMethod3(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+                elif str(fi_method)=='4':
+                    isingdkl = IsingFisherCurvatureMethod4(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)
+                elif fi_method=='4a':
+                    isingdkl = IsingFisherCurvatureMethod4a(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)
+                else:
+                    raise Exception("Invalid method.")
+                epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
+                hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=epsdJ)
 
-            eigval, eigvec = isingdkl.hess_eig(hess)
+                eigval, eigvec = isingdkl.hess_eig(hess)
+                
+                fisherResultMaj[k] = [isingdkl, (hess, errflag, err), eigval, eigvec]
             
-            fisherResultMaj[k] = [isingdkl, (hess, errflag, err), eigval, eigvec]
-        
-            if save and save_every_loop:
-                print("Saving into %s"%fname)
-                with open(fname, 'wb') as f:
-                    dill.dump({'fisherResultMaj':fisherResultMaj}, f, -1)
+                if save and save_every_loop:
+                    print("Saving into %s"%fname)
+                    with open(fname, 'wb') as f:
+                        dill.dump({'fisherResultMaj':fisherResultMaj}, f, -1)
+            except AssertionError as e:
+                print("AssertionError for key %s"%k)
+                print(e)
 
     if save and not save_every_loop:
         print("Saving into %s"%fname)

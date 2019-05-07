@@ -2304,7 +2304,7 @@ def jit_observables_after_perturbation_minus_field(n, si, sisj, i, eps):
 
 @njit
 def jit_observables_after_perturbation_plus_mean(n, si, sisj, i, eps):
-    si[i] = si[i] + eps
+    si[i] = (1-eps)*si[i] + eps
 
     for j in delete(list(range(n)),i):
         if i<j:
@@ -2312,7 +2312,7 @@ def jit_observables_after_perturbation_plus_mean(n, si, sisj, i, eps):
         else:
             ijix = unravel_index((j,i),n)
 
-        sisj[ijix] = sisj[ijix] + eps*si[j]
+        sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
 
 @njit
 def jit_observables_after_perturbation_minus_mean(n, si, sisj, i, eps):
