@@ -709,6 +709,10 @@ class IsingFisherCurvatureMethod1():
 
             dE = modlogsumEkplus - logsumEk
             num = ((dE.dot(p) - dE)**2).dot(p)
+            #x = np.log(np.exp(modlogsumEkplus).sum()), fast_logsumexp(-Enew)[0]
+            #assert np.isclose(x[0], x[1]), x
+            #num1 = (np.log(p) -modlogsumEkplus +np.log(np.exp(modlogsumEkplus).sum())).dot(p)
+            #print(num,num1*2)
             dd = num / np.log(2) / epsdJ_**2
             if iprint and np.isnan(dd):
                 print('nan for diag', i, epsdJ_)
@@ -745,7 +749,7 @@ class IsingFisherCurvatureMethod1():
             dEi = modlogsumEki - logsumEk
             dEj = modlogsumEkj - logsumEk
             num = ((dEi.dot(p) - dEi)*(dEj.dot(p) - dEj)).dot(p)
-            dd = num / np.log(2) / epsdJi / epsdJj
+            dd = num / np.log(2) / (epsdJi * epsdJj)
             if iprint and np.isnan(dd):
                 print('nan for off diag', args, epsdJi, epsdJj)
             return dd
@@ -1730,7 +1734,7 @@ class IsingFisherCurvatureMethod3(IsingFisherCurvatureMethod1):
 
 
 class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
-    """Method2 tweaked for ternary states like C. elegans."""
+    """Method2 (pairwise correlations) tweaked for ternary states like C. elegans."""
     def __init__(self, n, kStates, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
         Parameters
@@ -1794,6 +1798,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
                 for j,k in combinations(range(n),2):
                     ix = (allStates[:,i]==gamma)&(allStates[:,j]==allStates[:,k])
                     self.triplets[(gamma,i,j,k)] = ix
+        # quartets that matter are when the first pair are the same and the second pair are the same
         for i,j in combinations(range(n),2):
             for k,l in combinations(range(n),2):
                 ix1 = allStates[:,i]==allStates[:,j]
@@ -1881,20 +1886,22 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
             jit_observables_after_perturbation_minus(n, siNew, sisjNew, i_, a_, eps_)
 
         return np.concatenate((siNew, sisjNew)), True
-    
-    def _solve_linearized_perturbation(self, iStar, aStar,
-                                      p=None,
-                                      sisj=None,
-                                      full_output=False,
-                                      eps=None,
-                                      check_stability=True,
-                                      disp=False):
-        """Consider a perturbation to a single spin.
+   
+    def _solve_linearized_perturbation(self, iStar, kStar,
+                                       p=None,
+                                       sisj=None,
+                                       full_output=False,
+                                       eps=None,
+                                       check_stability=True,
+                                       disp=False):
+        """Consider a perturbation to a single spin to make it more likely be in a
+        particular state. Remember that this assumes that the fields for the first state
+        are set to zero to remove the translation symmetry.
         
         Parameters
         ----------
         iStar : int
-        aStar : int
+        kStar : int
         p : ndarray, None
         sisj : ndarray, None
         full_output : bool, False
@@ -1924,46 +1931,51 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
         else:
             si = sisj[:kStates*n]
             sisj = sisj[kStates*n:]
-        A = np.zeros((kStates*n+n*(n-1)//2, kStates*n+n*(n-1)//2))
-        C, perturb_up = self.observables_after_perturbation(iStar, aStar, eps=eps)
+        # matrix that will be multiplied by the vector of canonical parameter perturbations
+        A = np.zeros((kStates*n+n*(n-1)//2, (kStates-1)*n+n*(n-1)//2))
+        C, perturb_up = self.observables_after_perturbation(iStar, kStar, eps=eps)
         errflag = 0
         
-        # mean constraints (this needs to be fixed to properly handle ternary states)
+        # mean constraints (remember that A does not include changes in first set of fields)
         for i in range(kStates*n):
-            for k in range(kStates*n):
-                if (i%n)==(k%n):
-                    A[i,i] = 1 - C[i]*si[i]
+            for j in range(n,kStates*n):
+                if i==j:
+                    A[i,j-n] = si[i] - C[i]*si[j]
+                # if they're in different states but the same spin
+                elif (i%n)==(j%n):
+                    A[i,j-n] = -C[i]*si[j]
                 else:
-                    if (i%n)<(k%n):
-                        ikix = unravel_index((i%n,k%n),n)
+                    if (i%n)<(j%n):
+                        A[i,j-n] = self.pairs[(i//n,i%n,j//n,j%n)].dot(p) - C[i]*si[j]
                     else:
-                        ikix = unravel_index((k%n,i%n),n)
-                    A[i,k] = sisj[ikix] - C[i]*si[k]
+                        A[i,j-n] = self.pairs[(j//n,j%n,i//n,i%n)].dot(p) - C[i]*si[j]
 
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[i,kStates*n+klcount] = self.triplets[(i%n,k%n,l)].dot(p) - C[i]*sisj[klcount]
+                A[i,(kStates-1)*n+klcount] = self.triplets[(i//n,i%n,k,l)].dot(p) - C[i]*sisj[klcount]
         
-        # pair constraints (needs to be fixed to handle ternary means)
+        # pair constraints
         for ijcount,(i,j) in enumerate(combinations(range(n),2)):
-            for k in range(n):
-                A[kStates*n+ijcount,k] = self.triplets[(i,j,k)].dot(p) - C[kStates*n+ijcount]*si[k]
+            for k in range(kStates*n):
+                A[kStates*n+ijcount,k-n] = (self.triplets[(k//n,k%n,i,j)].dot(p) -
+                                            C[kStates*n+ijcount]*si[k])
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[kStates*n+ijcount,kStates*n+klcount] = (self.quartets[(i,j,k,l)].dot(p) -
-                                                          C[kStates*n+ijcount]*sisj[klcount])
-    
+                A[kStates*n+ijcount,(kStates-1)*n+klcount] = (self.quartets[(i,j,k,l)].dot(p) -
+                                                              C[kStates*n+ijcount]*sisj[klcount])
         C -= self.sisj
         # factor out linear dependence on eps
-        dJ = np.linalg.solve(A,C)/-eps
+        dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
+        # put back in fields that we've fixed
+        dJ = np.concatenate((np.zeros(n), dJ))
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
-            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, aStar,
+            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, kStar,
                                                                       p=p,
                                                                       sisj=np.concatenate((si,sisj)),
                                                                       eps=eps/2,
                                                                       check_stability=False)
             # print if relative change is more than .1% for any entry
-            relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
+            relerr = np.log10(np.abs(dJ[n:]-dJtwiceEps[n:]))-np.log10(np.abs(dJ[n:]))
             if (relerr>-3).any():
                 if disp:
                     print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
@@ -1979,7 +1991,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
                 return dJ, errflag, (A, C), relerr
             return dJ, errflag, (A, C)
         return dJ, errflag
-
+ 
     def __get_state__(self):
         # always close multiprocess pool when pickling
         if 'pool' in self.__dict__.keys():
@@ -2110,111 +2122,6 @@ class IsingFisherCurvatureMethod4a(IsingFisherCurvatureMethod4):
 
         return np.concatenate((siNew, sisjNew)), True
     
-    def _solve_linearized_perturbation(self, iStar, kStar,
-                                       p=None,
-                                       sisj=None,
-                                       full_output=False,
-                                       eps=None,
-                                       check_stability=True,
-                                       disp=False):
-        """Consider a perturbation to a single spin to make it more likely be in a
-        particular state. Remember that this assumes that the fields for the first state
-        are set to zero to remove the translation symmetry.
-        
-        Parameters
-        ----------
-        iStar : int
-        kStar : int
-        p : ndarray, None
-        sisj : ndarray, None
-        full_output : bool, False
-        eps : float, None
-        check_stability : bool, False
-
-        Returns
-        -------
-        ndarray
-            dJ
-        int
-            Error flag. Returns 0 by default. 1 means badly conditioned matrix A.
-        tuple (optional)
-            (A,C)
-        float (optional)
-            Relative error to log10.
-        """
-        
-        eps = eps or self.eps
-        n = self.n
-        kStates = self.kStates
-        if p is None:
-            p = self.p
-        if sisj is None:
-            si = self.sisj[:n*kStates]
-            sisj = self.sisj[kStates*n:]
-        else:
-            si = sisj[:kStates*n]
-            sisj = sisj[kStates*n:]
-        # matrix that will be multiplied by the vector of canonical parameter perturbations
-        A = np.zeros((kStates*n+n*(n-1)//2, (kStates-1)*n+n*(n-1)//2))
-        C, perturb_up = self.observables_after_perturbation(iStar, kStar, eps=eps)
-        errflag = 0
-        
-        # mean constraints (remember that A does not include changes in first set of fields)
-        for i in range(kStates*n):
-            for j in range(n,kStates*n):
-                if i==j:
-                    A[i,j-n] = si[i] - C[i]*si[j]
-                # if they're in different states but the same spin
-                elif (i%n)==(j%n):
-                    A[i,j-n] = -C[i]*si[j]
-                else:
-                    if (i%n)<(j%n):
-                        A[i,j-n] = self.pairs[(i//n,i%n,j//n,j%n)].dot(p) - C[i]*si[j]
-                    else:
-                        A[i,j-n] = self.pairs[(j//n,j%n,i//n,i%n)].dot(p) - C[i]*si[j]
-
-            for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[i,(kStates-1)*n+klcount] = self.triplets[(i//n,i%n,k,l)].dot(p) - C[i]*sisj[klcount]
-        
-        # pair constraints
-        for ijcount,(i,j) in enumerate(combinations(range(n),2)):
-            for k in range(kStates*n):
-                A[kStates*n+ijcount,k-n] = (self.triplets[(k//n,k%n,i,j)].dot(p) -
-                                            C[kStates*n+ijcount]*si[k])
-            for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[kStates*n+ijcount,(kStates-1)*n+klcount] = (self.quartets[(i,j,k,l)].dot(p) -
-                                                              C[kStates*n+ijcount]*sisj[klcount])
-        C -= self.sisj
-        # factor out linear dependence on eps
-        dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
-        # put back in fields that we've fixed
-        dJ = np.concatenate((np.zeros(n), dJ))
-
-        if check_stability:
-            # double epsilon and make sure solution does not change by a large amount
-            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, kStar,
-                                                                      p=p,
-                                                                      sisj=np.concatenate((si,sisj)),
-                                                                      eps=eps/2,
-                                                                      check_stability=False)
-            # print if relative change is more than .1% for any entry
-            relerr = np.log10(np.abs(dJ[n:]-dJtwiceEps[n:]))-np.log10(np.abs(dJ[n:]))
-            if (relerr>-3).any():
-                if disp:
-                    print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
-                errflag = 2
-        
-        if np.linalg.cond(A)>1e15:
-            warn("A is badly conditioned.")
-            # this takes precedence over relerr over threshold
-            errflag = 1
-
-        if full_output:
-            if check_stability:
-                return dJ, errflag, (A, C), relerr
-            return dJ, errflag, (A, C)
-        return dJ, errflag
-
     def _solve_linearized_perturbation_tester(self, iStar, gamma):
         """
         ***FOR DEBUGGING ONLY***

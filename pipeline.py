@@ -520,7 +520,8 @@ def _degree_collective2(fisherResultValue,
     #if err is None or np.linalg.norm(err)<(.05*np.linalg.norm(hess)):
     if method=='vec':
         v = np.insert(eigvec[:,0], range(0,n*n,n), 0).reshape(n,n)
-        p = (v**2).sum(1)
+        #p = (v**2).sum(1)
+        p = ((v**2).sum(1)+(v**2).sum(0))/2
         p /= p.sum()
 
     elif method=='val':
