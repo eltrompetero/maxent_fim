@@ -604,7 +604,7 @@ class IsingFisherCurvatureMethod1():
         epsDecreaseFactor = 10
         
         try:
-            if self.n_cpus is None or self.n_cpus>0:
+            if self.n_cpus is None or self.n_cpus>1:
                 n_cpus = self.n_cpus or mp.cpu_count()
                 self.pool = mp.Pool(n_cpus,maxtasksperchild=1)
 
@@ -628,7 +628,7 @@ class IsingFisherCurvatureMethod1():
                 else:
                     converged = True
         finally:
-            if self.n_cpus is None or self.n_cpus>0:
+            if self.n_cpus is None or self.n_cpus>1:
                 self.pool.close()
                 del self.pool
 
@@ -1646,6 +1646,7 @@ class IsingSpinReplacementFIM(IsingFisherCurvatureMethod2):
                 T.append(t.copy())
                 T[-1].data[(t.data>=.1)&(t.data<1)] = 1-self.eps/2
                 T[-1].data[(t.data<.1)&(t.data>0)] = self.eps/2
+            eps = epsdJ
 
         # diagonal entries of hessian
         def diag(args, p=self.p, pk=pk, p2pk=self.p2pk,
@@ -1676,12 +1677,12 @@ class IsingSpinReplacementFIM(IsingFisherCurvatureMethod2):
             warn("Not using multiprocess can lead to excessive memory usage.")
             if calc_diag:
                 for i in range(len(T)):
-                    hess[i,i] = diag((i,T[i]))[0]
+                    hess[i,i] = diag((i,T[i]))
                 if iprint:
                     print("Done with diag.")
             if calc_off_diag:
                 for i,j in combinations(range(len(T)),2):
-                    hess[i,j] = off_diag((i,j,T[i],T[j]))
+                    hess[i,j] = off_diag(( (i,j), (T[i],T[j]) ))
                     if iprint:
                         print("Done with off diag (%d,%d)."%(i,j))
                 if iprint:
@@ -1708,7 +1709,7 @@ class IsingSpinReplacementFIM(IsingFisherCurvatureMethod2):
                                         iprint=iprint,
                                         calc_diag=calc_diag,
                                         calc_off_diag=calc_off_diag,
-                                        eps=self.eps/2)
+                                        epsdJ=eps/2)
             err = hess - hess2
             if (np.abs(err/hess) > rtol).any():
                 errflag = 1
@@ -2075,7 +2076,7 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
                 for a in np.delete(range(self.n),i):
                     yield (i,a)
 
-        if self.n_cpus is None or self.n_cpus>0:
+        if self.n_cpus is None or self.n_cpus>1:
             try: 
                 # don't use all the cpus since lin alg calculations will be slower
                 pool = Pool(self.n_cpus or cpu_count()//2)
