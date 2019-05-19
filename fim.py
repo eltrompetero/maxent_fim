@@ -8,11 +8,12 @@ from coniii.utils import *
 from .utils import *
 import importlib
 from warnings import warn
-from itertools import combinations
+from itertools import combinations, product
 from coniii.enumerate import fast_logsumexp, mp_fast_logsumexp
 from coniii.utils import define_ising_helper_functions
 from multiprocess import Pool, cpu_count
 import mpmath as mp
+from scipy.sparse import coo_matrix
 calc_e, _, _ = define_ising_helper_functions()
 np.seterr(divide='ignore')
 
@@ -65,6 +66,12 @@ class IsingFisherCurvatureMethod1():
             self.dJ = self.compute_dJ()
         else:
             self.dJ = np.zeros((self.n,self.n+(self.n-1)*self.n//2))
+
+        self._custom_end_init()
+
+    def _custom_end_init(self):
+        """Placeholder that can be replaced in children classes."""
+        return
     
     def _triplets_and_quartets(self):
         n = self.n
@@ -1234,7 +1241,7 @@ class IsingFisherCurvatureMethod1a(IsingFisherCurvatureMethod1):
 
 
 class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
-    """Perturbation to increase symmetry between pairs of spins.
+    """Perturbation to increase correlation between pairs of spins.
     """
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
@@ -1491,8 +1498,244 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
                 return dJ, errflag, (A, C), relerr
             return dJ, errflag, (A, C)
         return dJ, errflag
-#end IsingFisherCurvatureMethod2
+#end IsingFisherCurvatureMethod2a
 
+
+class IsingSpinReplacementFIM(IsingFisherCurvatureMethod2):
+    """FIM calculations for Ising model probability distribution where full spin
+    transition matrix for pair spin replacement is spelled out. Alias Method2b.
+    """
+    def __init__(self, n,
+                 h=None,
+                 J=None,
+                 eps=1e-7,
+                 precompute=True,
+                 n_cpus=None,
+                 high_prec=False):
+        """
+        Parameters
+        ----------
+        n : int
+        h : ndarray, None
+        J : ndarray, None
+        eps : float, 1e-7
+        precompute : bool, True
+        n_cpus : int, None
+        high_prec : bool, False
+        """
+
+        assert n>1 and 0<eps<.1
+        self.n = n
+        self.kStates = 2
+        self.eps = eps
+        self.hJ = np.concatenate((h,J))
+        self.n_cpus = n_cpus
+        self.high_prec = high_prec
+
+        if high_prec: 
+            self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym_hp'%n)
+        else:
+            self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
+        self.sisj = self.ising.calc_observables(self.hJ)
+        self.p = self.ising.p(self.hJ)
+        self.allStates = bin_states(n, True).astype(int)
+        self.coarseUix, self.coarseInvix = np.unique(np.abs(self.allStates.sum(1)), return_inverse=True)
+        
+        self.T = []
+        if precompute:
+            for i,a in product(range(n),range(n)):
+                if i!=a:
+                    self.T.append(self.pair_transition_matrix(i, a, eps))
+        # just filler for compatibility with super class
+        self.dJ = [None for i in range(len(self.T))] 
+
+    def observables_after_perturbation(self, i, a, eps=None):
+        """Make spin index i more like spin a by eps. Perturb the corresponding mean and
+        the correlations with other spins j.
+        
+        Parameters
+        ----------
+        i : int
+            Spin being perturbed.
+        a : int
+            Spin to mimic.
+        eps : float, None
+
+        Returns
+        -------
+        ndarray
+            Observables <si> and <sisj> after perturbation.
+        """
+        
+        return pair_corr(self.allStates,
+                         weights=self.pair_transition_matrix(i, a, eps).dot(self.p),
+                         concat=True)
+
+    def pair_transition_matrix(self, i, j, eps=None):
+        """Probability transition matrix when fraction epsilon of voter i is replaced by
+        voter j.
+
+        Parameters
+        ----------
+        i : int
+            Make i more like j.
+        j : int
+        eps : float, None
+
+        Returns
+        -------
+        scipy.sparse.coo_matrix
+        """
+        
+        assert i!=j
+        if eps is None:
+            eps = self.eps
+        
+        # generate full transition matrix by iterating through all possible states
+        rows, cols, vals = jit_spin_replace_transition_matrix(self.n, i, j, eps) 
+        T = coo_matrix((vals, (rows,cols)))
+        return T
+
+    def _maj_curvature(self,
+                       epsdJ=None,
+                       check_stability=False,
+                       rtol=1e-3,
+                       full_output=False,
+                       calc_off_diag=True,
+                       calc_diag=True,
+                       iprint=True):
+        """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
+        the theta_{ij} parameters replacing the spin i by sampling from j for the number
+        of k votes in the majority.
+
+        Use single step finite difference method to estimate Hessian.
+        
+        Parameters
+        ----------
+        epsdJ : float, None
+        check_stability : bool, True
+        rtol : float, 1e-3
+        full_output : bool, False
+        calc_off_diag : bool, True
+        calc_diag : bool, True
+        iprint : bool, True
+            
+        Returns
+        -------
+        ndarray
+            Hessian.
+        int (optional)
+            Error flag. 1 indicates rtol was exceeded. None indicates that no check was
+            done.
+        float (optional)
+            Norm difference between hessian with step size eps and eps/2.
+        """
+
+        n = self.n
+        pk = self.p2pk(self.p, self.coarseUix, self.coarseInvix)
+        assert np.isclose(pk.sum(),1), pk.sum()
+        if iprint:
+            print('Done with preamble.')
+        if epsdJ is None:
+            eps = self.eps
+            T = self.T
+        elif epsdJ!=self.eps:
+            # convert T into one with appropriate eps
+            T = []
+            for i,t in enumerate(self.T):
+                T.append(t.copy())
+                T[-1].data[(t.data>=.1)&(t.data<1)] = 1-self.eps/2
+                T[-1].data[(t.data<.1)&(t.data>0)] = self.eps/2
+
+        # diagonal entries of hessian
+        def diag(args, p=self.p, pk=pk, p2pk=self.p2pk,
+                 uix=self.coarseUix, invix=self.coarseInvix,
+                 n=self.n, kStates=self.kStates):
+            i, T = args
+            num = (np.log2(pk) - np.log2(p2pk(T.dot(p),uix,invix))).dot(pk)
+            dd = num / eps**2 * 2
+            if iprint and np.isnan(dd):
+                print('nan for diag', i, eps)
+            return dd
+
+        # off-diagonal entries of hessian
+        def off_diag(args, p=self.p, pk=pk, p2pk=self.p2pk,
+                     uix=self.coarseUix, invix=self.coarseInvix,
+                     n=self.n, kStates=self.kStates):
+            (i, j), (Ti, Tj) = args
+            
+            eps_ = 2*eps
+            num = (np.log2(pk) - np.log2(p2pk(Ti.dot(Tj).dot(p),uix,invix))).dot(pk)
+            dd = num / eps_**2 * 2
+            if iprint and np.isnan(dd):
+                print('nan for off diag', args, eps_)
+            return dd
+        
+        hess = np.zeros((len(T),len(T)))
+        if not 'pool' in self.__dict__.keys():
+            warn("Not using multiprocess can lead to excessive memory usage.")
+            if calc_diag:
+                for i in range(len(T)):
+                    hess[i,i] = diag((i,T[i]))[0]
+                if iprint:
+                    print("Done with diag.")
+            if calc_off_diag:
+                for i,j in combinations(range(len(T)),2):
+                    hess[i,j] = off_diag((i,j,T[i],T[j]))
+                    if iprint:
+                        print("Done with off diag (%d,%d)."%(i,j))
+                if iprint:
+                    print("Done with off diag.")
+        else:
+            if calc_diag:
+                hess[np.eye(len(T))==1] = self.pool.map(diag, zip(range(len(T)),T))
+                if iprint:
+                    print("Done with diag.")
+            if calc_off_diag:
+                hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag,
+                                                                     zip(combinations(range(len(T)),2),
+                                                                         combinations(T,2)))
+                if iprint:
+                    print("Done with off diag.")
+
+        if calc_off_diag:
+            # fill in lower triangle
+            hess += hess.T
+            hess[np.eye(len(T))==1] /= 2
+
+        if check_stability:
+            hess2 = self._maj_curvature(check_stability=False,
+                                        iprint=iprint,
+                                        calc_diag=calc_diag,
+                                        calc_off_diag=calc_off_diag,
+                                        eps=self.eps/2)
+            err = hess - hess2
+            if (np.abs(err/hess) > rtol).any():
+                errflag = 1
+                if iprint:
+                    msg = ("Finite difference estimate has not converged with rtol=%f. "+
+                           "May want to shrink epsdJ. Norm error %f.")
+                    print(msg%(rtol,np.linalg.norm(err)))
+            else:
+                errflag = 0
+                if iprint:
+                    msg = "Finite difference estimate converged with rtol=%f."
+                    print(msg%rtol)
+        else:
+            errflag = None
+            err = None
+
+        # check for precision problems
+        assert ~np.isnan(hess).any()
+        assert ~np.isinf(hess).any()
+
+        errflag = None
+        err = None
+
+        if not full_output:
+            return hess
+        return hess, errflag, err
+#end IsingSpinReplacementFIM
 
 
 class IsingFisherCurvatureMethod3(IsingFisherCurvatureMethod1):
@@ -2365,3 +2608,27 @@ def calc_all_energies(n, k, params):
             e[i] -= fast_sum_ternary(params[n*k:], s_)
     else: raise NotImplementedError
     return e
+
+def jit_spin_replace_transition_matrix(n, i, j, eps):
+    rows = []
+    cols = []
+    vals = []
+    for ix in range(2**n):
+        s = bin(ix)[2:].zfill(n)
+        if s[i]!=s[j]:
+            rows.append(ix)
+            cols.append(ix)
+            vals.append(1-eps)
+            
+            if s[i]=='0':
+                s = s[:i]+'1'+s[i+1:]
+            else:
+                s = s[:i]+'0'+s[i+1:]
+            rows.append(int(s,2))
+            cols.append(ix)
+            vals.append(eps)
+        else:
+            rows.append(ix)
+            cols.append(ix)
+            vals.append(1.)
+    return rows, cols, vals

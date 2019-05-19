@@ -254,6 +254,8 @@ def calculate_fisher_on_pk(data, system, method,
                     isingdkl = IsingFisherCurvatureMethod1a(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
                 elif str(fi_method)=='2':
                     isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+                elif str(fi_method)=='2b':
+                    isingdkl = IsingSpinReplacementFIM(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
                 elif str(fi_method)=='3':
                     isingdkl = IsingFisherCurvatureMethod3(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
                 elif str(fi_method)=='4':
@@ -262,8 +264,11 @@ def calculate_fisher_on_pk(data, system, method,
                     isingdkl = IsingFisherCurvatureMethod4a(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)
                 else:
                     raise Exception("Invalid method.")
-                epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
-                hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=epsdJ)
+                if fi_method=='2b':
+                    hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=isingdkl.eps)
+                else:
+                    epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
+                    hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=epsdJ)
 
                 eigval, eigvec = isingdkl.hess_eig(hess)
                 
