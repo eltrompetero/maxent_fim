@@ -766,7 +766,7 @@ class IsingFisherCurvatureMethod1():
             warn("Not using multiprocess can lead to excessive memory usage.")
             if calc_diag:
                 for i in range(len(dJ)):
-                    hess[i,i] = diag(i)[0]
+                    hess[i,i] = diag(i)
                 if iprint:
                     print("Done with diag.")
             if calc_off_diag:
