@@ -427,6 +427,8 @@ def degree_collective(fisherResult, **kwargs):
             degree[i] = _degree_collective1(fisherResult[k], **kwargs) 
         elif type(fisherResult[k][0]) is IsingFisherCurvatureMethod2:
             degree[i] = _degree_collective2(fisherResult[k], **kwargs) 
+        elif type(fisherResult[k][0]) is IsingFisherCurvatureMethod4:
+            degree[i] = _degree_collective2(fisherResult[k], **kwargs) 
         elif type(fisherResult[k][0]) is IsingFisherCurvatureMethod4a:
             degree[i] = _degree_collective4a(fisherResult[k], **kwargs) 
         else:
@@ -526,8 +528,9 @@ def _degree_collective2(fisherResultValue,
     if method=='vec':
         v = np.insert(eigvec[:,0], range(0,n*n,n), 0).reshape(n,n)
         #p = (v**2).sum(1)
-        p = ((v**2).sum(1)+(v**2).sum(0))/2
-        p /= p.sum()
+        #p = ((v**2).sum(1)+(v**2).sum(0))/2
+        #p /= p.sum()
+        degree = (v**2+v.T**2-2*np.abs(v*v.T)).sum()/2
 
     elif method=='val':
         # when limited to the subspace of a single voter at a given time (how do we 
@@ -552,7 +555,7 @@ def _degree_collective2(fisherResultValue,
 
     else:
         raise Exception("Invalid choice for method.")
-    degree = -np.log2(p).dot(p) / np.log2(p.size)
+    #degree = -np.log2(p).dot(p) / np.log2(p.size)
     return degree
 
 def _degree_collective4a(fisherResultValue,
