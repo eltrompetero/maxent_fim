@@ -715,40 +715,9 @@ class IsingFisherCurvatureMethod1():
                 print('nan for diag', i, epsdJ_)
             
             return dd
-        #def diag(i, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
-        #         uix=self.coarseUix, invix=self.coarseInvix,
-        #         n=self.n, E=E, logZ=logZ, kStates=self.kStates):
-        #    # round eps step to machine precision
-        #    mxix = np.abs(dJ[i]).argmax()
-        #    newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
-        #    epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
-        #    if np.isnan(epsdJ_): return 0.
-        #    correction = calc_all_energies(n, kStates, dJ[i]*epsdJ_)
-        #    
-        #    Enew = E+correction
-        #    modlogsumEkplus = logp2pk(Enew, uix, invix)
-        #    
-        #    # backwards step
-        #    #Enew = E-correction
-        #    #modlogsumEkminus = logp2pk(Enew, uix, invix)
-
-        #    dE = modlogsumEkplus - logsumEk
-        #    num = ((dE.dot(p) - dE)**2).dot(p)
-        #    #x = np.log(np.exp(modlogsumEkplus).sum()), fast_logsumexp(-Enew)[0]
-        #    #assert np.isclose(x[0], x[1]), x
-        #    #num1 = (np.log(p) -modlogsumEkplus +np.log(np.exp(modlogsumEkplus).sum())).dot(p)
-        #    #print(num,num1*2)
-        #    dd = num / np.log(2) / epsdJ_**2
-        #    if iprint and np.isnan(dd):
-        #        print('nan for diag', i, epsdJ_)
-        #    
-        #    # can be used to estimate error
-        #    #dE = modlogsumEkminus - logsumEk
-        #    #num = ((dE.dot(p) - dE)**2).dot(p)
-        #    return dd#, dd - num / np.log(2) / epsdJ_**2
 
         # off-diagonal entries of hessian
-        def off_diag(args, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
+        def off_diag(args, hJ=hJ, dJ=dJ, p=self.p, pk=p, logp2pk=self.logp2pk,
                      uix=self.coarseUix, invix=self.coarseInvix,
                      n=self.n, E=E, logZ=logZ, kStates=self.kStates):
             i, j = args
@@ -759,21 +728,19 @@ class IsingFisherCurvatureMethod1():
             epsdJi = (newhJ - hJ[mxix])/dJ[i][mxix]/2
             if np.isnan(epsdJi): return 0.
             correction = calc_all_energies(n, kStates, dJ[i]*epsdJi)
-            Enew = E+correction
-            modlogsumEki = logp2pk(Enew, uix, invix)
-            
+            correctioni = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
+                                    for ix in range(uix.size)])
+
             # round eps step to machine precision
             mxix = np.abs(dJ[j]).argmax()
             newhJ = hJ[mxix] + dJ[j][mxix]*epsdJ
             epsdJj = (newhJ - hJ[mxix])/dJ[j][mxix]/2
             if np.isnan(epsdJj): return 0.
             correction = calc_all_energies(n, kStates, dJ[j]*epsdJj)
-            Enew = E+correction
-            modlogsumEkj = logp2pk(Enew, uix, invix)
-            
-            dEi = modlogsumEki - logsumEk
-            dEj = modlogsumEkj - logsumEk
-            num = ((dEi.dot(p) - dEi)*(dEj.dot(p) - dEj)).dot(p)
+            correctionj = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
+                                    for ix in range(uix.size)])
+
+            num = ((correctioni.dot(pk) - correctioni)*(correctionj.dot(pk) - correctionj)).dot(pk)
             dd = num / np.log(2) / (epsdJi * epsdJj)
             if iprint and np.isnan(dd):
                 print('nan for off diag', args, epsdJi, epsdJj)
