@@ -43,3 +43,4 @@ def block_subspace_eig(hess, k, remove_n_modes=0):
         blockeigval.append(u)
         blockeigvec.append(v)
     return blockeigval, blockeigvec
+

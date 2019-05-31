@@ -125,7 +125,7 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
     None
     """
     
-    from coniii.utils import pair_corr, define_ising_helper_functions, define_pseudo_ising_helpers
+    from coniii.utils import pair_corr, define_ising_helper_functions, define_pseudo_ising_helper_functions
     from data_sets.neuron.data import potts_pair_corr
     from coniii.solvers import Enumerate, Pseudo
     import importlib
@@ -154,12 +154,12 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
         if not potts and np.linalg.norm(soln['fun'])>1e-3:
             # try Pseudo (non-ergodic?)
             print("Entering pseudo %s."%name)
-            get_multipliers_r, calc_observables_r = define_pseudo_ising_helpers(n)
+            get_multipliers_r, calc_observables_r = define_pseudo_ising_helper_functions(n)
             pseudoSolver = Pseudo(n,
                                   calc_observables=calc_observables,
                                   calc_observables_r=calc_observables_r,
                                   get_multipliers_r=get_multipliers_r)
-            hJ = pseudoSolver.solve(X, np.zeros(n+n*(n-1)//2), general_case=True)
+            hJ = pseudoSolver.solve(X, np.zeros(n+n*(n-1)//2))
 
             # try again
             try:
