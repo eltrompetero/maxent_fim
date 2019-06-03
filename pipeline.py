@@ -166,6 +166,7 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
                 hJ, soln = enumSolver.solve(sisj,
                                             initial_guess=hJ,
                                             max_param_value=50*n/9,
+                                            method={'method':'hybr'},
                                             full_output=True)
             # this occurs when Jacobian inverse returns zero vector
             except ValueError:
@@ -175,6 +176,8 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
                                         max_param_value=50*n/9,
                                         full_output=True,
                                         scipy_solver_kwargs={'method':'krylov'})
+
+        print("Done %s."%name)
         return hJ, soln
     
     if n_cpus>1:
