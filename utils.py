@@ -179,7 +179,7 @@ def coarse_grain(X, nbins, sortix=None, method='maj', params=()):
         for i in range(1,nbins+1):
             binsix.append( np.where(groupix==i)[0] )
             coarseX[:,i-1] = np.sign(X[:,groupix==i].sum(1))
-        coarseX[coarseX==0] = np.random.choice([-1,1], size=(coarseX==0).sum())
+
     elif method=='anypos':
         # find locations of where the index cutoffs will be per bin
         bins = np.linspace(0, sortix.size-1, nbins+1)
@@ -192,7 +192,6 @@ def coarse_grain(X, nbins, sortix=None, method='maj', params=()):
         for i in range(1,nbins+1):
             binsix.append( np.where(groupix==i)[0] )
             coarseX[:,i-1] = (X[:,groupix==i]==1).any(1) * 2 - 1
-        coarseX[coarseX==0] = np.random.choice([-1,1], size=(coarseX==0).sum())
  
     elif method=='corr':
         # no sortix used here
