@@ -173,7 +173,7 @@ def coarse_grain(X, nbins, sortix=None, method='maj', params=()):
         bins[-1] += np.inf
         
         # sort into bins
-        groupix = np.digitize(sortix, bins)
+        groupix = np.digitize(np.arange(X.shape[1]), bins)
 
         coarseX = np.zeros((len(X), nbins), dtype=int)
         for i in range(1,nbins+1):
@@ -186,7 +186,7 @@ def coarse_grain(X, nbins, sortix=None, method='maj', params=()):
         bins[-1] += np.inf
         
         # sort into bins
-        groupix = np.digitize(sortix, bins)
+        groupix = np.digitize(np.arange(X.shape[1]), bins)
 
         coarseX = np.zeros((len(X), nbins), dtype=int)
         for i in range(1,nbins+1):
@@ -195,6 +195,8 @@ def coarse_grain(X, nbins, sortix=None, method='maj', params=()):
         coarseX[coarseX==0] = np.random.choice([-1,1], size=(coarseX==0).sum())
  
     elif method=='corr':
+        # no sortix used here
+        raise NotImplementedError
         from scipy.spatial.distance import squareform
         coarseX = X.copy()
         originalIx = [[i] for i in range(X.shape[1])]
