@@ -103,7 +103,7 @@ def check_corr(system, method, orders=range(2,9,2), prefix='cache'):
                 errs[i], corr[i] = check_correlations(X, p, orders)
     return errs, corr
 
-def solve_inverse_on_data(data, n_cpus=4, potts=False):
+def solve_inverse_on_data(data, n_cpus=4, potts=False, force_krylov=False):
     """Automate solution of inverse problem on data dictionary. Only run on tuples in dict
     that only have two entries (the others presumably have already been solved and the
     solutions saved).
@@ -119,6 +119,8 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
         As saved into the data dictionary when reading out voting records. Each element is
         a two-element list containing the voter names, voting record.
     n_cpus : int, 4
+    potts: bool, False
+    force_krylov : bool, False
 
     Returns
     -------
@@ -163,10 +165,14 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False):
 
             # try again
             try:
+                if force_krylov:
+                    kwargs = {'method':'krylov'}
+                else:
+                    kwargs = {'method':'hybr'}
                 hJ, soln = enumSolver.solve(sisj,
                                             initial_guess=hJ,
                                             max_param_value=50*n/9,
-                                            scipy_solver_kwargs={'method':'hybr'},
+                                            scipy_solver_kwargs=kwargs,
                                             full_output=True)
             # this occurs when Jacobian inverse returns zero vector
             except ValueError:
