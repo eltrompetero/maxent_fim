@@ -42,6 +42,33 @@ def create_mvm_p(n, q):
         assert (np.sign(allStates[pmvm>0][ix==0][:,1:].sum(1))==0).all()
     return pmvm
 
+def mvm_corr(n):
+    """Median Voter Model (q=1) pairwise correlations.
+    
+    Check formulation in SCOTUS II pg. 116.
+    
+    Parameters
+    ----------
+    int : n
+    
+    Returns
+    -------
+    float
+        <s_median * s_ordinary>
+    float
+        <s_o * s_o''>
+    """
+    
+    assert (n%2)==1
+    Z = 2**(n-2) 
+    
+    # <s_Median s_Ordinary>
+    smo = (sum([binom(n-1,k) * (k/(n-1) - (n-1-k)/(n-1))
+                for k in range((n-1)//2,n)])) / Z
+    
+    soo = 0.
+    return smo, soo
+
 def setup_maxent_mvm(n):
     """Median Voter Model with special Ordinary voter O' that has special couplings with
     the Median and the remaining O voters.

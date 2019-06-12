@@ -6,6 +6,11 @@ from .mvm import *
 from importlib import import_module
 
 
+def test_mvm_corr():
+    for n in [5,7,9,11,13]:
+        assert np.isclose(pair_corr(bin_states(n,True), weights=create_mvm_p(n, 1))[1][0],
+                          mvm_corr(n)[0])
+
 def test_setup_maxent_mvm():
     np.random.seed(0)
     Jmo, Jmop, Joo, Jop = np.random.normal(size=4, scale=.3)
