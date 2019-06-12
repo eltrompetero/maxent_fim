@@ -219,7 +219,6 @@ def setup_maxent(n):
                 -E_with_maj_against_median(*J, n-1) + np.log(n),
                 -E_not_with_maj_against_median(*J, n-1) + np.log(n),
                 -E_with_maj_with_median(*J, n)]
-        return np.exp( fast_logsumexp(exp, coeffs)[0] - logZ(*J) )
         num, sign = fast_logsumexp(exp, coeffs)
         return sign * np.exp( num - logZ(*J) )
     
