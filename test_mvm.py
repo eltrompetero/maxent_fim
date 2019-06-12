@@ -7,14 +7,22 @@ from importlib import import_module
 
 
 def test_mvm_corr():
-    for n in [5,7,9,11,13]:
+    for n in [5,7,9,11]:
         assert np.isclose(pair_corr(bin_states(n,True), weights=create_mvm_p(n, 1))[1][0],
                           mvm_corr(n)[0])
+
+def test_couplings():
+    for n in [5,7,9,11]:
+        smo_fun, smop_fun, soo_fun, soop_fun, _ = setup_maxent_mvm(n)
+        Jmo, Joo = couplings(n)
+        assert np.isclose([smo_fun(Jmo,Jmo,Joo,Joo), soo_fun(Jmo,Jmo,Joo,Joo)],
+                          np.array(mvm_corr(n)), atol=1e-7).all()
+        print("Test passed: numerically solved couplings return expected correlations for n=%d."%n)
 
 def test_setup_maxent_mvm():
     np.random.seed(0)
     Jmo, Jmop, Joo, Jop = np.random.normal(size=4, scale=.3)
-    nRange = [5,7,9,11,13]
+    nRange = [5,7,9,11]
 
     for i,n in enumerate(nRange):
         ising = import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)

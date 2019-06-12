@@ -45,8 +45,6 @@ def create_mvm_p(n, q):
 def mvm_corr(n):
     """Median Voter Model (q=1) pairwise correlations.
     
-    Check formulation in SCOTUS II pg. 116.
-    
     Parameters
     ----------
     int : n
@@ -68,6 +66,34 @@ def mvm_corr(n):
     
     soo = 0.
     return smo, soo
+
+def couplings(n, full_output=False):
+    """Find couplings corresponding to mvm pairwise correlations numerically.
+
+    Parameters
+    ----------
+    n : int
+    full_output : bool, False
+
+    Returns
+    -------
+    ndarray
+        [Jmo, Joo]
+    """
+    
+    from scipy.optimize import minimize
+
+    smo, soo = mvm_corr(n)
+    smo_fun, _, soo_fun, _, _ = setup_maxent_mvm(n)
+    def cost(params):
+        Jmo, Joo = params
+        return np.sqrt((smo-smo_fun(Jmo, Jmo, Joo, Joo))**2 +
+                       (soo-soo_fun(Jmo, Jmo, Joo, Joo))**2)
+
+    soln = minimize(cost, [0,0])
+    if full_output:
+        return soln['x'], soln
+    return soln['x']
 
 def setup_maxent_mvm(n):
     """Median Voter Model with special Ordinary voter O' that has special couplings with
@@ -186,3 +212,5 @@ def setup_maxent_mvm(n):
           1/n * np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) +
        np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n))) / Z(Jm,Jmp,Jo,Jop)
     return smo, smop, soo, sop, Z
+
+

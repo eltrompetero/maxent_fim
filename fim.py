@@ -1724,6 +1724,14 @@ class IsingSpinReplacementFIM(IsingFisherCurvatureMethod2):
 #end IsingSpinReplacementFIM
 
 
+class MVMIsingFIM():
+    """Curvature for the pairwise maxent model of the Median Voter Model.
+    """
+
+    def __init__():
+        return
+
+
 class IsingFisherCurvatureMethod3(IsingFisherCurvatureMethod1):
     """Considering perturbations in both fields and couplings. Perturbations in means are
     asymmetric where ones in pairwise correlations are symmetric wrt {-1,1}.
