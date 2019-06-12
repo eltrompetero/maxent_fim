@@ -4,6 +4,7 @@
 # =============================================================================================== #
 import numpy as np
 from coniii.utils import *
+from coniii.enumerate import fast_logsumexp
 
 
 def create_mvm_p(n, q):
@@ -42,7 +43,7 @@ def create_mvm_p(n, q):
         assert (np.sign(allStates[pmvm>0][ix==0][:,1:].sum(1))==0).all()
     return pmvm
 
-def mvm_corr(n):
+def corr(n):
     """Median Voter Model (q=1) pairwise correlations.
     
     Parameters
@@ -67,12 +68,13 @@ def mvm_corr(n):
     soo = 0.
     return smo, soo
 
-def couplings(n, full_output=False):
+def couplings(n, data_corr=None, full_output=False):
     """Find couplings corresponding to mvm pairwise correlations numerically.
 
     Parameters
     ----------
     n : int
+    data_corr : ndarray, None
     full_output : bool, False
 
     Returns
@@ -82,22 +84,33 @@ def couplings(n, full_output=False):
     """
     
     from scipy.optimize import minimize
+    
+    if data_corr is None:
+        smo, soo = corr(n)
+        smo_fun, _, soo_fun, _, _ = setup_maxent(n)
+        def cost(params):
+            Jmo, Joo = params
+            return np.sqrt((smo-smo_fun(Jmo, Jmo, Joo, Joo))**2 +
+                           (soo-soo_fun(Jmo, Jmo, Joo, Joo))**2)
+        soln = minimize(cost, [0,0], tol=1e-12)
+    else:
+        smo, smop, soo, soop = data_corr
+        smo_fun, smop_fun, soo_fun, soop_fun, _ = setup_maxent(n)
+        def cost(params):
+            return np.sqrt((smo - smo_fun(*params))**2 +
+                           (smop - smop_fun(*params))**2 + 
+                           (soo - soo_fun(*params))**2 +
+                           (soop - soop_fun(*params))**2)
+        soln = minimize(cost, [.1,.1,0,0], tol=1e-12)
 
-    smo, soo = mvm_corr(n)
-    smo_fun, _, soo_fun, _, _ = setup_maxent_mvm(n)
-    def cost(params):
-        Jmo, Joo = params
-        return np.sqrt((smo-smo_fun(Jmo, Jmo, Joo, Joo))**2 +
-                       (soo-soo_fun(Jmo, Jmo, Joo, Joo))**2)
-
-    soln = minimize(cost, [0,0])
     if full_output:
         return soln['x'], soln
     return soln['x']
 
-def setup_maxent_mvm(n):
-    """Median Voter Model with special Ordinary voter O' that has special couplings with
-    the Median and the remaining O voters.
+def setup_maxent(n):
+    """Correlation functions of the Median Voter Model with special Ordinary voter O' that
+    has special couplings with the Median and the remaining O voters. Using more stable
+    formulation of logsumexp.
     
     Check formulation in SCOTUS II pg. 116.
     
@@ -117,100 +130,171 @@ def setup_maxent_mvm(n):
         soo_prime(Jm, Jmp, Jo, Jop)
     """
     
-    _E_with_maj_with_median = lambda Jm,Jmp,Jo,Jop,k,n=n: -(Jm*(2*k-n-2) +
+    E_with_maj_with_median = lambda Jm,Jmp,Jo,Jop,k,n=n: -(Jm*(2*k-n-2) +
                                           Jmp +
                                           Jo*(binom(k-2,2)+binom(n-k,2)-(k-2)*(n-k)) +
                                           Jop*(2*k-n-2))
-    _E_with_maj_against_median = lambda Jm,Jmp,Jo,Jop,k,n=n: -(Jm*(2*k-n) -
-                                           Jmp +
-                                           Jo*(binom(k-1,2)+binom(n-k-1,2)-(k-1)*(n-k-1)) +
-                                           Jop*(n-2*k))
-    _E_not_with_maj_with_median = lambda Jm,Jmp,Jo,Jop,k,n=n: -(Jm*(n-2*k-2) +
+    E_with_maj_against_median = lambda Jm,Jmp,Jo,Jop,k,n=n: -(Jm*(2*k-n) -
+                                          Jmp +
+                                          Jo*(binom(k-1,2)+binom(n-k-1,2)-(k-1)*(n-k-1)) +
+                                          Jop*(n-2*k))
+    E_not_with_maj_with_median = lambda Jm,Jmp,Jo,Jop,k,n=n: -(Jm*(n-2*k-2) +
                                           Jmp +
                                           Jo*(binom(n-k-2,2)+binom(k,2)-(n-k-2)*k) +
                                           Jop*(n-2*k-2))
-    _E_not_with_maj_against_median = lambda Jm,Jmp,Jo,Jop,k,n=n: -(Jm*(n-2*k) -
-                                            Jmp +
-                                            Jo*(binom(n-k-1,2)+binom(k-1,2)-(n-k-1)*(k-1)) +
-                                            Jop*(2*k-n))
-    
-    Z = lambda Jm,Jmp,Jo,Jop,n=n:( sum([binom(n,k) * 
-           (k/n * ((k-1)/(n-1) * np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) +
-                   (n-k)/(n-1) * np.exp(-_E_with_maj_against_median(Jm,Jmp,Jo,Jop,k))) +
-           (n-k)/n * ((n-k-1)/(n-1) * np.exp(-_E_not_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) + 
-                      k/(n-1) * np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,k))))
-                            for k in range(n//2+1,n-1)]) + 
-           n*((n-1)/n * ((n-2)/(n-1) * np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n-1)) +
-                   1/(n-1) * np.exp(-_E_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) +
-                   1/n * np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) + 
-           np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n)))
+    E_not_with_maj_against_median = lambda Jm,Jmp,Jo,Jop,k,n=n: -(Jm*(n-2*k) -
+                                          Jmp +
+                                          Jo*(binom(n-k-1,2)+binom(k-1,2)-(n-k-1)*(k-1)) +
+                                          Jop*(2*k-n))
+   
+    def logZ(*J, n=n):
+        coeffs = []
+        exp = []
+        for k in range(n//2+1, n-1):
+            coeffs += [k/n*(k-1)/(n-1), k/n*(n-k)/(n-1), (n-k)/n*(n-k-1)/(n-1), (n-k)/n*k/(n-1)]
+            exp += [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                    -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
+                    -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                    -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
+        coeffs += [(n-1)/n*(n-2)/(n-1), (n-1)/n/(n-1), 1/n, 1]
+        exp += [-E_with_maj_with_median(*J, n-1) + np.log(n),
+                -E_with_maj_against_median(*J, n-1) + np.log(n),
+                -E_not_with_maj_against_median(*J, n-1) + np.log(n),
+                -E_with_maj_with_median(*J, n)]
+        return fast_logsumexp(exp, coeffs)[0]
+
+    #Z = lambda Jm,Jmp,Jo,Jop,n=n:( sum([binom(n,k) * 
+    #       (k/n * ((k-1)/(n-1) * np.exp(-E_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) +
+    #               (n-k)/(n-1) * np.exp(-E_with_maj_against_median(Jm,Jmp,Jo,Jop,k))) +
+    #       (n-k)/n * ((n-k-1)/(n-1) * np.exp(-E_not_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) + 
+    #                  k/(n-1) * np.exp(-E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,k))))
+    #                        for k in range(n//2+1,n-1)]) + 
+    #       n*((n-1)/n * ((n-2)/(n-1) * np.exp(-E_with_maj_with_median(Jm,Jmp,Jo,Jop,n-1)) +
+    #               1/(n-1) * np.exp(-E_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) +
+    #               1/n * np.exp(-E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) + 
+    #       np.exp(-E_with_maj_with_median(Jm,Jmp,Jo,Jop,n)))
     
     # <s_Median s_Ordinary>
-    def smo(Jm, Jmp, Jo, Jop, n=n):
-        return (sum([binom(n,k) * 
-           (k/n * ((k-1)/(n-1) * ((k-2)/(n-2) - (n-k)/(n-2)) * 
-                                   np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) +
-                   (n-k)/(n-1) * ((k-1)/(n-2) - (n-k-1)/(n-2)) * 
-                                   np.exp(-_E_with_maj_against_median(Jm,Jmp,Jo,Jop,k))) +
-           (n-k)/n * ((n-k-1)/(n-1) * ((n-k-2)/(n-2) - k/(n-2)) * 
-                                  np.exp(-_E_not_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) + 
-                      k/(n-1) * ((n-k-1)/(n-2) - (k-1)/(n-2)) * 
-                                  np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,k))))
-                            for k in range(n//2+1,n-1)]) + 
-            n*((n-1)/n * ((n-2)/(n-1) * ((n-3)/(n-2) - 1/(n-2)) *
-                                  np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n-1)) +
-                   1/(n-1) * np.exp(-_E_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) +
-                   -1/n * np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) + 
-            np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n))) / Z(Jm,Jmp,Jo,Jop)
-    
+    def smo(*J, n=n):
+        coeffs = []
+        exp = []
+        for k in range(n//2+1, n-1):
+            coeffs += [k/n * (k-1)/(n-1) * ((k-2)/(n-2) - (n-k)/(n-2)),
+                       k/n * (n-k)/(n-1) * ((k-1)/(n-2) - (n-k-1)/(n-2)),
+                       (n-k)/n * (n-k-1)/(n-1) * ((n-k-2)/(n-2) - k/(n-2)),
+                       (n-k)/n * k/(n-1) * ((n-k-1)/(n-2) - (k-1)/(n-2))]
+            exp += [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                    -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
+                    -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                    -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
+        coeffs += [(n-1)/n * (n-2)/(n-1) * ((n-3)/(n-2) - 1/(n-2)),
+                   (n-1)/n / (n-1),
+                   -1/n,
+                   1]
+        exp += [-E_with_maj_with_median(*J, n-1) + np.log(n),
+                -E_with_maj_against_median(*J, n-1) + np.log(n),
+                -E_not_with_maj_against_median(*J, n-1) + np.log(n),
+                -E_with_maj_with_median(*J, n)]
+        num, sign = fast_logsumexp(exp, coeffs)
+        return sign * np.exp( num - logZ(*J) )
+
     # <s_M s_O'>
-    def smop(Jm, Jmp, Jo, Jop, n=n):
-        return (sum([binom(n,k) * 
-           (k/n * ((k-1)/(n-1) * np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) +
-                   (n-k)/(n-1) * -np.exp(-_E_with_maj_against_median(Jm,Jmp,Jo,Jop,k))) +
-           (n-k)/n * ((n-k-1)/(n-1) * np.exp(-_E_not_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) + 
-                      k/(n-1) * -np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,k))))
-                            for k in range(n//2+1,n-1)]) + 
-            n*((n-1)/n * ((n-2)/(n-1) * np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n-1)) +
-                   1/(n-1) * -np.exp(-_E_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) +
-               1/n * ( -np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1)))) + 
-            np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n))) / Z(Jm,Jmp,Jo,Jop)
+    def smop(*J, n=n):
+        coeffs = []
+        exp = []
+        for k in range(n//2+1, n-1):
+            coeffs += [k/n * (k-1)/(n-1),
+                       k/n * -(n-k)/(n-1),
+                       (n-k)/n * (n-k-1)/(n-1),
+                       (n-k)/n * -k/(n-1)]
+            exp += [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                    -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
+                    -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                    -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
+        coeffs += [(n-1)/n * (n-2)/(n-1),
+                   (n-1)/n / -(n-1),
+                   -1/n,
+                   1]
+        exp += [-E_with_maj_with_median(*J, n-1) + np.log(n),
+                -E_with_maj_against_median(*J, n-1) + np.log(n),
+                -E_not_with_maj_against_median(*J, n-1) + np.log(n),
+                -E_with_maj_with_median(*J, n)]
+        return np.exp( fast_logsumexp(exp, coeffs)[0] - logZ(*J) )
+        num, sign = fast_logsumexp(exp, coeffs)
+        return sign * np.exp( num - logZ(*J) )
     
     # <s_O s_O''>
-    def soo(Jm, Jmp, Jo, Jop, n=n):
-        return (sum([binom(n,k) * 
-           (k/n * ((k-1)/(n-1) * (binom(k-2,2)+binom(n-k,2)-(k-2)*(n-k))/binom(n-2,2) * 
-                                   np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) +
-                   (n-k)/(n-1) * (binom(k-1,2)+binom(n-k-1,2)-(k-1)*(n-k-1))/binom(n-2,2) * 
-                                   np.exp(-_E_with_maj_against_median(Jm,Jmp,Jo,Jop,k))) +
-           (n-k)/n * ((n-k-1)/(n-1) * (binom(n-k-2,2)+binom(k,2)-(n-k-2)*k)/binom(n-2,2) * 
-                                  np.exp(-_E_not_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) + 
-                      k/(n-1) * (binom(n-k-1,2)+binom(k-1,2)-(n-k-1)*(k-1))/binom(n-2,2) * 
-                                  np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,k))))
-                            for k in range(n//2+1,n-1)]) + 
-           n*((n-1)/n * ((n-2)/(n-1) * (binom(n-3,2)-(n-3))/binom(n-2,2) * 
-                                   np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n-1)) +
-                   1/(n-1) * np.exp(-_E_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) +
-               1/n * np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) +
-            np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n))) / Z(Jm,Jmp,Jo,Jop)
-    
+    def soo(*J, n=n):
+        coeffs = []
+        exp = []
+        for k in range(n//2+1, n-1):
+            coeffs += [k/n * (k-1)/(n-1) * (binom(k-2,2)+binom(n-k,2)-(k-2)*(n-k))/binom(n-2,2),
+                       k/n * (n-k)/(n-1) * (binom(k-1,2)+binom(n-k-1,2)-(k-1)*(n-k-1))/binom(n-2,2),
+                       (n-k)/n * (n-k-1)/(n-1) * (binom(n-k-2,2)+binom(k,2)-(n-k-2)*k)/binom(n-2,2),
+                       (n-k)/n * k/(n-1) * (binom(n-k-1,2)+binom(k-1,2)-(n-k-1)*(k-1))/binom(n-2,2)]
+            exp += [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                    -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
+                    -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                    -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
+        coeffs += [(n-1)/n * (n-2)/(n-1) * (binom(n-3,2)-(n-3))/binom(n-2,2),
+                   (n-1)/n / (n-1),
+                   1/n,
+                   1]
+        exp += [-E_with_maj_with_median(*J, n-1) + np.log(n),
+                -E_with_maj_against_median(*J, n-1) + np.log(n),
+                -E_not_with_maj_against_median(*J, n-1) + np.log(n),
+                -E_with_maj_with_median(*J, n)]
+        num, sign = fast_logsumexp(exp, coeffs)
+        return sign * np.exp( num - logZ(*J) )
+ 
     # <s_O s_O'>
-    def sop(Jm, Jmp, Jo, Jop, n=n):
-        return (sum([binom(n,k) * 
-       (k/n * ( (k-1)/(n-1) * ((k-2)/(n-2) - (n-k)/(n-2)) * 
-                       np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) +
-                (n-k)/(n-1) * ((n-k-1)/(n-2) - (k-1)/(n-2)) * 
-                       np.exp(-_E_with_maj_against_median(Jm,Jmp,Jo,Jop,k)) ) +
-       (n-k)/n * ( (n-k-1)/(n-1) * ((n-k-2)/(n-2) - k/(n-2)) * 
-                       np.exp(-_E_not_with_maj_with_median(Jm,Jmp,Jo,Jop,k)) + 
-                k/(n-1) * ((k-1)/(n-2) - (n-k-1)/(n-2)) * 
-                       np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,k))))
-                            for k in range(n//2+1,n-1)]) + 
-       n*((n-1)/n * ( (n-2)/(n-1) * ((n-3)/(n-2) - 1/(n-2)) * 
-                       np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n-1)) +
-                      -1/(n-1) * np.exp(-_E_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1)) ) +
-          1/n * np.exp(-_E_not_with_maj_against_median(Jm,Jmp,Jo,Jop,n-1))) +
-       np.exp(-_E_with_maj_with_median(Jm,Jmp,Jo,Jop,n))) / Z(Jm,Jmp,Jo,Jop)
-    return smo, smop, soo, sop, Z
+    def sop(*J, n=n):
+        coeffs = []
+        exp = []
+        for k in range(n//2+1, n-1):
+            coeffs += [k/n * (k-1)/(n-1) * ((k-2)/(n-2) - (n-k)/(n-2)),
+                       k/n * (n-k)/(n-1) * ((n-k-1)/(n-2) - (k-1)/(n-2)),
+                       (n-k)/n * (n-k-1)/(n-1) * ((n-k-2)/(n-2) - k/(n-2)),
+                       (n-k)/n * k/(n-1) * ((k-1)/(n-2) - (n-k-1)/(n-2))]
+            exp += [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                    -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
+                    -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                    -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
+        coeffs += [(n-1)/n * (n-2)/(n-1) * ((n-3)/(n-2) - 1/(n-2)),
+                   (n-1)/n / -(n-1),
+                   1/n,
+                   1]
+        exp += [-E_with_maj_with_median(*J, n-1) + np.log(n),
+                -E_with_maj_against_median(*J, n-1) + np.log(n),
+                -E_not_with_maj_against_median(*J, n-1) + np.log(n),
+                -E_with_maj_with_median(*J, n)]
+        num, sign = fast_logsumexp(exp, coeffs)
+        return sign * np.exp( num - logZ(*J) )
 
+    def pk(*J, n=n):
+        logpk = np.zeros(n-n//2)
+        counter = 0
+        for k in range(n//2+1, n-1):
+            coeffs = [k/n * (k-1)/(n-1),
+                      k/n * (n-k)/(n-1),
+                      (n-k)/n * (n-k-1)/(n-1),
+                      (n-k)/n * k/(n-1)]
+            exp = [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                   -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
+                   -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
+                   -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
+            logpk[counter] = fast_logsumexp(exp, coeffs)[0]
+            counter += 1
+        coeffs = [(n-1)/n * (n-2)/(n-1),
+                  (n-1)/n / (n-1),
+                  1/n]
+        exp = [-E_with_maj_with_median(*J, n-1) + np.log(n),
+               -E_with_maj_against_median(*J, n-1) + np.log(n),
+               -E_not_with_maj_against_median(*J, n-1) + np.log(n)]
+        logpk[counter] = fast_logsumexp(exp, coeffs)[0]
+        counter += 1
 
+        logpk[counter] = -E_with_maj_with_median(*J, n)
+        return np.exp( logpk - logZ(*J) )
+
+    return smo, smop, soo, sop, pk
