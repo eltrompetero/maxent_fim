@@ -6,7 +6,7 @@ from .mvm import *
 from importlib import import_module
 
 
-def test_setup_mvm_with_perturbation():
+def test_setup_maxent_mvm():
     np.random.seed(0)
     Jmo, Jmop, Joo, Jop = np.random.normal(size=4, scale=.3)
     nRange = [5,7,9,11,13]
@@ -22,7 +22,7 @@ def test_setup_mvm_with_perturbation():
         # extract corresponding pairwise correlations from full pairwise maxent model
         smoME, smopME, sooME, sopME = sisjME[n+1], sisjME[n], sisjME[-1], sisjME[n+n-1]
          
-        smo, smop, soo, sop, Z = setup_mvm_with_perturbation(n)
+        smo, smop, soo, sop, Z = setup_maxent_mvm(n)
         assert np.isclose( smoME, smo(Jmo, Jmop, Joo, Jop) )
         assert np.isclose( smopME, smop(Jmo, Jmop, Joo, Jop) )
         

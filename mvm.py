@@ -7,7 +7,8 @@ from coniii.utils import *
 
 
 def create_mvm_p(n, q):
-    """Use a probability transition matrix formulation to generate the MVM probability distribution.
+    """Use a probability transition matrix formulation to generate the MVM probability
+    distribution. This can be quite expensive when generating p.
 
     Parameters
     ----------
@@ -41,7 +42,7 @@ def create_mvm_p(n, q):
         assert (np.sign(allStates[pmvm>0][ix==0][:,1:].sum(1))==0).all()
     return pmvm
 
-def setup_mvm_with_perturbation(n):
+def setup_maxent_mvm(n):
     """Median Voter Model with special Ordinary voter O' that has special couplings with
     the Median and the remaining O voters.
     
