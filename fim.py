@@ -14,6 +14,7 @@ from coniii.utils import define_ising_helper_functions
 from multiprocess import Pool, cpu_count
 import mpmath as mp
 from scipy.sparse import coo_matrix
+from . import mvm
 calc_e, _, _ = define_ising_helper_functions()
 np.seterr(divide='ignore')
 
@@ -1724,12 +1725,477 @@ class IsingSpinReplacementFIM(IsingFisherCurvatureMethod2):
 #end IsingSpinReplacementFIM
 
 
-class MVMIsingFIM():
-    """Curvature for the pairwise maxent model of the Median Voter Model.
+class MVMIsingFIM(IsingFisherCurvatureMethod1):
+    """Curvature for the pairwise maxent model of the Median Voter Model (q=1).
     """
+    def __init__(self, n,
+                 eps=1e-5,
+                 precompute=True,
+                 n_cpus=None,
+                 high_prec=False):
+        """
+        Parameters
+        ----------
+        n : int
+        J : ndarray, None
+        eps : float, 1e-7
+        precompute : bool, True
+        n_cpus : int, None
+        high_prec : bool, False
+        """
 
-    def __init__():
-        return
+        assert n>3 and (n%2)==1 and 0<eps<.1
+        self.n = n
+        self.kStates = 2
+        self.eps = eps
+        self.J = mvm.couplings(n)
+        self.J = np.array([self.J[0]]*2 + [self.J[1]]*2)
+        self.n_cpus = n_cpus
+        self.high_prec = high_prec
+
+        self.sisj = mvm.corr(n)
+        self.sisj = np.array([self.sisj[0], self.sisj[0], self.sisj[1], self.sisj[1]])
+
+        if precompute:
+            self.dJ = self.compute_dJ()
+        else:
+            self.dJ = np.zeros(4)
+
+    def compute_dJ(self, order=2):
+        """precompute linear change to parameters for small perturbation
+        Instead of computing analytic form (which is possible), we can just solve it
+        numerically since there aren't many terms to solve for.
+        """
+        
+        if not 'Jeps' in self.__dict__.keys():
+            Jeps = np.zeros((2,4))
+            Jeps[0] = mvm.couplings(self.n, self.observables_after_perturbation(0,1))
+            Jeps[1] = mvm.couplings(self.n, self.observables_after_perturbation(1,0))
+            self.Jeps = Jeps
+        else:
+            Jeps = self.Jeps
+        if order==1:
+            return (Jeps-self.J)/self.eps
+
+        if not 'J2eps' in self.__dict__.keys():
+            J2eps = np.zeros((2,4))
+            J2eps[0] = mvm.couplings(self.n, self.observables_after_perturbation(0,1,2*self.eps))
+            J2eps[1] = mvm.couplings(self.n, self.observables_after_perturbation(1,0,2*self.eps))
+            self.J2eps = J2eps
+        else:
+            J2eps = self.J2eps
+        if order==2:
+            return (-1.5*self.J + 2*Jeps -.5*J2eps)/self.eps
+
+        if not 'J3eps' in self.__dict__.keys():
+            J3eps = np.zeros((2,4))
+            J3eps[0] = mvm.couplings(self.n, self.observables_after_perturbation(0,1,3*self.eps))
+            J3eps[1] = mvm.couplings(self.n, self.observables_after_perturbation(1,0,3*self.eps))
+            self.J3eps = J3eps
+        else:
+            J3eps = self.J3eps
+        if order==3:
+            return (-11/6*self.J + 3*Jeps -1.5*J2eps + J3eps/3)/self.eps
+
+        if not 'J4eps' in self.__dict__.keys():
+            J4eps = np.zeros((2,4))
+            J4eps[0] = mvm.couplings(self.n, self.observables_after_perturbation(0,1,4*self.eps))
+            J4eps[1] = mvm.couplings(self.n, self.observables_after_perturbation(1,0,4*self.eps))
+            self.J4eps = J4eps
+        else:
+            J4eps = self.J4eps
+        return (-25/12*self.J + 4*Jeps -3*J2eps + 4/3*J3eps -.25*J4eps)/self.eps
+
+    def observables_after_perturbation(self, i, j,
+                                       eps=None):
+        """Perturb all specified pairs assuming that the model is the MVM with q=1. 
+        
+        Parameters
+        ----------
+        i : int
+            Spin to perturb.
+        j : int
+            Spin to copy from.
+        eps : float, None
+
+        Returns
+        -------
+        ndarray
+            Observables <si> and <sisj> after perturbation.
+        """
+        
+        if eps is None:
+            eps = self.eps
+
+        sisj = self.sisj
+        sisjNew = self.sisj.copy()
+        
+        if i==0 and j==1:  # m becomes more like o'
+            sisjNew[0] = (1-eps)*sisj[0]
+            sisjNew[1] = (1-eps)*sisj[1] + eps
+        elif i==1 and j==0:
+            sisjNew[1] = (1-eps)*sisj[1] + eps
+            sisjNew[3] = eps*sisj[0]  # + (1-eps)*sisj[3] which is 0
+
+        return sisjNew
+   
+    def _observables_after_perturbation_plus_field(self, n, si, sisj, i, eps):
+        """        
+        Parameters
+        ----------
+        n : int
+        si : ndarray
+        sisj : ndarray
+        i : int
+        eps : float
+        """
+
+        # observables after perturbations
+        si[i]  = (1-eps)*si[i] + eps
+
+        for j in delete(list(range(n)),i):
+            if i<j:
+                ijix = unravel_index((i,j),n)
+            else:
+                ijix = unravel_index((j,i),n)
+            sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
+
+    def _solve_linearized_perturbation_tester(self, iStar, eps=None):
+        """Consider a perturbation to a single spin.
+        
+        Parameters
+        ----------
+        iStar : int
+        eps : float, None
+        perturb_up : bool, False
+
+        Returns
+        -------
+        ndarray
+            Linear change in maxent parameters for given iStar.
+        """
+        
+        from coniii.solvers import Enumerate
+
+        n = self.n
+        p = self.p
+        if eps is None:
+            eps = self.eps
+        C, perturb_up = self.observables_after_perturbation(iStar, eps=eps)
+
+        solver = Enumerate(n, calc_observables_multipliers=self.ising.calc_observables)
+        if perturb_up:
+            return (solver.solve(C)-self.hJ)/eps
+
+        # account for sign of perturbation on fields
+        dJ = -(solver.solve(C)-self.hJ)/eps
+        return dJ
+
+    def solve_linearized_perturbation(self, *args, **kwargs):
+        """Wrapper for automating search for best eps value for given perturbation.
+        """
+        
+        # settings
+        epsChangeFactor = 10
+        
+        # check whether error increases or decreases with eps
+        eps0 = kwargs.get('eps', self.eps)
+        kwargs['check_stability'] = True
+        kwargs['full_output'] = True
+        
+        dJ, errflag, (A,C), relerr = self._solve_linearized_perturbation(*args, **kwargs)
+
+        kwargs['eps'] = eps0*epsChangeFactor
+        dJUp, errflagUp, _, relerrUp = self._solve_linearized_perturbation(*args, **kwargs)
+
+        kwargs['eps'] = eps0/epsChangeFactor
+        dJDown, errflagDown, _, relerrDown = self._solve_linearized_perturbation(*args, **kwargs)
+        
+        # if changing eps doesn't help, just return estimate at current eps
+        if relerr.max()<relerrUp.max() and relerr.max()<relerrDown.max():
+            return dJ, errflag
+        
+        # if error decreases more sharpy going down
+        if relerrDown.max()<=relerrUp.max():
+            epsChangeFactor = 1/epsChangeFactor
+            prevdJ, errflag, prevRelErr = dJDown, errflagDown, relerrDown
+        # if error decreases more sharpy going up, no need to change eps
+        else:
+            prevdJ, errflag, prevRelErr = dJUp, errflagUp, relerrUp
+        
+        # decrease/increase eps til error starts increasing
+        converged = False
+        while (not converged) and errflag:
+            kwargs['eps'] *= epsChangeFactor
+            dJ, errflag, (A,C), relerr = self._solve_linearized_perturbation(*args, **kwargs)
+            if errflag and relerr.max()<prevRelErr.max():
+                prevdJ = dJ
+                prevRelErr = relerr
+            else:
+                converged = True
+        
+        return dJ, errflag
+
+    def _solve_linearized_perturbation(self, iStar,
+                                      p=None,
+                                      sisj=None,
+                                      full_output=False,
+                                      eps=None,
+                                      check_stability=True,
+                                      method='inverse'):
+        """Consider a perturbation to a single spin.
+        
+        Parameters
+        ----------
+        iStar : int
+        p : ndarray, None
+        sisj : ndarray, None
+        full_output : bool, False
+        eps : float, None
+        check_stability : bool, False
+        method : str, 'inverse'
+            Can be 'inverse' or 'lstsq'
+
+        Returns
+        -------
+        ndarray
+            dJ
+        int
+            Error flag. Returns 0 by default. 1 means badly conditioned matrix A.
+        tuple (optional)
+            (A,C)
+        """
+        
+        perturb_up = False
+        eps = eps or self.eps
+        n = self.n
+        if p is None:
+            p = self.p
+        if sisj is None:
+            si = self.sisj[:n]
+            sisj = self.sisj[n:]
+        else:
+            si = sisj[:n]
+            sisj = sisj[n:]
+        A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2), dtype=si.dtype)
+        C, perturb_up = self.observables_after_perturbation(iStar, eps=eps)
+        
+        # mean constraints
+        for i in range(n):
+            for k in range(n):
+                if i==k:
+                    A[i,i] = 1 - C[i]*si[i]
+                else:
+                    if i<k:
+                        ikix = unravel_index((i,k),n)
+                    else:
+                        ikix = unravel_index((k,i),n)
+                    A[i,k] = sisj[ikix] - C[i]*si[k]
+
+            for klcount,(k,l) in enumerate(combinations(range(n),2)):
+                A[i,n+klcount] = self.triplets[(i,k,l)].dot(p) - C[i]*sisj[klcount]
+        
+        # pair constraints
+        for ijcount,(i,j) in enumerate(combinations(range(n),2)):
+            for k in range(n):
+                A[n+ijcount,k] = self.triplets[(i,j,k)].dot(p) - C[n+ijcount]*si[k]
+            for klcount,(k,l) in enumerate(combinations(range(n),2)):
+                A[n+ijcount,n+klcount] = self.quartets[(i,j,k,l)].dot(p) - C[n+ijcount]*sisj[klcount]
+    
+        C -= self.sisj
+        if method=='inverse':
+            # factor out linear dependence on eps
+            try:
+                if self.high_prec:
+                    A = mp.matrix(A)
+                    C = mp.matrix(C)
+                    dJ = A**-1 * C / eps
+                else:
+                    dJ = np.linalg.solve(A,C)/eps
+            except np.linalg.LinAlgError:
+                dJ = np.zeros(C.size)+np.nan
+        else:
+            dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
+        # Since default is to perturb down
+        if not perturb_up:
+            dJ *= -1
+
+        if check_stability:
+            # double epsilon and make sure solution does not change by a large amount
+            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar,
+                                                                      eps=eps/2,
+                                                                      check_stability=False,
+                                                                      p=p,
+                                                                      sisj=np.concatenate((si,sisj)))
+            # print if relative change is more than .1% for any entry
+            if self.high_prec:
+                relerr = (list(map(mp.log10, np.abs(dJ-dJtwiceEps))) -
+                          np.array(list(map(mp.log10, np.abs(dJ)))))
+            else:
+                relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
+            if (relerr>-3).any():
+                print("Unstable solution. Recommend shrinking eps. %E"%(10**relerr.max()))
+        else:
+            relerr = None
+                   
+        if ((self.high_prec and mp.norm(A)*mp.norm(A**-1)>1e15) or
+            (not self.high_prec and np.linalg.cond(A)>1e15)):
+            warn("A is badly conditioned.")
+            errflag = 1
+        else:
+            errflag = 0
+        if full_output:
+            return dJ, errflag, (A, C), relerr
+        return dJ, errflag
+    
+    def dkl_curvature(self, *args, **kwargs):
+        """Wrapper for _dkl_curvature() to find best finite diff step size."""
+
+        if not 'epsdJ' in kwargs.keys():
+            kwargs['epsdJ'] = 1e-4
+        if not 'check_stability' in kwargs.keys():
+            kwargs['check_stability'] = True
+        if 'full_output' in kwargs.keys():
+            full_output = kwargs['full_output']
+        else:
+            full_output = False
+        kwargs['full_output'] = True
+        epsDecreaseFactor = 10
+        
+        converged = False
+        prevHess, errflag, prevNormerr = self._dkl_curvature(*args, **kwargs)
+        kwargs['epsdJ'] /= epsDecreaseFactor
+        while (not converged) and errflag:
+            hess, errflag, normerr = self._dkl_curvature(*args, **kwargs)
+            # end loop if error starts increasing again
+            if errflag and normerr<prevNormerr:
+                prevHess = hess
+                prevNormerr = normerr
+                kwargs['epsdJ'] /= epsDecreaseFactor
+            else:
+                converged = True
+        if not converged and not errflag:
+            normerr = None
+        hess = prevHess
+        
+        if full_output:
+            return hess, errflag, normerr
+        return hess
+
+    def _dkl_curvature(self,
+                      hJ=None,
+                      dJ=None,
+                      epsdJ=1e-4,
+                      n_cpus=None,
+                      check_stability=False,
+                      rtol=1e-3,
+                      zero_out_small_p=True,
+                      p_threshold=1e-15,
+                      full_output=False):
+        """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
+        the theta_{ij} parameters replacing the spin i by sampling from j.
+
+        Use single step finite difference method to estimate Hessian.
+        
+        Parameters
+        ----------
+        hJ : ndarray, None
+            Ising model parameters.
+        dJ : ndarray, None
+            Linear perturbations in parameter space corresponding to Hessian at given hJ.
+            These can be calculuated using self.solve_linearized_perturbation().
+        epsdJ : float, 1e-4
+            Step size for taking linear perturbation wrt parameters.
+        n_cpus : int, None
+        check_stability : bool, False
+        rtol : float, 1e-3
+            Relative tolerance for each entry in Hessian when checking stability.
+        zero_out_small_p : bool, True
+            If True, set all small values below p_threshold to 0.
+        p_threshold : float, 1e-15
+        full_output : bool, False
+            
+        Returns
+        -------
+        ndarray
+            Hessian.
+        int (optional)
+            Error flag. 1 indicates rtol was exceeded. None indicates that no check was
+            done.
+        float (optional)
+            Norm difference between hessian with step size eps and eps/2.
+        """
+        
+        n = self.n
+        if hJ is None:
+            hJ = self.hJ
+            p = self.p
+        else:
+            p = self.ising.p(hJ)
+        log2p = np.log2(p)
+        if dJ is None:
+            dJ = self.dJ
+
+        if zero_out_small_p:
+            log2p[p<p_threshold] = -np.inf
+            p = p.copy()
+            p[p<p_threshold] = 0.
+        
+        # diagonal entries
+        def diag(i, hJ=hJ, ising=self.ising, dJ=dJ, p=p):
+            newhJ = hJ.copy()
+            newhJ += dJ[i]*epsdJ
+            modp = ising.p(newhJ)
+            return np.nansum(2*(log2p-np.log2(modp))*p) / epsdJ**2
+            
+        # Compute off-diagonal entries. These don't account for the subtraction of the
+        # diagonal elements which are removed later To see this, expand D(theta_i+del,
+        # theta_j+del) to second order.
+        def off_diag(args, hJ=hJ, ising=self.ising, dJ=dJ, p=p):
+            i, j = args
+            newhJ = hJ.copy()
+            newhJ += (dJ[i]+dJ[j])*epsdJ
+            modp = ising.p(newhJ)
+            return np.nansum((log2p-np.log2(modp))*p) / epsdJ**2
+        
+        hess = np.zeros((len(dJ),len(dJ)))
+        if (not n_cpus is None) and n_cpus<=1:
+            for i in range(len(dJ)):
+                hess[i,i] = diag(i)
+            for i,j in combinations(range(len(dJ)),2):
+                hess[i,j] = hess[j,i] = off_diag((i,j))
+        else:
+            hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+            hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag, combinations(range(len(dJ)),2))
+            # subtract off linear terms to get Hessian (and not just cross derivative)
+            hess[np.triu_indices_from(hess,k=1)] -= np.array([hess[i,i]/2+hess[j,j]/2
+                                                            for i,j in combinations(range(len(dJ)),2)])
+            # fill in lower triangle
+            hess += hess.T
+            hess[np.eye(len(dJ))==1] /= 2
+
+        if check_stability:
+            hess2 = self.dkl_curvature(epsdJ=epsdJ/2, check_stability=False, hJ=hJ, dJ=dJ)
+            err = hess2 - hess
+            if (np.abs(err/hess) > rtol).any():
+                normerr = np.linalg.norm(err)
+                errflag = 1
+                msg = ("Finite difference estimate has not converged with rtol=%f. "+
+                       "May want to shrink epsdJ. Norm error %f.")
+                print(msg%(rtol,normerr))
+            else:
+                errflag = 0
+                normerr = None
+        else:
+            errflag = None
+            normerr = None
+
+        if not full_output:
+            return hess
+        return hess, errflag, normerr
+    
+
+#end MVMIsingFIM
 
 
 class IsingFisherCurvatureMethod3(IsingFisherCurvatureMethod1):

@@ -30,7 +30,7 @@ def test_couplings():
         corr1 = np.array([smo_fun(*J), smop_fun(*J), soo_fun(*J), soop_fun(*J)])
         corr2 = np.array([smo_fun(*Js), smop_fun(*Js), soo_fun(*Js), soop_fun(*Js)])
         corrErr = np.linalg.norm(corr1-corr2)
-        assert corrErr<1e-6, corrErr
+        assert corrErr<1e-8, corrErr
         print("Test passed: original couplings returned for n=%d."%n)
 
 def test_setup_maxent():

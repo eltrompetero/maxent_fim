@@ -68,7 +68,7 @@ def corr(n):
     soo = 0.
     return smo, soo
 
-def couplings(n, data_corr=None, full_output=False):
+def couplings(n, data_corr=None, full_output=False, tol=1e-10, max_refine_iter=1000):
     """Find couplings corresponding to mvm pairwise correlations numerically.
 
     Parameters
@@ -92,7 +92,7 @@ def couplings(n, data_corr=None, full_output=False):
             Jmo, Joo = params
             return np.sqrt((smo-smo_fun(Jmo, Jmo, Joo, Joo))**2 +
                            (soo-soo_fun(Jmo, Jmo, Joo, Joo))**2)
-        soln = minimize(cost, [0,0], tol=1e-12)
+        soln = minimize(cost, [0,0], tol=1e-10)
     else:
         smo, smop, soo, soop = data_corr
         smo_fun, smop_fun, soo_fun, soop_fun, _ = setup_maxent(n)
@@ -101,8 +101,61 @@ def couplings(n, data_corr=None, full_output=False):
                            (smop - smop_fun(*params))**2 + 
                            (soo - soo_fun(*params))**2 +
                            (soop - soop_fun(*params))**2)
-        soln = minimize(cost, [.1,.1,0,0], tol=1e-12)
+        soln = minimize(cost, [.1,.1,0,0], tol=1e-10)
 
+        # refine solutions
+        def each_err(params):
+            return -np.array([smo - smo_fun(*params),
+                              smop - smop_fun(*params),
+                              soo - soo_fun(*params),
+                              soop - soop_fun(*params)])
+        # simple algorithm with inertia (using average of last nAvg points for error estimation)
+        counter = 0
+        err = prevErr = cost(soln['x'])
+        prevJ = soln['x'].copy()
+        eps = 1
+        nAvg = 10
+        cumerr = err*nAvg
+        while counter<max_refine_iter and err>tol and eps>tol:
+            if (counter%nAvg)==0:
+                if np.sqrt(cumerr/nAvg)>prevErr:
+                    # undo
+                    soln['x'] = prevJ.copy()
+                    eps /= 2
+                else:
+                    prevErr = np.sqrt(cumerr/nAvg)
+                    prevJ = soln['x'].copy()
+                    eps *= 1.5
+                cumerr = 0
+
+            dJ = -each_err(soln['x']) * eps
+            soln['x'] += dJ
+            err = cost(soln['x'])
+            cumerr += err**2
+            counter += 1
+        # simplest iterative algorithm
+        #counter = 0
+        #err = prevErr = cost(soln['x'])
+        #prevJ = soln['x'].copy()
+        #eps = 1
+        #seqSuccess = 0
+        #while counter<max_refine_iter and err>tol and eps>tol:
+        #    dJ = -each_err(soln['x']) * eps
+        #    soln['x'] += dJ
+
+        #    err = cost(soln['x'])
+        #    if err>prevErr:
+        #        soln['x'] -= dJ
+        #        eps /= 2
+        #        seqSuccess = 0
+        #    else:
+        #        prevErr = err
+        #        seqSuccess += 1
+        #        if seqSuccess==10:  # every 10 successful steps, update eps
+        #            eps *= 1.5
+        #            seqSuccess = 0
+        #    counter += 1
+        #print(counter,eps,err)
     if full_output:
         return soln['x'], soln
     return soln['x']
