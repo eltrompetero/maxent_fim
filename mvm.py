@@ -68,7 +68,7 @@ def corr(n):
     soo = 0.
     return smo, soo
 
-def couplings(n, data_corr=None, full_output=False, tol=1e-10, max_refine_iter=1000):
+def couplings(n, data_corr=None, full_output=False, tol=1e-12, max_refine_iter=1000):
     """Find couplings corresponding to mvm pairwise correlations numerically.
 
     Parameters
@@ -155,7 +155,7 @@ def couplings(n, data_corr=None, full_output=False, tol=1e-10, max_refine_iter=1
         #            eps *= 1.5
         #            seqSuccess = 0
         #    counter += 1
-        #print(counter,eps,err)
+        print(counter,eps,err)
     if full_output:
         return soln['x'], soln
     return soln['x']
@@ -204,12 +204,15 @@ def setup_maxent(n):
         coeffs = []
         exp = []
         for k in range(n//2+1, n-1):
-            coeffs += [k/n*(k-1)/(n-1), k/n*(n-k)/(n-1), (n-k)/n*(n-k-1)/(n-1), (n-k)/n*k/(n-1)]
+            coeffs += [k * (k-1) / (n * (n-1)),
+                       k * (n-k) / (n * (n-1)),
+                       (n-k) * (n-k-1) / (n * (n-1)),
+                       (n-k) * k / (n * (n-1))]
             exp += [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                     -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
                     -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                     -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
-        coeffs += [(n-1)/n*(n-2)/(n-1), (n-1)/n/(n-1), 1/n, 1]
+        coeffs += [(n-2) / n, 1/n, 1/n, 1]
         exp += [-E_with_maj_with_median(*J, n-1) + np.log(n),
                 -E_with_maj_against_median(*J, n-1) + np.log(n),
                 -E_not_with_maj_against_median(*J, n-1) + np.log(n),
@@ -232,18 +235,15 @@ def setup_maxent(n):
         coeffs = []
         exp = []
         for k in range(n//2+1, n-1):
-            coeffs += [k/n * (k-1)/(n-1) * ((k-2)/(n-2) - (n-k)/(n-2)),
-                       k/n * (n-k)/(n-1) * ((k-1)/(n-2) - (n-k-1)/(n-2)),
-                       (n-k)/n * (n-k-1)/(n-1) * ((n-k-2)/(n-2) - k/(n-2)),
-                       (n-k)/n * k/(n-1) * ((n-k-1)/(n-2) - (k-1)/(n-2))]
+            coeffs += [k * (k-1) * (2*k-n-2) / (n * (n-1) * (n-2)),
+                       k * (n-k) * (2*k-n) / (n * (n-1) * (n-2)),
+                       (n-k) * (n-k-1) * (n-2*k-2) / (n * (n-1) * (n-2)),
+                       (n-k) * k * (n-2*k) / (n * (n-1) * (n-2))]
             exp += [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                     -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
                     -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                     -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
-        coeffs += [(n-1)/n * (n-2)/(n-1) * ((n-3)/(n-2) - 1/(n-2)),
-                   (n-1)/n / (n-1),
-                   -1/n,
-                   1]
+        coeffs += [(n-4)/n, 1/n, -1/n, 1]
         exp += [-E_with_maj_with_median(*J, n-1) + np.log(n),
                 -E_with_maj_against_median(*J, n-1) + np.log(n),
                 -E_not_with_maj_against_median(*J, n-1) + np.log(n),
@@ -256,18 +256,15 @@ def setup_maxent(n):
         coeffs = []
         exp = []
         for k in range(n//2+1, n-1):
-            coeffs += [k/n * (k-1)/(n-1),
-                       k/n * -(n-k)/(n-1),
-                       (n-k)/n * (n-k-1)/(n-1),
-                       (n-k)/n * -k/(n-1)]
+            coeffs += [k * (k-1) / (n * (n-1)),
+                       k * (k-n) / (n * (n-1)),
+                       (n-k) * (n-k-1) / (n * (n-1)),
+                       (n-k) * -k / (n * (n-1))]
             exp += [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                     -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
                     -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                     -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
-        coeffs += [(n-1)/n * (n-2)/(n-1),
-                   (n-1)/n / -(n-1),
-                   -1/n,
-                   1]
+        coeffs += [(n-2)/n, -1/n, -1/n, 1]
         exp += [-E_with_maj_with_median(*J, n-1) + np.log(n),
                 -E_with_maj_against_median(*J, n-1) + np.log(n),
                 -E_not_with_maj_against_median(*J, n-1) + np.log(n),
@@ -280,18 +277,15 @@ def setup_maxent(n):
         coeffs = []
         exp = []
         for k in range(n//2+1, n-1):
-            coeffs += [k/n * (k-1)/(n-1) * (binom(k-2,2)+binom(n-k,2)-(k-2)*(n-k))/binom(n-2,2),
-                       k/n * (n-k)/(n-1) * (binom(k-1,2)+binom(n-k-1,2)-(k-1)*(n-k-1))/binom(n-2,2),
-                       (n-k)/n * (n-k-1)/(n-1) * (binom(n-k-2,2)+binom(k,2)-(n-k-2)*k)/binom(n-2,2),
-                       (n-k)/n * k/(n-1) * (binom(n-k-1,2)+binom(k-1,2)-(n-k-1)*(k-1))/binom(n-2,2)]
+            coeffs += [k * (k-1) * (binom(k-2,2)+binom(n-k,2)-(k-2)*(n-k)) / (n * (n-1) * binom(n-2,2)),
+                       k * (n-k) * (binom(k-1,2)+binom(n-k-1,2)-(k-1)*(n-k-1)) / (n * (n-1) * binom(n-2,2)),
+                       (n-k) * (n-k-1) * (binom(n-k-2,2)+binom(k,2)-(n-k-2)*k) / (n * (n-1) * binom(n-2,2)),
+                       (n-k) * k * (binom(n-k-1,2)+binom(k-1,2)-(n-k-1)*(k-1)) / (n * (n-1) * binom(n-2,2))]
             exp += [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                     -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
                     -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                     -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
-        coeffs += [(n-1)/n * (n-2)/(n-1) * (binom(n-3,2)-(n-3))/binom(n-2,2),
-                   (n-1)/n / (n-1),
-                   1/n,
-                   1]
+        coeffs += [(n-2) * (binom(n-3,2)-(n-3)) / (n * binom(n-2,2)), 1/n, 1/n, 1]
         exp += [-E_with_maj_with_median(*J, n-1) + np.log(n),
                 -E_with_maj_against_median(*J, n-1) + np.log(n),
                 -E_not_with_maj_against_median(*J, n-1) + np.log(n),
@@ -304,18 +298,15 @@ def setup_maxent(n):
         coeffs = []
         exp = []
         for k in range(n//2+1, n-1):
-            coeffs += [k/n * (k-1)/(n-1) * ((k-2)/(n-2) - (n-k)/(n-2)),
-                       k/n * (n-k)/(n-1) * ((n-k-1)/(n-2) - (k-1)/(n-2)),
-                       (n-k)/n * (n-k-1)/(n-1) * ((n-k-2)/(n-2) - k/(n-2)),
-                       (n-k)/n * k/(n-1) * ((k-1)/(n-2) - (n-k-1)/(n-2))]
+            coeffs += [k * (k-1) * (2*k-n-2) / (n * (n-1) * (n-2)),
+                       k * (n-k) * (n-2*k) / (n * (n-1) * (n-2)),
+                       (n-k) * (n-k-1) * (n-2*k-2) / (n * (n-1) * (n-2)),
+                       (n-k) * k * (2*k-n) / (n * (n-1) * (n-2))]
             exp += [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                     -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
                     -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                     -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
-        coeffs += [(n-1)/n * (n-2)/(n-1) * ((n-3)/(n-2) - 1/(n-2)),
-                   (n-1)/n / -(n-1),
-                   1/n,
-                   1]
+        coeffs += [(n-4)/n, -1/n, 1/n, 1]
         exp += [-E_with_maj_with_median(*J, n-1) + np.log(n),
                 -E_with_maj_against_median(*J, n-1) + np.log(n),
                 -E_not_with_maj_against_median(*J, n-1) + np.log(n),
@@ -327,19 +318,17 @@ def setup_maxent(n):
         logpk = np.zeros(n-n//2)
         counter = 0
         for k in range(n//2+1, n-1):
-            coeffs = [k/n * (k-1)/(n-1),
-                      k/n * (n-k)/(n-1),
-                      (n-k)/n * (n-k-1)/(n-1),
-                      (n-k)/n * k/(n-1)]
+            coeffs = [k * (k-1) / (n * (n-1)),
+                      k * (n-k) / (n * (n-1)),
+                      (n-k) * (n-k-1) / (n * (n-1)),
+                      (n-k) * k / (n * (n-1))]
             exp = [-E_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                    -E_with_maj_against_median(*J, k) + np.log(binom(n,k)),
                    -E_not_with_maj_with_median(*J, k) + np.log(binom(n,k)),
                    -E_not_with_maj_against_median(*J, k) + np.log(binom(n,k))]
             logpk[counter] = fast_logsumexp(exp, coeffs)[0]
             counter += 1
-        coeffs = [(n-1)/n * (n-2)/(n-1),
-                  (n-1)/n / (n-1),
-                  1/n]
+        coeffs = [(n-2)/n, 1/n, 1/n]
         exp = [-E_with_maj_with_median(*J, n-1) + np.log(n),
                -E_with_maj_against_median(*J, n-1) + np.log(n),
                -E_not_with_maj_against_median(*J, n-1) + np.log(n)]
