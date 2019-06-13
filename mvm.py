@@ -155,7 +155,7 @@ def couplings(n, data_corr=None, full_output=False, tol=1e-12, max_refine_iter=1
         #            eps *= 1.5
         #            seqSuccess = 0
         #    counter += 1
-        print(counter,eps,err)
+        #print(counter,eps,err)
     if full_output:
         return soln['x'], soln
     return soln['x']
