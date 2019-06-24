@@ -6,6 +6,7 @@ import numpy as np
 from coniii.utils import *
 from coniii.enumerate import fast_logsumexp
 from scipy.special import binom, factorial
+from scipy.optimize import minimize
 
 
 def create_mvm_p(n, q):
@@ -673,6 +674,301 @@ def setup_perturbation(J, n):
     
     return logPartitionList, kList, sisjCoeffs
 
+def solve_mo_perturbation(n, J0,
+                          eps=1e-4,
+                          refine=True,
+                          tol=1e-5,
+                          full_output=False):
+    """Solve for the gradient of the couplings w.r.t. a perturbation of type M->O.
+    
+    Parameters
+    ----------
+    n : int
+    J0 : ndarray
+        Initial guess.
+    eps : float, 1e-4
+    refine : bool, True
+        NOT IMPLEMENTED YET.
+    tol : float, 1e-5
+    
+    Returns
+    -------
+    ndarray
+        Estimate of derivative.
+    dict from scipy.optimize.minimize (optional)
+    """
+    
+    smoExact = sum([(k/(n-1) - (n-1-k)/(n-1)) * binom(n-1,k)/2**(n-2)
+                    for k in range((n-1)//2,n)])
+    sooExact = 0.
+    smopExact = smoExact*(1-eps) + eps
+    smoExact = smoExact*(1-eps)
+    
+    def cost(params, as_vec=False):
+        logPartitionList, smopC, smoC, soopC, sooC = setup_mo_perturbation(n, *params)
+        smop = coeffs_to_corr(smopC, logPartitionList)
+        smo = coeffs_to_corr(smoC, logPartitionList)
+        soop = coeffs_to_corr(soopC, logPartitionList)
+        soo = coeffs_to_corr(sooC, logPartitionList)
+        if as_vec:
+            return np.array([smop-smopExact,
+                             smo-smoExact,
+                             soop-sooExact,
+                             soo-sooExact])
+        return np.sqrt((smop-smopExact)**2 + 
+                       (smo-smoExact)**2 + 
+                       (soop-sooExact)**2 +
+                       (soo-sooExact)**2)
+
+    soln = minimize(cost, J0)
+    # this refining doesn't seem to help
+#     if refine:
+#         print("Refining...")
+#         J = soln['x']
+#         dJ = np.ones_like(J)
+#         counter = 0
+#         while counter<1000 and np.linalg.norm(dJ)>tol:
+#             dJ = -cost(J, True)
+#             J += dJ
+#             counter += 1
+#         if np.linalg.norm(dJ)<tol:
+#             print("Good soln.")
+    if full_output:
+        return (soln['x']-J0)/eps, soln
+    return (soln['x']-J0)/eps
+
+def solve_oo_perturbation(n, J0,
+                          eps=1e-4,
+                          refine=True,
+                          tol=1e-5,
+                          full_output=False):
+    """Solve for the gradient of the couplings w.r.t. a perturbation of type O->O.
+    
+    Parameters
+    ----------
+    n : int
+    J0 : ndarray
+        Initial guess.
+    eps : float, 1e-4
+    refine : bool, True
+        NOT IMPLEMENTED YET.
+    tol : float, 1e-5
+    full_output : bool, False
+    
+    Returns
+    -------
+    ndarray
+        Estimate of derivative.
+    dict from scipy.optimize.minimize (optional)
+    """
+    
+    smoExact = sum([(k/(n-1) - (n-1-k)/(n-1)) * binom(n-1,k)/2**(n-2)
+                    for k in range((n-1)//2,n)])
+    sooExact = 0.
+    so1o2Exact = eps
+    
+    def cost(params, as_vec=False):
+        logPartitionList, smopC, smoC, so1o2C, soopC, sooC = setup_oo_perturbation(n, *params)
+        smop = coeffs_to_corr(smopC, logPartitionList)
+        smo = coeffs_to_corr(smoC, logPartitionList)
+        so1o2 = coeffs_to_corr(so1o2C, logPartitionList)
+        soop = coeffs_to_corr(soopC, logPartitionList)
+        soo = coeffs_to_corr(sooC, logPartitionList)
+        if as_vec:
+            return np.array([smop-smoExact,
+                             smo-smoExact,
+                             so1o2-so1o2Exact,
+                             soop-sooExact,
+                             soo-sooExact])
+        return np.sqrt((smop-smoExact)**2 + 
+                       (smo-smoExact)**2 + 
+                       (so1o2-so1o2Exact)**2 +
+                       (soop-sooExact)**2 +
+                       (soo-sooExact)**2)
+
+    soln = minimize(cost, J0)     
+    if full_output:
+        return (soln['x']-J0)/eps, soln
+    return (soln['x']-J0)/eps
+
+def solve_om_perturbation(n, J0,
+                          eps=1e-4,
+                          refine=True,
+                          tol=1e-5,
+                          full_output=False):
+    """Solve for the gradient of the couplings w.r.t. a perturbation of type O->M.
+    
+    Parameters
+    ----------
+    n : int
+    J0 : ndarray
+        Initial guess.
+    eps : float, 1e-4
+    refine : bool, True
+        NOT IMPLEMENTED YET.
+    tol : float, 1e-5
+    full_output : bool, False
+    
+    Returns
+    -------
+    ndarray
+        Estimate of derivative.
+    dict from scipy.optimize.minimize (optional)
+    """
+    
+    smoExact = sum([(k/(n-1) - (n-1-k)/(n-1)) * binom(n-1,k)/2**(n-2)
+                    for k in range((n-1)//2,n)])
+    sooExact = 0.
+    smopExact = smoExact*(1-eps) + eps
+    soopExact = smoExact*eps
+    
+    def cost(params, as_vec=False):
+        logPartitionList, smopC, smoC, soopC, sooC = setup_mo_perturbation(n, *params)
+        smop = coeffs_to_corr(smopC, logPartitionList)
+        smo = coeffs_to_corr(smoC, logPartitionList)
+        soop = coeffs_to_corr(soopC, logPartitionList)
+        soo = coeffs_to_corr(sooC, logPartitionList)
+        if as_vec:
+            return np.array([smop-smopExact,
+                             smo-smoExact,
+                             soop-soopExact,
+                             soo-sooExact])
+        return np.sqrt((smop-smopExact)**2 + 
+                       (smo-smoExact)**2 + 
+                       (soop-soopExact)**2 +
+                       (soo-sooExact)**2)
+
+    soln = minimize(cost, J0)
+    if full_output:
+        return (soln['x']-J0)/eps, soln
+    return (soln['x']-J0)/eps
+
+def setup_coupling_perturbations(n, Jpair):
+    """
+    Parameters
+    ----------
+    n : int
+    Jpair : ndarray
+        Couplings between (M,O) and (O,O) for MVM.
+
+    Returns
+    -------
+    function
+        _perturb_m_to_o
+    function
+        _perturb_o_to_m
+    function
+        _perturb_o_to_o
+    """
+
+    def _perturb_m_to_o(J, return_dJ=False, epsdJ=1e-5, n=n):
+        """Perturb couplings in direction given by M->O.
+
+        Parameters
+        ----------
+        J : ndarray
+            Couplings. Of size 12.
+        return_dJ : bool, False
+
+        Returns
+        -------
+        ndarray
+            New couplings after applying perturbation. Of size 12 as indexed in SCOTUS II pg. 124. Can be 
+            used directly in setup_perturbation().
+        ndarray (optional)
+            Return only the derivative instead of the new couplings moved along direction of gradient.
+        """
+
+        dJ = solve_mo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]])
+        J_ = J.copy()
+        J_[0] += dJ[0]*epsdJ
+        J_[[1,9,10]] += dJ[1]*epsdJ
+        J_[[2,4,11]] += dJ[2]*epsdJ
+        J_[[3,5,6,7,8]] += dJ[3]*epsdJ
+
+        if return_dJ:
+            dJ_ = np.zeros_like(J)
+            dJ_[0] = dJ[0]
+            dJ_[[1,9,10]] = dJ[1]
+            dJ_[[2,4,11]] = dJ[2]
+            dJ_[[3,5,6,7,8]] = dJ[3]
+            return J_, dJ_
+        return J_
+
+    def _perturb_o_to_m(J, return_dJ=False, epsdJ=1e-5, n=n):
+        """Perturb couplings in direction given by O->M.
+
+        Parameters
+        ----------
+        J : ndarray
+            Couplings. Of size 12.
+        return_dJ : bool, False
+
+        Returns
+        -------
+        ndarray
+            New couplings after applying perturbation. Of size 12 as indexed in SCOTUS II pg. 124. Can be 
+            used directly in setup_perturbation().
+        ndarray (optional)
+            Return only the derivative instead of the new couplings moved along direction of gradient.
+        """
+
+        dJ = solve_om_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]])
+
+        J_ = J.copy()
+        J_[0] += dJ[0]*epsdJ
+        J_[[1,9,10]] += dJ[1]*epsdJ
+        J_[[2,4,11]] += dJ[2]*epsdJ
+        J_[[3,5,6,7,8]] += dJ[3]*epsdJ
+
+        if return_dJ:
+            dJ_ = np.zeros_like(J)
+            dJ_[0] = dJ[0]
+            dJ_[[1,9,10]] = dJ[1]
+            dJ_[[2,4,11]] = dJ[2]
+            dJ_[[3,5,6,7,8]] = dJ[3]
+            return J_, dJ_
+        return J_
+
+    def _perturb_o_to_o(J, return_dJ=False, epsdJ=1e-5, n=n):
+        """Perturb couplings in direction given by O->O.
+
+        Parameters
+        ----------
+        J : ndarray
+            Couplings. Of size 12.
+        return_dJ : bool, False
+
+        Returns
+        -------
+        ndarray
+            New couplings after applying perturbation. Of size 12 as indexed in SCOTUS II pg. 124. Can be 
+            used directly in setup_perturbation().
+        ndarray (optional)
+            Return only the derivative instead of the new couplings moved along direction of gradient.
+        """
+
+        dJ = solve_oo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1],Jpair[1]])
+
+        J_ = J.copy()
+        J_[10] += dJ[0]*epsdJ
+        J_[[0,1,9]] += dJ[1]*epsdJ
+        J_[6] += dJ[2]*epsdJ
+        J_[[4,5,7]] += dJ[3]*epsdJ
+        J_[[2,3,8,11]] += dJ[4]*epsdJ
+
+        if return_dJ:
+            dJ_ = np.zeros_like(J)
+            dJ_[10] = dJ[0]
+            dJ_[[0,1,9]] = dJ[1]
+            dJ_[6] = dJ[2]
+            dJ_[[4,5,7]] = dJ[3]
+            dJ_[[2,3,8,11]] = dJ[4]
+            return J_, dJ_
+        return J_
+    
+    return _perturb_m_to_o, _perturb_o_to_m, _perturb_o_to_o
+
 def square_J(J, n):
     """Convert vector form of couplings to given to setup_perturbation() into square matrix 
     for use with ConIII module.
@@ -711,3 +1007,86 @@ def coeffs_to_corr(coeffs, logPartitionList):
     num = fast_logsumexp(logPartitionList, coeffs)
     return num[1] * np.exp(num[0] - fast_logsumexp(logPartitionList)[0])
 
+def expand_small_fim(smallfim, n):
+    """Populate the full FIM of dimensions (N*(N-1), N*(N-1)).
+    
+    Parameters
+    ----------
+    smallfim : ndarray
+        Should be of dimensions 3x3 or tuple of diag entries then off diag.
+    n : int
+        System size.
+    
+    Returns
+    -------
+    ndarray
+    """
+    
+    assert smallfim.shape==(3,3) or type(smallfim) is tuple
+    if type(smallfim) is tuple:
+        smallfim_ = squareform(smallfim[1])
+        smallfim_[np.diag_indices(3)] = smallfim[0]
+        smallfim = smallfim_
+
+    fim = np.zeros((n*(n-1),n*(n-1)))
+    # (m->0)^2
+    fim[:n-1,:n-1] = smallfim[0,0]
+    for i in range(1,n):
+        # m->o, o->m
+        fim[:n-1,i*(n-1)] = fim[i*(n-1),:n-1] = smallfim[0,1]
+        fim[:n-1,i*(n-1)+1:(i+1)*(n-1)] = fim[i*(n-1)+1:(i+1)*(n-1),:n-1] = smallfim[0,2]
+    for i in range(1,n):
+        for j in range(1,n):
+            # (o->m)^2
+            fim[i*(n-1),j*(n-1)] = smallfim[1,1]
+            # o->m, o->o
+            fim[i*(n-1),j*(n-1)+1:(j+1)*(n-1)] = fim[j*(n-1)+1:(j+1)*(n-1),i*(n-1)] = smallfim[1,2]
+            # (o->o)^2
+            fim[i*(n-1)+1:(i+1)*(n-1),j*(n-1)+1:(j+1)*(n-1)] = smallfim[2,2]
+    return fim
+
+def fim(n):
+    """FIM for the MVM.
+
+    Parameters
+    ----------
+    n : int
+
+    Returns
+    -------
+    ndarray
+        fim
+    ndarray
+        eigval
+    ndarray
+        eigvec
+    """
+    
+    from .fim import IsingFisherCurvatureMethod2
+
+    Jpair = couplings(n)
+    # map the couplings to the full perturbation scheme
+    J = np.zeros(12)
+    J[[0,1,9,10]] = Jpair[0]
+    J[J==0] = Jpair[1]
+
+    _perturb_m_to_o, _perturb_o_to_m, _perturb_o_to_o = setup_coupling_perturbations(n, Jpair)
+
+    # Use IsingFisherCurvatureMethod2 to calculate FIM quickly.
+    isingdkl = IsingFisherCurvatureMethod2(n,
+                                           h=np.zeros(n),
+                                           J=squareform(square_J(J,n)),
+                                           precompute=False)
+    dJ1 = np.insert(squareform(square_J(_perturb_m_to_o(J, True)[1],n)), 0, np.zeros(n))
+    dJ2 = np.insert(squareform(square_J(_perturb_o_to_m(J, True)[1],n)), 0, np.zeros(n))
+    dJ3 = np.insert(squareform(square_J(_perturb_o_to_o(J, True)[1],n)), 0, np.zeros(n))
+
+    isingdkl.dJ = np.vstack((dJ1,dJ2,dJ3))
+    smallfim = isingdkl.maj_curvature(epsdJ=1e-5, iprint=False)
+    fim = expand_small_fim(smallfim, n)
+
+    eigval, eigvec = np.linalg.eig(fim)
+    sortix = np.argsort(eigval)[::-1]
+    eigval = eigval[sortix].real[:2]
+    eigvec = eigvec[:,sortix].real[:2]
+    return fim, eigval, eigvec
