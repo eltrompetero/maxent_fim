@@ -843,13 +843,14 @@ def solve_om_perturbation(n, J0,
         return (soln['x']-J0)/eps, soln
     return (soln['x']-J0)/eps
 
-def setup_coupling_perturbations(n, Jpair):
+def setup_coupling_perturbations(n, Jpair, epsdJ=1e-5):
     """
     Parameters
     ----------
     n : int
     Jpair : ndarray
         Couplings between (M,O) and (O,O) for MVM.
+    epsdJ : float, 1e-5
 
     Returns
     -------
@@ -861,7 +862,7 @@ def setup_coupling_perturbations(n, Jpair):
         _perturb_o_to_o
     """
 
-    def _perturb_m_to_o(J, return_dJ=False, epsdJ=1e-5, n=n):
+    def _perturb_m_to_o(J, return_dJ=False, epsdJ=epsdJ, n=n):
         """Perturb couplings in direction given by M->O.
 
         Parameters
@@ -895,7 +896,7 @@ def setup_coupling_perturbations(n, Jpair):
             return J_, dJ_
         return J_
 
-    def _perturb_o_to_m(J, return_dJ=False, epsdJ=1e-5, n=n):
+    def _perturb_o_to_m(J, return_dJ=False, epsdJ=epsdJ, n=n):
         """Perturb couplings in direction given by O->M.
 
         Parameters
@@ -930,7 +931,7 @@ def setup_coupling_perturbations(n, Jpair):
             return J_, dJ_
         return J_
 
-    def _perturb_o_to_o(J, return_dJ=False, epsdJ=1e-5, n=n):
+    def _perturb_o_to_o(J, return_dJ=False, epsdJ=epsdJ, n=n):
         """Perturb couplings in direction given by O->O.
 
         Parameters
@@ -1045,8 +1046,34 @@ def expand_small_fim(smallfim, n):
             fim[i*(n-1)+1:(i+1)*(n-1),j*(n-1)+1:(j+1)*(n-1)] = smallfim[2,2]
     return fim
 
-def fim(n):
-    """FIM for the MVM.
+def logZ_to_Ek_pk(logPartitionList, kList):
+    n = max(kList)
+    Ek = np.array([-fast_logsumexp([logPartitionList[i] for i in range(len(kList)) if kList[i]==k])[0]
+                  for k in range(n//2+1,n+1)])
+    logZ = fast_logsumexp(logPartitionList)[0]
+    pk = np.exp([fast_logsumexp([logPartitionList[i] for i in range(len(kList)) if kList[i]==k])[0] - logZ
+                for k in range(n//2+1,n+1)])
+    return Ek, pk
+
+def diag_fim(n, J_, Ek, pk, epsdJ):
+    logPartitionList, kList, sisjCoeffs = setup_perturbation(J_, n)
+    Eknew, pknew = logZ_to_Ek_pk(logPartitionList, kList)
+    dE = Eknew-Ek
+    return pk.dot((dE-dE.dot(pk))**2) / epsdJ**2 / np.log(2)
+
+def off_diag_fim(n, newJ1, newJ2, Ek, pk, epsdJ):
+    logPartitionList, kList, sisjCoeffs = setup_perturbation(newJ1, n)
+    Eknew, pknew = logZ_to_Ek_pk(logPartitionList, kList)
+    dE1 = Eknew-Ek
+    
+    logPartitionList, kList, sisjCoeffs = setup_perturbation(newJ2, n)
+    Eknew, pknew = logZ_to_Ek_pk(logPartitionList, kList)
+    dE2 = Eknew-Ek
+    
+    return pk.dot((dE1-dE1.dot(pk))*(dE2-dE2.dot(pk))) / epsdJ**2 / np.log(2)
+
+def _fim(n):
+    """FIM for the MVM. Hard way of calculating it using IsingFisherCurvatureMethod2.
 
     Parameters
     ----------
@@ -1083,6 +1110,60 @@ def fim(n):
 
     isingdkl.dJ = np.vstack((dJ1,dJ2,dJ3))
     smallfim = isingdkl.maj_curvature(epsdJ=1e-5, iprint=False)
+    fim = expand_small_fim(smallfim, n)
+
+    eigval, eigvec = np.linalg.eig(fim)
+    sortix = np.argsort(eigval)[::-1]
+    eigval = eigval[sortix].real[:2]
+    eigvec = eigvec[:,sortix].real[:2]
+    return fim, eigval, eigvec
+
+def fim(n, epsdJ=1e-5):
+    """FIM for the MVM.
+
+    Parameters
+    ----------
+    n : int
+    epsdJ : float, 1e-5
+
+    Returns
+    -------
+    ndarray
+        FIM.
+    ndarray
+        The two eigenvalues sorted.
+    ndarray
+        Eigvectors sorted.
+    """
+    
+    # setup solution
+    # Couplings for MVM.
+    Jpair = couplings(n)
+    _perturb_m_to_o, _perturb_o_to_m, _perturb_o_to_o = setup_coupling_perturbations(n, Jpair, epsdJ)
+
+    # map the couplings to the full perturbation scheme
+    J = np.zeros(12)
+    J[[0,1,9,10]] = Jpair[0]
+    J[J==0] = Jpair[1]
+    Jmo = _perturb_m_to_o(J)
+    Jom = _perturb_o_to_m(J)
+    Joo = _perturb_o_to_o(J)
+
+    # p(k) for the MVM without perturbation
+    logPartitionList, kList, sisjCoeffs = setup_perturbation(J, n)
+    Ek, pk = logZ_to_Ek_pk(logPartitionList, kList)
+    
+    # calculation entries of the FIM
+    # fill diagonal elements
+    smallfim = np.zeros((3,3))
+    smallfim[0,0] = diag_fim(n, Jmo, Ek, pk, epsdJ)
+    smallfim[1,1] = diag_fim(n, Jom, Ek, pk, epsdJ)
+    smallfim[2,2] = diag_fim(n, Joo, Ek, pk, epsdJ)
+
+    smallfim[0,1] = smallfim[1,0] = off_diag_fim(n, Jmo, Jom, Ek, pk, epsdJ)
+    smallfim[0,2] = smallfim[2,0] = off_diag_fim(n, Jmo, Joo, Ek, pk, epsdJ)
+    smallfim[1,2] = smallfim[2,1] = off_diag_fim(n, Joo, Jom, Ek, pk, epsdJ)
+
     fim = expand_small_fim(smallfim, n)
 
     eigval, eigvec = np.linalg.eig(fim)
