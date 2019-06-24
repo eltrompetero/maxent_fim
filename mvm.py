@@ -5,6 +5,7 @@
 import numpy as np
 from coniii.utils import *
 from coniii.enumerate import fast_logsumexp
+from scipy.special import binom, factorial
 
 
 def create_mvm_p(n, q):
@@ -159,6 +160,44 @@ def couplings(n, data_corr=None, full_output=False, tol=1e-12, max_refine_iter=1
     if full_output:
         return soln['x'], soln
     return soln['x']
+
+def setup_fast_mvm(n):
+    """Straightforward MVM with only special correlations between the Median 
+    and all uniform Ordinary voters.
+    
+    Check formulation in SCOTUS II pg. 116.
+    
+    Parameters
+    ----------
+    int : n
+    
+    Returns
+    -------
+    function
+        smo(Jmo, Joo)
+    function
+        soo(Jmo, Joo)
+    """
+    
+    _E_with_maj = lambda Jmo,Joo,k,n=n: -Jmo*(2*k-n-1) - Joo*(binom(k-1,2) + binom(n-k,2) - (k-1)*(n-k))
+    _E_not_with_maj = lambda Jmo,Joo,k,n=n: -Jmo*(n-2*k-1) - Joo*(binom(n-k-1,2) + binom(k,2) - (n-k-1)*k)
+    
+    Z = lambda Jmo,Joo,n=n: sum([k/n * binom(n,k) * np.exp(-_E_with_maj(Jmo,Joo,k)) +
+                                 (n-k)/n * binom(n,k) * np.exp(-_E_not_with_maj(Jmo,Joo,k))
+                            for k in range(n//2+1,n)]) + np.exp(-_E_with_maj(Jmo,Joo,n))
+    # <s_m s_o>
+    def smo(Jmo, Joo, n=n):
+        return (sum([binom(n,k) * (k/n * (2*k-n-1)/(n-1) * np.exp(-_E_with_maj(Jmo,Joo,k))
+                                 +(n-k)/n * (n-2*k-1)/(n-1) * np.exp(-_E_not_with_maj(Jmo,Joo,k)))
+                     for k in range(n//2+1,n)]) + np.exp(-_E_with_maj(Jmo,Joo,n)))/Z(Jmo,Joo)
+    # <s_o s_o'>
+    def soo(Jmo, Joo, n=n):
+        weightmaj = lambda k:k/n * (binom(k-1,2)+binom(n-k,2)-(k-1)*(n-k))/binom(n-1,2)
+        weightnotmaj = lambda k:(n-k)/n * (binom(k,2)+binom(n-k-1,2)-k*(n-k-1))/binom(n-1,2)
+        return (sum([binom(n,k) * (weightmaj(k) * np.exp(-_E_with_maj(Jmo,Joo,k)) + 
+                                   weightnotmaj(k) * np.exp(-_E_not_with_maj(Jmo,Joo,k)))
+                     for k in range(n//2+1,n)]) + np.exp(-_E_with_maj(Jmo,Joo,n)))/Z(Jmo,Joo)
+    return smo, soo, Z
 
 def setup_maxent(n):
     """Correlation functions of the Median Voter Model with special Ordinary voter O' that
