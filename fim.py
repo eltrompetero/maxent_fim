@@ -695,6 +695,7 @@ class IsingFisherCurvatureMethod1():
         assert np.isclose(p.sum(),1), p.sum()
         if dJ is None:
             dJ = self.dJ
+            assert self.dJ.shape[1]==(n+n*(n-1)//2)
         if iprint:
             print('Done with preamble.')
 
@@ -778,8 +779,8 @@ class IsingFisherCurvatureMethod1():
             hess[np.eye(len(dJ))==1] /= 2
 
         # check for precision problems
-        assert ~np.isnan(hess).any()
-        assert ~np.isinf(hess).any()
+        assert ~np.isnan(hess).any(), hess
+        assert ~np.isinf(hess).any(), hess
 
         if check_stability:
             hess2 = self._maj_curvature(epsdJ=epsdJ/2,

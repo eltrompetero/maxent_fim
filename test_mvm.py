@@ -62,3 +62,80 @@ def test_setup_maxent():
         pkME = np.array([p[k==i].sum() for i in range(n//2+1,n+1)])
         assert np.isclose( pkME, pk(Jmo, Jmop, Joo, Jop) ).all()
     print("Test passed: Pairwise correlations agree with ConIII module.")
+
+def test_setup_mo_perturbation():
+    logPartitionList, sMOpcoeffs, sMOcoeffs, sOOpcoeffs, sOOcoeffs = setup_mo_perturbation(5, 0, 0, 0, 0)
+
+    # when couplings are zero, every pairwise correlation should be zero (this checks the coeffs)
+    assert np.isclose(coeffs_to_corr(sMOpcoeffs, logPartitionList), 0)
+    assert np.isclose(coeffs_to_corr(sMOcoeffs, logPartitionList), 0)
+    assert np.isclose(coeffs_to_corr(sOOpcoeffs, logPartitionList), 0)
+    assert np.isclose(coeffs_to_corr(sOOcoeffs, logPartitionList), 0)
+
+    # check equations for pairwise correlations with ConIII module
+    J = np.random.normal(size=4, scale=.3)
+    # Jmop, Jmo, Joop, Joo
+    nRange = [5,7,9,11,13]
+
+    for i,n in enumerate(nRange):
+        ising = import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
+        hJ = np.zeros(n+n*(n-1)//2)
+        hJ[n] = J[0]
+        hJ[n+1:n+n-1] = J[1]
+        hJ[n+n-1:n+n-1+n-2] = J[2]
+        hJ[3*n-3:] = J[3]
+        
+        sisjME = ising.calc_observables(hJ)
+        sisjME = sisjME[n], sisjME[n+1], sisjME[n+n-1], sisjME[-1]
+        
+        logPartitionList, sMOpcoeffs, sMOcoeffs, sOOpcoeffs, sOOcoeffs = setup_mo_perturbation(n, *J)
+        sisj = (coeffs_to_corr(sMOpcoeffs, logPartitionList),
+                coeffs_to_corr(sMOcoeffs, logPartitionList),
+                coeffs_to_corr(sOOpcoeffs, logPartitionList),
+                coeffs_to_corr(sOOcoeffs, logPartitionList))
+        assert np.isclose(sisj,sisjME).all()
+
+def test_setup_oo_perturbation():
+    (logPartitionList,
+     sMOpcoeffs,
+     sMOcoeffs,
+     sO1O2pcoeffs,
+     sOOpcoeffs,
+     sOOcoeffs) = setup_oo_perturbation(5, *np.zeros(5))
+
+    # when couplings are zero, every pairwise correlation should be zero (this checks the coeffs)
+    assert np.isclose(coeffs_to_corr(sMOpcoeffs, logPartitionList), 0)
+    assert np.isclose(coeffs_to_corr(sMOcoeffs, logPartitionList), 0)
+    assert np.isclose(coeffs_to_corr(sO1O2pcoeffs, logPartitionList), 0)
+    assert np.isclose(coeffs_to_corr(sOOpcoeffs, logPartitionList), 0)
+    assert np.isclose(coeffs_to_corr(sOOcoeffs, logPartitionList), 0)
+
+    # check equations for pairwise correlations with ConIII module
+    J = np.random.normal(size=5, scale=.3)
+    # Jmop, Jmo, Jo1o2, Joop, Joo
+    nRange = [5,7,9,11,13]
+
+    for i,n in enumerate(nRange):
+        ising = import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
+        hJ = np.zeros(n+n*(n-1)//2)
+        hJ[n:n+2] = J[0]
+        hJ[n+2:n+n-1] = J[1]
+        hJ[n+n-1] = J[2]
+        hJ[n+n:n+n-1+n-2+n-3] = J[3]
+        hJ[4*n-6:] = J[4]
+        
+        sisjME = ising.calc_observables(hJ)
+        sisjME = sisjME[[n,n+2,2*n-1,2*n,4*n-6]]
+        
+        (logPartitionList,
+         sMOpcoeffs,
+         sMOcoeffs,
+         sO1O2pcoeffs,
+         sOOpcoeffs,
+         sOOcoeffs) = setup_oo_perturbation(n, *J)
+        sisj = (coeffs_to_corr(sMOpcoeffs, logPartitionList),
+                coeffs_to_corr(sMOcoeffs, logPartitionList),
+                coeffs_to_corr(sO1O2pcoeffs, logPartitionList),
+                coeffs_to_corr(sOOpcoeffs, logPartitionList),
+                coeffs_to_corr(sOOcoeffs, logPartitionList))
+        assert np.isclose(sisj,sisjME).all()

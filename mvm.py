@@ -378,3 +378,336 @@ def setup_maxent(n):
         return np.exp( logpk - logZ(*J) )
 
     return smo, smop, soo, sop, pk
+
+def setup_mo_perturbation(n, Jmop, Jmo, Joop, Joo):
+    """Perturbation of <sM sO>
+    involves 4 couplings"""
+    
+    logPartitionList = []
+    sMOpcoeffs = []
+    sMOcoeffs = []
+    sOOpcoeffs = []
+    sOOcoeffs = []
+
+    for k in range(n//2+1,n):
+            # energy term determined by placement of median or Op voter in maj or min
+            # consider median to be first spin
+            # 0 indicates vote in maj
+            # 1 indicates vote in min
+            # coeffs are fraction of ways of arranging spins in maj and min coalitions given n choose k
+            E = (-Jmop -Jmo*((k-2)-(n-k)) -Joop*((k-2)-(n-k))
+                 -Joo*(binom(k-2,2)+binom(n-k,2)-(k-2)*(n-k)))
+            coeff = k*(k-1) / (n*(n-1))
+            sMOpcoeffs.append(1)
+            sMOcoeffs.append(((k-2)-(n-k))/(n-2))
+            sOOpcoeffs.append(((k-2)-(n-k))/(n-2))
+            sOOcoeffs.append((binom(k-2,2)+binom(n-k,2)-(k-2)*(n-k))/binom(n-2,2))
+            logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+
+            E = (Jmop -Jmo*((k-1)-(n-k-1)) -Joop*((n-k-1)-(k-1))
+                 -Joo*(binom(k-1,2)+binom(n-k-1,2)-(k-1)*(n-k-1)))
+            coeff = k*(n-k) / (n*(n-1))
+            sMOpcoeffs.append(-1)
+            sMOcoeffs.append(((k-1)-(n-k-1))/(n-2))
+            sOOpcoeffs.append(((n-k-1)-(k-1))/(n-2))
+            sOOcoeffs.append((binom(k-1,2)+binom(n-k-1,2)-(k-1)*(n-k-1))/binom(n-2,2))
+            logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+
+            E = (Jmop -Jmo*((n-k-1)-(k-1)) -Joop*((k-1)-(n-k-1))
+                 -Joo*(binom(k-1,2)+binom(n-k-1,2)-(k-1)*(n-k-1)))
+            coeff = k*(n-k) / (n*(n-1))
+            if coeff>0:
+                sMOpcoeffs.append(-1)
+                sMOcoeffs.append(((n-k-1)-(k-1))/(n-2))
+                sOOpcoeffs.append(((k-1)-(n-k-1))/(n-2))
+                sOOcoeffs.append((binom(k-1,2)+binom(n-k-1,2)-(k-1)*(n-k-1))/binom(n-2,2))
+                logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+
+            E = (-Jmop -Jmo*((n-k-2)-k) -Joop*((n-k-2)-k)
+                 -Joo*(binom(n-k-2,2)+binom(k,2)-(n-k-2)*k))
+            coeff = (n-k)*(n-k-1) / (n*(n-1))
+            if coeff>0:
+                sMOpcoeffs.append(1)
+                sMOcoeffs.append(((n-k-2)-k)/(n-2))
+                sOOpcoeffs.append(((n-k-2)-k)/(n-2))
+                sOOcoeffs.append((binom(n-k-2,2)+binom(k,2)-(n-k-2)*k)/binom(n-2,2))
+                logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+
+    # handle special case of k=n ====================================
+    E = -Jmop -Jmo*(n-2) -Joop*(n-2) -Joo*binom(n-2,2)
+    sMOpcoeffs.append(1)
+    sMOcoeffs.append(1)
+    sOOpcoeffs.append(1)
+    sOOcoeffs.append(1)
+    logPartitionList.append( -E )
+    
+    return (logPartitionList,
+            sMOpcoeffs,
+            sMOcoeffs,
+            sOOpcoeffs,
+            sOOcoeffs)
+
+def setup_oo_perturbation(n, Jmop, Jmo, Jo1o2, Joop, Joo):
+    """Perturbation of <sO_1 sO_2>
+    involves 5 couplings"""
+    
+    logPartitionList = []
+    sMOpcoeffs = []
+    sMOcoeffs = []
+    sO1O2pcoeffs = []
+    sOOpcoeffs = []
+    sOOcoeffs = []
+
+    for k in range(n//2+1,n):
+        # energy term determined by placement of median or Op voter in maj or min
+        # consider median to be first spin
+        # 0 indicates vote in maj
+        # 1 indicates vote in min
+        # coeffs are fraction of ways of arranging spins in maj and min coalitions given n choose k
+        # 1
+        E = (-2*Jmop -Jmo*(k-3-(n-k)) -Jo1o2 -Joo*(binom(k-3,2)+binom(n-k,2)-(k-3)*(n-k))
+             -2*Joop*(k-3-(n-k)))
+        coeff = k*(k-1)*(k-2) / (n*(n-1)*(n-2))
+        sMOpcoeffs.append(1)
+        sMOcoeffs.append((k-3-(n-k))/(n-3))
+        sO1O2pcoeffs.append(1)
+        sOOcoeffs.append((binom(k-3,2)+binom(n-k,2)-(k-3)*(n-k))/binom(n-3,2))
+        sOOpcoeffs.append(2*(k-3-(n-k))/(2*n-6))
+        logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+        
+        # 2
+        E = (-Jmo*(k-2-(n-k-1)) +Jo1o2 -Joo*(binom(k-2,2)+binom(n-k-1,2)-(k-2)*(n-k-1))
+             -Joop*((k-2-(n-k-1)) + (n-k-1-(k-2))))
+        coeff = 2 * k*(k-1)*(n-k) / (n*(n-1)*(n-2))
+        sMOpcoeffs.append(0)
+        sMOcoeffs.append((k-2-(n-k-1))/(n-3))
+        sO1O2pcoeffs.append(-1)
+        sOOcoeffs.append((binom(k-2,2)+binom(n-k-1,2)-(k-2)*(n-k-1))/binom(n-3,2))
+        sOOpcoeffs.append(((k-2-(n-k-1)) + (n-k-1-(k-2)))/(2*n-6))
+        logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+
+        # 3
+        E = (2*Jmop -Jmo*(k-1-(n-k-2)) -Jo1o2 -Joo*(binom(k-1,2)+binom(n-k-2,2)-(k-1)*(n-k-2))
+             -Joop*(n-k-2-(k-1))*2)
+        coeff = k*(n-k)*(n-k-1) / (n*(n-1)*(n-2))
+        if coeff>0:
+            sMOpcoeffs.append(-1)
+            sMOcoeffs.append((k-1-(n-k-2))/(n-3))
+            sO1O2pcoeffs.append(1)
+            sOOcoeffs.append((binom(k-1,2)+binom(n-k-2,2)-(k-1)*(n-k-2))/binom(n-3,2))
+            sOOpcoeffs.append((n-k-2-(k-1))*2/(2*n-6))
+            logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+           
+        # 4
+        E = (2*Jmop -Jmo*(n-k-1-(k-2)) -Jo1o2 -Joo*(binom(k-2,2)+binom(n-k-1,2)-(k-2)*(n-k-1))
+             -Joop*(k-2-(n-k-1))*2)
+        coeff = k*(k-1)*(n-k) / (n*(n-1)*(n-2))
+        sMOpcoeffs.append(-1)
+        sMOcoeffs.append((n-k-1-(k-2))/(n-3))
+        sO1O2pcoeffs.append(1)
+        sOOcoeffs.append((binom(k-2,2)+binom(n-k-1,2)-(k-2)*(n-k-1))/binom(n-3,2))
+        sOOpcoeffs.append((k-2-(n-k-1))*2/(2*n-6))
+        logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+        
+        # 5
+        E = (-Jmo*(n-k-2-(k-1)) +Jo1o2 -Joo*(binom(k-1,2)+binom(n-k-2,2)-(k-1)*(n-k-2))
+             -Joop*((k-1-(n-k-2)) + (n-k-2-(k-1))))
+        coeff = 2 * k*(n-k)*(n-k-1) / (n*(n-1)*(n-2))
+        if coeff>0:
+            sMOpcoeffs.append(0)
+            sMOcoeffs.append((n-k-2-(k-1))/(n-3))
+            sO1O2pcoeffs.append(-1)
+            sOOcoeffs.append((binom(k-1,2)+binom(n-k-2,2)-(k-1)*(n-k-2))/binom(n-3,2))
+            sOOpcoeffs.append(((k-1-(n-k-2)) + (n-k-2-(k-1)))/(2*n-6))
+            logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+        
+        # 6
+        E = (-2*Jmop -Jmo*(n-k-3-k) -Jo1o2 -Joo*(binom(n-k-3,2)+binom(k,2)-k*(n-k-3))
+             -Joop*(n-k-3-k)*2)
+        coeff = (n-k)*(n-k-1)*(n-k-2) / (n*(n-1)*(n-2))
+        if coeff>0:
+            sMOpcoeffs.append(1)
+            sMOcoeffs.append((n-k-3-k)/(n-3))
+            sO1O2pcoeffs.append(1)
+            sOOcoeffs.append((binom(n-k-3,2)+binom(k,2)-k*(n-k-3))/binom(n-3,2))
+            sOOpcoeffs.append((n-k-3-k)*2/(2*n-6))
+            logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+        
+    # handle special case of k=n ====================================
+    E = -2*Jmop -Jmo*(n-3) -Jo1o2 -Joo*binom(n-3,2) -2*Joop*(n-3)
+    sMOpcoeffs.append(1)
+    sMOcoeffs.append(1)
+    sO1O2pcoeffs.append(1)
+    sOOpcoeffs.append(1)
+    sOOcoeffs.append(1)
+    logPartitionList.append( -E )
+    
+    return logPartitionList, sMOpcoeffs, sMOcoeffs, sO1O2pcoeffs, sOOpcoeffs, sOOcoeffs
+
+def setup_perturbation(J, n):
+    """Full perturbation model as detailed on SCOTUS II pg. 124.
+    
+    Parameters
+    ----------
+    J : ndarray
+        12 couplings specifying all perturbations possible for MVM.
+    n : int
+    
+    Returns
+    -------
+    list
+        Log of terms in partition function.
+    list
+        k voters in the majority for each term in partition list.
+    list
+        Coefficients of partition function necessary for calculating pairwise correlations.
+    """
+    
+    logPartitionList = []
+    kList = []
+    sisjCoeffs = [[] for i in range(12)]
+    
+    for k in range(n//2+1,n):
+        thiskCoeffSum = 0
+        # energy term determined by placement of median or Op voter in maj or min
+        # consider median to be first spin
+        # 0 indicates vote in maj
+        # 1 indicates vote in min
+        # coeffs are fraction of ways of arranging spins in maj and min coalitions given n choose k
+        # 1
+        for config in bin_states(5):
+            nmin = config.sum()  # no. of these five spins in the min.
+            nmaj = 5 - nmin
+#             if nmin<=(n-k):  # why is this condition unnecessary? because of nans
+            # calculate coefficients for each coupling term
+            couplingsCoeff = np.zeros(12)-1
+            if config[0]==config[1]:
+                couplingsCoeff[0] = 1.
+            if config[0]==config[2]:
+                couplingsCoeff[1] = 1.
+            if config[1]==0:
+                couplingsCoeff[2] = (k-nmaj) -(n-k-nmin)
+            else:
+                couplingsCoeff[2] = (n-k-nmin) -(k-nmaj)
+            if config[2]==0:
+                couplingsCoeff[3] = (k-nmaj) -(n-k-nmin)
+            else:
+                couplingsCoeff[3] = (n-k-nmin) -(k-nmaj)
+            if config[1]==config[2]:
+                couplingsCoeff[11] = 1
+
+            if config[3]==config[4]:
+                if config[1]==config[3]:
+                    couplingsCoeff[4] = 2
+                else:
+                    couplingsCoeff[4] = -2
+                if config[2]==config[3]:
+                    couplingsCoeff[5] = 2
+                else:
+                    couplingsCoeff[5] = -2
+                couplingsCoeff[6] = 1
+
+                if config[3]==0:
+                    couplingsCoeff[7] = 2 * (k-nmaj -(n-k-nmin))
+                else:
+                    couplingsCoeff[7] = -2 * (k-nmaj -(n-k-nmin))
+                if config[0]==config[3]:
+                    couplingsCoeff[10] = 2
+                else:
+                    couplingsCoeff[10] = -2
+            else:
+                couplingsCoeff[4] = 0
+                couplingsCoeff[5] = 0
+                couplingsCoeff[7] = 0
+                couplingsCoeff[10] = 0
+            couplingsCoeff[8] = binom(k-nmaj,2) + binom(n-k-nmin,2) -(k-nmaj)*(n-k-nmin)
+            if config[0]==0:
+                couplingsCoeff[9] = (k-nmaj) -(n-k-nmin)
+            else:
+                couplingsCoeff[9] = (n-k-nmin) -(k-nmaj)
+            E = -J.dot(couplingsCoeff)
+            
+            # coefficient term in front of exponential counting multiplicity of state
+            coeff = 1.
+            majCounter = 0
+            minCounter = 0
+            for i in range(config.sum()):
+                coeff *= n-k-minCounter
+                minCounter += 1
+            for i in range(config.sum(),5):
+                coeff *= k-majCounter
+                majCounter += 1
+            coeff /= n*(n-1)*(n-2)*(n-3)*(n-4)
+
+            if coeff>0:
+                thiskCoeffSum += coeff
+                kList.append(k)
+                sisjCoeffs[0].append(couplingsCoeff[0])
+                sisjCoeffs[1].append(couplingsCoeff[1])
+                sisjCoeffs[2].append(couplingsCoeff[2]/(n-5))
+                sisjCoeffs[3].append(couplingsCoeff[3]/(n-5))
+                sisjCoeffs[4].append(couplingsCoeff[4]/2)
+                sisjCoeffs[5].append(couplingsCoeff[5]/2)
+                sisjCoeffs[6].append(couplingsCoeff[6])
+                sisjCoeffs[7].append(couplingsCoeff[7]/2/(n-5))
+                sisjCoeffs[8].append(couplingsCoeff[8]/binom(n-5,2))
+                sisjCoeffs[9].append(couplingsCoeff[9]/(n-5))
+                sisjCoeffs[10].append(couplingsCoeff[10]/2)
+                sisjCoeffs[11].append(couplingsCoeff[11])
+                logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
+        # this should be 1
+        # assert np.isclose( thiskCoeffSum, 1 )
+        
+    # handle special case of k=n ====================================
+    couplingsCoeff = np.ones(12)
+    couplingsCoeff[[2,3,9]] = n-5
+    couplingsCoeff[[4,5,10]] = 2
+    couplingsCoeff[7] = 2*(n-5)
+    couplingsCoeff[8] = binom(n-5,2)
+    E = -couplingsCoeff.dot(J)
+    for i in sisjCoeffs:
+        i.append(1)
+    logPartitionList.append(-E)
+    kList.append(n)
+    sisjCoeffs = [np.array(coeffs) for coeffs in sisjCoeffs]
+    
+    return logPartitionList, kList, sisjCoeffs
+
+def square_J(J, n):
+    """Convert vector form of couplings to given to setup_perturbation() into square matrix 
+    for use with ConIII module.
+    
+    Parameters
+    ----------
+    J : ndarray
+        Couplings ordered as passed into setup_perturbation().
+    n : int
+        System size.
+        
+    Returns
+    -------
+    ndarray
+        Square couplings matrix.
+    """
+    
+    Jmat = np.zeros((n,n))
+    Jmat[0,1] = J[0]
+    Jmat[0,2] = J[1]
+    Jmat[1,5:] = J[2]
+    Jmat[2,5:] = J[3]
+    Jmat[1,3] = Jmat[1,4] = J[4]
+    Jmat[2,3] = Jmat[2,4] = J[5]
+    Jmat[3,4] = J[6]
+    Jmat[3,5:] = Jmat[4,5:] = J[7]
+    for j in range(5,n):
+        Jmat[j,j+1:] = J[8]
+    Jmat[0,5:] = J[9]
+    Jmat[0,3] = Jmat[0,4] = J[10]
+    Jmat[1,2] = J[11]
+    Jmat += Jmat.T
+    return Jmat
+
+def coeffs_to_corr(coeffs, logPartitionList):
+    num = fast_logsumexp(logPartitionList, coeffs)
+    return num[1] * np.exp(num[0] - fast_logsumexp(logPartitionList)[0])
+
