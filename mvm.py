@@ -674,10 +674,56 @@ def setup_perturbation(J, n):
     
     return logPartitionList, kList, sisjCoeffs
 
+def refine_perturbation(cost, J, refine_max_iter, refine_multiplier, tol):
+    """Simple iterative refinement of perturbation solution for couplings. This just
+    increases the coupling if the pairwise correlation is too large and decreases it if
+    the pairwise correlation is too small, multiplying the error by the refine_multiplier
+    factor to change the coupling. When the error is already small, this can converge
+    well.
+
+    Parameters
+    ----------
+    cost : function
+        Returns vector indicating the errors on the current parameter estimate.
+    J : ndarray
+    refine_max_iter : int
+    refine_multiplier : float
+    tol : float
+        Norm2 error for stopping iteration.
+
+    Returns
+    -------
+    ndarray
+        Couplings.
+    int
+        Error flag. 0 is good, 1 means not converged.
+    list
+        History of errors (to make sure that errors are decaying and not growing or
+        oscillating).
+    """
+    
+    J = J.copy()
+    dJ = np.ones_like(J)
+    counter = 0
+    errHistory = [1]
+    while counter<refine_max_iter and errHistory[-1]>tol:
+        dJ = -cost(J, True)
+        errHistory.append(np.linalg.norm(dJ))
+        J += dJ*refine_multiplier
+        counter += 1
+    if np.linalg.norm(dJ)<tol:
+        errflag = 0
+    else:
+        errflag = 1
+    errHistory.pop(0)
+    return J, errflag, errHistory
+
 def solve_mo_perturbation(n, J0,
                           eps=1e-4,
                           refine=True,
-                          tol=1e-5,
+                          refine_multiplier=.2,
+                          refine_max_iter=1000,
+                          tol=1e-15,
                           full_output=False):
     """Solve for the gradient of the couplings w.r.t. a perturbation of type M->O.
     
@@ -688,14 +734,18 @@ def solve_mo_perturbation(n, J0,
         Initial guess.
     eps : float, 1e-4
     refine : bool, True
-        NOT IMPLEMENTED YET.
-    tol : float, 1e-5
+    refine_multiplier : float, .2
+    refine_max_iter : int, 10_000
+    tol : float, 1e-15
+    full_output : bool, False
     
     Returns
     -------
     ndarray
         Estimate of derivative.
     dict from scipy.optimize.minimize (optional)
+    list
+        Error history for iterative algorithm.
     """
     
     smoExact = sum([(k/(n-1) - (n-1-k)/(n-1)) * binom(n-1,k)/2**(n-2)
@@ -715,32 +765,32 @@ def solve_mo_perturbation(n, J0,
                              smo-smoExact,
                              soop-sooExact,
                              soo-sooExact])
-        return np.sqrt((smop-smopExact)**2 + 
-                       (smo-smoExact)**2 + 
-                       (soop-sooExact)**2 +
-                       (soo-sooExact)**2)
+        return ((smop-smopExact)**2 + 
+                (smo-smoExact)**2 + 
+                (soop-sooExact)**2 +
+                (soo-sooExact)**2)
 
     soln = minimize(cost, J0)
-    # this refining doesn't seem to help
-#     if refine:
-#         print("Refining...")
-#         J = soln['x']
-#         dJ = np.ones_like(J)
-#         counter = 0
-#         while counter<1000 and np.linalg.norm(dJ)>tol:
-#             dJ = -cost(J, True)
-#             J += dJ
-#             counter += 1
-#         if np.linalg.norm(dJ)<tol:
-#             print("Good soln.")
-    if full_output:
+
+    if refine:
+        soln['x'], errflag, errHistory = refine_perturbation(cost,
+                                                             soln['x'],
+                                                             refine_max_iter,
+                                                             refine_multiplier,
+                                                             tol)
+
+    if full_output and refine:
+        return (soln['x']-J0)/eps, soln, errHistory
+    elif full_output:
         return (soln['x']-J0)/eps, soln
     return (soln['x']-J0)/eps
 
 def solve_oo_perturbation(n, J0,
                           eps=1e-4,
                           refine=True,
-                          tol=1e-5,
+                          refine_multiplier=.2,
+                          refine_max_iter=1000,
+                          tol=1e-15,
                           full_output=False):
     """Solve for the gradient of the couplings w.r.t. a perturbation of type O->O.
     
@@ -751,7 +801,8 @@ def solve_oo_perturbation(n, J0,
         Initial guess.
     eps : float, 1e-4
     refine : bool, True
-        NOT IMPLEMENTED YET.
+    refine_multiplier : float, .2
+    refine_max_iter : int, 10_000
     tol : float, 1e-5
     full_output : bool, False
     
@@ -760,6 +811,8 @@ def solve_oo_perturbation(n, J0,
     ndarray
         Estimate of derivative.
     dict from scipy.optimize.minimize (optional)
+    list
+        Error history for iterative algorithm.
     """
     
     smoExact = sum([(k/(n-1) - (n-1-k)/(n-1)) * binom(n-1,k)/2**(n-2)
@@ -787,14 +840,25 @@ def solve_oo_perturbation(n, J0,
                        (soo-sooExact)**2)
 
     soln = minimize(cost, J0)     
-    if full_output:
+    if refine:
+        soln['x'], errflag, errHistory = refine_perturbation(cost,
+                                                             soln['x'],
+                                                             refine_max_iter,
+                                                             refine_multiplier,
+                                                             tol)
+
+    if full_output and refine:
+        return (soln['x']-J0)/eps, soln, errHistory
+    elif full_output:
         return (soln['x']-J0)/eps, soln
     return (soln['x']-J0)/eps
 
 def solve_om_perturbation(n, J0,
                           eps=1e-4,
                           refine=True,
-                          tol=1e-5,
+                          refine_multiplier=.2,
+                          refine_max_iter=1000,
+                          tol=1e-15,
                           full_output=False):
     """Solve for the gradient of the couplings w.r.t. a perturbation of type O->M.
     
@@ -805,7 +869,8 @@ def solve_om_perturbation(n, J0,
         Initial guess.
     eps : float, 1e-4
     refine : bool, True
-        NOT IMPLEMENTED YET.
+    refine_multiplier : float, .2
+    refine_max_iter : int, 10_000
     tol : float, 1e-5
     full_output : bool, False
     
@@ -814,6 +879,8 @@ def solve_om_perturbation(n, J0,
     ndarray
         Estimate of derivative.
     dict from scipy.optimize.minimize (optional)
+    list
+        Error history for iterative algorithm.
     """
     
     smoExact = sum([(k/(n-1) - (n-1-k)/(n-1)) * binom(n-1,k)/2**(n-2)
@@ -839,7 +906,16 @@ def solve_om_perturbation(n, J0,
                        (soo-sooExact)**2)
 
     soln = minimize(cost, J0)
-    if full_output:
+    if refine:
+        soln['x'], errflag, errHistory = refine_perturbation(cost,
+                                                             soln['x'],
+                                                             refine_max_iter,
+                                                             refine_multiplier,
+                                                             tol)
+
+    if full_output and refine:
+        return (soln['x']-J0)/eps, soln, errHistory
+    elif full_output:
         return (soln['x']-J0)/eps, soln
     return (soln['x']-J0)/eps
 
@@ -880,7 +956,7 @@ def setup_coupling_perturbations(n, Jpair, epsdJ=1e-5):
             Return only the derivative instead of the new couplings moved along direction of gradient.
         """
 
-        dJ = solve_mo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]])
+        dJ = solve_mo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]], refine_max_iter=10_000)
         J_ = J.copy()
         J_[0] += dJ[0]*epsdJ
         J_[[1,9,10]] += dJ[1]*epsdJ
@@ -914,7 +990,7 @@ def setup_coupling_perturbations(n, Jpair, epsdJ=1e-5):
             Return only the derivative instead of the new couplings moved along direction of gradient.
         """
 
-        dJ = solve_om_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]])
+        dJ = solve_om_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]], refine_max_iter=10_000)
 
         J_ = J.copy()
         J_[0] += dJ[0]*epsdJ
@@ -949,7 +1025,7 @@ def setup_coupling_perturbations(n, Jpair, epsdJ=1e-5):
             Return only the derivative instead of the new couplings moved along direction of gradient.
         """
 
-        dJ = solve_oo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1],Jpair[1]])
+        dJ = solve_oo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1],Jpair[1]], refine_max_iter=10_000)
 
         J_ = J.copy()
         J_[10] += dJ[0]*epsdJ
@@ -1007,6 +1083,10 @@ def square_J(J, n):
 def coeffs_to_corr(coeffs, logPartitionList):
     num = fast_logsumexp(logPartitionList, coeffs)
     return num[1] * np.exp(num[0] - fast_logsumexp(logPartitionList)[0])
+
+def coeffs_to_logcorr(coeffs, logPartitionList):
+    num = fast_logsumexp(logPartitionList, coeffs)
+    return num[0] - fast_logsumexp(logPartitionList)[0]
 
 def expand_small_fim(smallfim, n):
     """Populate the full FIM of dimensions (N*(N-1), N*(N-1)).
@@ -1113,9 +1193,9 @@ def _fim(n):
     fim = expand_small_fim(smallfim, n)
 
     eigval, eigvec = np.linalg.eig(fim)
-    sortix = np.argsort(eigval)[::-1]
-    eigval = eigval[sortix].real[:2]
-    eigvec = eigvec[:,sortix].real[:2]
+    sortix = np.argsort(eigval)[::-1][:2]
+    eigval = eigval[sortix].real
+    eigvec = eigvec[:,sortix].real
     return fim, eigval, eigvec
 
 def fim(n, epsdJ=1e-5):
@@ -1167,7 +1247,7 @@ def fim(n, epsdJ=1e-5):
     fim = expand_small_fim(smallfim, n)
 
     eigval, eigvec = np.linalg.eig(fim)
-    sortix = np.argsort(eigval)[::-1]
-    eigval = eigval[sortix].real[:2]
-    eigvec = eigvec[:,sortix].real[:2]
+    sortix = np.argsort(eigval)[::-1][:2]
+    eigval = eigval[sortix].real
+    eigvec = eigvec[:,sortix].real
     return fim, eigval, eigvec
