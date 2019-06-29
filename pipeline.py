@@ -187,7 +187,7 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False, force_krylov=False):
         return hJ, soln
     
     if n_cpus>1:
-        pool = Pool(4)
+        pool = Pool(cpu_count()//4)
         hJ, soln = list( zip(*pool.map(single_solution_wrapper, 
                                [i for i in data.items() if len(i[1])==2] )))
         pool.close()
@@ -209,7 +209,7 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False, force_krylov=False):
         data[k].append(soln[i])
     assert all([len(i)==4 for i in data.values()])
 
-def calculate_fisher_on_pk(data, system, method,
+def calculate_fisher_on_pk(data, system='', method='',
                            computed_results=None,
                            high_prec_dps=30,
                            save=True,
@@ -220,8 +220,8 @@ def calculate_fisher_on_pk(data, system, method,
     Parameters
     ----------
     data : dict
-    system : str
-    method : str
+    system : str, ''
+    method : str, ''
     computed_results: dict, None
         If given, results will be appended onto this.
     high_prec_dps : int, 30
@@ -239,7 +239,8 @@ def calculate_fisher_on_pk(data, system, method,
     """
     
     import importlib
-
+    
+    # fname is only used if save is True
     fname = 'cache/Method%s/%s/%s/fisherResultMaj.p'%(str(fi_method),system,method)
     if not os.path.isdir('cache/Method%s/%s/%s'%(str(fi_method),system,method)):
         os.makedirs('cache/Method%s/%s/%s'%(str(fi_method),system,method))
