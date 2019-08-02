@@ -1,7 +1,7 @@
-# =============================================================================================== #
-# Calculation of FIM quantities.
+# ====================================================================================== #
+# Analysis of FIM quantities.
 # Author: Eddie Lee, edlee@alumni.princeton.edu
-# =============================================================================================== #
+# ====================================================================================== #
 from .utils import *
 
 
@@ -19,9 +19,9 @@ def block_subspace_eig(hess, k, remove_n_modes=0):
 
     Returns
     -------
-    list
+    list of ndarray
         Eigenvalue spectrum for each block.
-    list
+    list of ndarray
         Eigenvectors for each block.
     """
     
@@ -45,8 +45,8 @@ def block_subspace_eig(hess, k, remove_n_modes=0):
     return blockeigval, blockeigvec
 
 def pair_asymmetry(eigvec, n, rank=0, by_voter=False, eigval=None):
-    """Row column asymmetry for "eigenmatrices" for pairwise perturbations. Can calculated weighted asymmetry
-    if eigenvalues are passed in.
+    """Row column asymmetry for "eigenmatrices" for pairwise perturbations. Can calculated
+    weighted asymmetry if eigenvalues are passed in.
 
     Parameters
     ----------
@@ -55,11 +55,12 @@ def pair_asymmetry(eigvec, n, rank=0, by_voter=False, eigval=None):
     n : int
         System size.
     rank : int, 0
+        Column of eigvec array to use corresponding to the rank of the eigenvector.
     by_voter : bool, False
         If True, return asymmetry per voter.
     eigval : ndarray, None
-        If passed in, a weighted measure of asymmetry will be calculated using the relative square of the
-        eigenvalue for each eigenvector.
+        If passed in, a weighted measure of asymmetry will be calculated using the
+        relative square of the eigenvalue for each eigenvector.
 
     Returns
     -------
