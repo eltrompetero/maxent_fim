@@ -1,7 +1,7 @@
-# ============================================================================================ #
+# ====================================================================================== #
 # Quick access to useful modules from SCOTUS project.
 # Author : Eddie Lee, edlee@alumni.princeton.edu
-# ============================================================================================ # 
+# ====================================================================================== #
 import numpy as np
 from numba import njit
 from coniii.utils import *
@@ -15,6 +15,54 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def refine_maxent_solution(n, sisj, J0,
+                           full_output=True,
+                           tol=1e-10,
+                           max_iter=1000,
+                           multiplier=.2):
+    """Iterative refinement of couplings.
+    
+    Parameters
+    ----------
+    n : int
+    sisj : ndarray
+        Only pairwise correlations.
+    J0 : ndarray
+    full_output : bool, True
+    tol : float, 1e-10
+    max_iter : int, 1000
+    multiplier : float, .2
+
+    Returns
+    -------
+    ndarray
+        Couplings.
+    list
+        Error history.
+    """
+    
+    assert sisj.size==J0.size
+    hJ = np.concatenate((np.zeros(n), J0))
+    ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
+    
+    counter = 0
+    errHistory = [1]
+    while counter<max_iter and errHistory[-1]>tol:
+        dhJ = ising.calc_observables(hJ)[n:] - sisj
+        errHistory.append(np.linalg.norm(dhJ))
+        hJ[n:] -= dhJ*multiplier
+        counter += 1
+    errHistory.pop(0)
+
+    if errHistory[-1]<tol:
+        errflag = 0
+    else:
+        errflag = 1
+    
+    if full_output:
+        return hJ[n:], errflag, errHistory
+    return hJ[n:]
+
 def fisher_subspace(n, result, rtol=.05):
     """Wrapper for extracting individual subspace eigenvalues.
 

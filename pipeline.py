@@ -1,7 +1,7 @@
-# =============================================================================================== #
+# ====================================================================================== #
 # Pipeline for pivotal voter analysis.
 # Author: Eddie Lee, edlee@alumni.princeton.edu
-# =============================================================================================== #
+# ====================================================================================== #
 import numpy as np
 import os
 import pickle
@@ -9,6 +9,58 @@ import dill
 from .utils import *
 from .fim import *
 
+
+def pivotal_blocs(X, component_names=None, solve_inverse_kw={}):
+    """Solve pairwise maxent model and calculate Fisher information matrix and pivotal
+    bloc analysis as in paper.
+    
+    Parameters
+    ----------
+    X : ndarray
+        Each row is a sample from the system.
+    component_names : list of strings, None
+    
+    Returns
+    -------
+    tuple
+        (solved couplings, dict from scipy.optimize.minimize)
+    tuple
+        (IsingFisherCurvatureMethod2 instance,
+         (hess, errorflag, errornorm),
+         eigenvalues,
+         eigenvectors)
+    """
+    
+    import pyutils.pipeline as pipe
+    from warnings import warn
+    from .influence import pair_asymmetry, block_subspace_eig
+    assert X.shape[1]<=18
+    assert set(np.unique(X))<=set((-1,1))
+    assert np.isclose(X.sum(0), 0).all()
+    if component_names is None:
+        component_names = [str(i) for i in range(X.shape[1])]
+
+    data = {'example':[component_names, X]}
+
+    pipe.solve_inverse_on_data(data, **solve_inverse_kw)
+    if np.linalg.norm(data['example'][-1]['fun'])>1e-3:
+        warn("Large numerical error in maxent solution.")
+    fimResult = pipe.calculate_fisher_on_pk(data, save=False, fi_method='2')
+    
+    # extract useful parts
+    n = X.shape[1]
+    sisj = squareform(pair_corr(data['example'][1])[1])
+    couplings = squareform(data['example'][2][n:])
+    eigvecs = (np.insert(fimResult['example'][-1][:,0],range(0,n*n,n),0).reshape(n,n),
+               np.insert(fimResult['example'][-1][:,1],range(0,n*n,n),0).reshape(n,n))
+    pivotalness = np.array([i[0] for i in block_subspace_eig(fimResult['example'][1][0], n-1)[0]])
+    pivotalness = pivotalness/np.linalg.norm(pivotalness)
+    assert np.linalg.norm(pivotalness.imag)<1e-12
+    pivotalness = pivotalness.real
+    asymmetry = (pair_asymmetry(fimResult['example'][-1], n, by_voter=True, rank=0),
+                 pair_asymmetry(fimResult['example'][-1], n, by_voter=True, rank=1))
+
+    return sisj, couplings, eigvecs, pivotalness, asymmetry, data['example'][2:], fimResult['example']
 
 def entropy_estimates(system, method,
                       prefix='cache',
@@ -187,7 +239,7 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False, force_krylov=False):
         return hJ, soln
     
     if n_cpus>1:
-        pool = Pool(4)
+        pool = Pool(cpu_count()//4)
         hJ, soln = list( zip(*pool.map(single_solution_wrapper, 
                                [i for i in data.items() if len(i[1])==2] )))
         pool.close()
@@ -209,7 +261,7 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False, force_krylov=False):
         data[k].append(soln[i])
     assert all([len(i)==4 for i in data.values()])
 
-def calculate_fisher_on_pk(data, system, method,
+def calculate_fisher_on_pk(data, system='', method='',
                            computed_results=None,
                            high_prec_dps=30,
                            save=True,
@@ -220,8 +272,8 @@ def calculate_fisher_on_pk(data, system, method,
     Parameters
     ----------
     data : dict
-    system : str
-    method : str
+    system : str, ''
+    method : str, ''
     computed_results: dict, None
         If given, results will be appended onto this.
     high_prec_dps : int, 30
@@ -239,7 +291,8 @@ def calculate_fisher_on_pk(data, system, method,
     """
     
     import importlib
-
+    
+    # fname is only used if save is True
     fname = 'cache/Method%s/%s/%s/fisherResultMaj.p'%(str(fi_method),system,method)
     if not os.path.isdir('cache/Method%s/%s/%s'%(str(fi_method),system,method)):
         os.makedirs('cache/Method%s/%s/%s'%(str(fi_method),system,method))
@@ -251,7 +304,7 @@ def calculate_fisher_on_pk(data, system, method,
 
     for k in [kp for kp in data.keys() if not kp in fisherResultMaj.keys()]:
         if (data[k][-1] is None or
-            (np.linalg.norm(data[k][-1]['fun'])<1e-6)):
+            (np.linalg.norm(data[k][-1]['fun'])<1e-3)):
             print("Starting %s..."%k)
             n = len(data[k][0])
             hJ = data[k][2]
@@ -274,10 +327,14 @@ def calculate_fisher_on_pk(data, system, method,
                 else:
                     raise Exception("Invalid method.")
                 if fi_method=='2b':
-                    hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=isingdkl.eps)
+                    hess, errflag, err = isingdkl.maj_curvature(full_output=True,
+                                                                epsdJ=isingdkl.eps,
+                                                                iprint=False)
                 else:
                     epsdJ = min(1/np.abs(isingdkl.dJ).max()/10, 1e-4)
-                    hess, errflag, err = isingdkl.maj_curvature(full_output=True, epsdJ=epsdJ)
+                    hess, errflag, err = isingdkl.maj_curvature(full_output=True,
+                                                                epsdJ=epsdJ,
+                                                                iprint=False)
 
                 eigval, eigvec = isingdkl.hess_eig(hess)
                 
