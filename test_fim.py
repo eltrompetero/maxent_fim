@@ -103,7 +103,8 @@ def test_IsingFisherCurvatureMethod2(n=5, disp=True, time=False):
         dJ = isingdkl._solve_linearized_perturbation_tester(i, a)
         assert np.linalg.norm(dJ-isingdkl.dJ[a-1])<1e-4, np.linalg.norm(dJ-isingdkl.dJ[a-1])
     
-    # p(k) in maj 
+    # Compare direct calculation of p(k) with routine in class .maj_curvature().
+    # Note that the way it is directly calculated here is slow and prone to numerical precision errors.
     pk = isingdkl.p2pk(isingdkl.p, isingdkl.coarseUix, isingdkl.coarseInvix)
     log2pk = np.log2(pk)
     def f(eps):
@@ -116,7 +117,7 @@ def test_IsingFisherCurvatureMethod2(n=5, disp=True, time=False):
     hessNdt = hessfun(np.zeros(n*(n-1)))
     if time:
         t0 = perf_counter()
-    hessToCheck, errflag, err = isingdkl.maj_curvature(epsdJ=1e-7, full_output=True)
+    hessToCheck, errflag, err = isingdkl.maj_curvature(epsdJ=1e-7, full_output=True, iprint=False)
     if time:
         print("FI for p(k) took %fs to calculate."%(perf_counter()-t0))
     
