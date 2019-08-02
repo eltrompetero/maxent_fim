@@ -1,7 +1,7 @@
-# ====================================================================================== # 
+# ====================================================================================== #
 # Classes for calculating FIM on Ising and Potts models.
 # Author : Eddie Lee, edlee@alumni.princeton.edu
-# ====================================================================================== # 
+# ====================================================================================== #
 import numpy as np
 from numba import njit
 from coniii.utils import *
@@ -1055,6 +1055,47 @@ class IsingFisherCurvatureMethod1():
         if dJ is None:
             dJ = self.dJ
         return dJ.T.dot(eigvec)
+
+    def component_subspace_dlogpk(self, hess, eps=1e-5):
+        """Rate of change in log[p(k)] when moving along the principal mode of each
+        component's subspace.
+
+        Parameters
+        ----------
+        hess : ndarray
+        eps : float, 1e-5
+
+        Returns
+        -------
+        list of ndarray
+            Each vector specifies rate of change in p(k) ordered where the number of
+            voters in the majority decreases by one voter at a time.
+        """
+        
+        from .influence import block_subspace_eig
+        from coniii.utils import define_ising_helper_functions
+        calc_e, calc_observables, _ = define_ising_helper_functions()
+        n = self.n
+        dlogp = []
+        
+        for ix in range(n):
+            # iterate over components whose subspaces we explore
+            # subspace eigenvector
+            eigval, eigvec = block_subspace_eig(hess, n-1)
+
+            v = eigvec[ix][:,0].real  # take principal eigenvector
+            dE = calc_e(self.allStates.astype(np.int64), v.dot(self.dJ[ix*(n-1):(ix+1)*(n-1)])/(n-1))*eps
+            E = np.log(self.p)
+            pplus = np.exp(E+dE - fast_logsumexp(E+dE)[0])  # modified probability distribution
+            pminus = np.exp(E-dE - fast_logsumexp(E-dE)[0])  # modified probability distribution
+
+            pkplusdE = np.zeros(n//2+1)
+            pkminusdE = np.zeros(n//2+1)
+            for k in range(n//2+1):
+                pkplusdE[k] = pplus[np.abs(self.allStates.sum(1))==(n-k*2)].sum()
+                pkminusdE[k] = pminus[np.abs(self.allStates.sum(1))==(n-k*2)].sum()
+            dlogp.append( (np.log2(pkplusdE) - np.log2(pkminusdE))/(2*eps) )
+        return dlogp
 
     def __get_state__(self):
         # always close multiprocess pool when pickling
