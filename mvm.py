@@ -1,7 +1,7 @@
-# =============================================================================================== #
+# ====================================================================================== #
 # Module for Median Voter Model.
 # Author: Eddie Lee, edl56@cornell.edu
-# =============================================================================================== #
+# ====================================================================================== #
 import numpy as np
 from coniii.utils import *
 from coniii.enumerate import fast_logsumexp
@@ -70,22 +70,39 @@ def corr(n):
     soo = 0.
     return smo, soo
 
-def couplings(n, data_corr=None, full_output=False, tol=1e-12, max_refine_iter=1000):
-    """Find couplings corresponding to mvm pairwise correlations numerically.
+def couplings(n,
+              data_corr=None,
+              full_output=False,
+              tol=1e-12,
+              max_refine_iter=1000,
+              return_as_full_vec=False):
+    """Find couplings corresponding to mvm pairwise correlations numerically. First, a
+    solution is found using scipy.minimize. Then an iterative, fixed point algorithm is
+    used to refine the solution.
 
     Parameters
     ----------
     n : int
     data_corr : ndarray, None
+        Correlations to fit instead of taking MVM correlations.
     full_output : bool, False
+        If True, return output from scipy.minimize.  
+    tol : float, 1e-12
+        Norm error allowed in fit to pairwise correlations.
+    max_refine_iter : int, 1000
+        Number of times to run iterative refinement on the couplings found with
+        scipy.minimize.
+    return_as_full_vec : bool, False
+        If True, return the couplings J as part of a full (h, J) vector that can be passed
+        directly in to the coniii module.
 
     Returns
     -------
     ndarray
-        [Jmo, Joo]
+        [Jmo, Joo] or (h, J) vector that can be passed to coniii.
+    dict (optional)
+        From scipy.minimize.
     """
-    
-    from scipy.optimize import minimize
     
     if data_corr is None:
         smo, soo = corr(n)
@@ -158,9 +175,16 @@ def couplings(n, data_corr=None, full_output=False, tol=1e-12, max_refine_iter=1
         #            seqSuccess = 0
         #    counter += 1
         #print(counter,eps,err)
+    if return_as_full_vec:
+        params = np.zeros(n+n*(n-1)//2)
+        params[n:2*n-1] = soln['x'][0]
+        params[2*n-1:] = soln['x'][1]
+    else:
+        params = soln['x']
+
     if full_output:
-        return soln['x'], soln
-    return soln['x']
+        return params, soln
+    return params
 
 def setup_fast_mvm(n):
     """Straightforward MVM with only special correlations between the Median 

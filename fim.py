@@ -1060,6 +1060,8 @@ class IsingFisherCurvatureMethod1():
         """Rate of change in log[p(k)] when moving along the principal mode of each
         component's subspace.
 
+        See "2019-08-01 detail about CAA 99's affect on p(k).ipynb"
+
         Parameters
         ----------
         hess : ndarray
