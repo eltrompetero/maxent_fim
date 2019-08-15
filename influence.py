@@ -71,9 +71,14 @@ def pair_asymmetry(eigvec, n, rank=0, by_voter=False, eigval=None):
     if eigval is None:
         v = np.insert(eigvec[:,rank], range(0,n*n,n), 0).reshape(n,n)
         if by_voter:
-            return (v**2+v.T**2-2*np.abs(v*v.T)).sum(0)/2
-        return (v**2+v.T**2-2*np.abs(v*v.T)).sum()/2
+            return ((v-v.T)**2).sum(0)/2
+            # old measure
+            #return (v**2+v.T**2-2*np.abs(v*v.T)).sum(0)/2
+        return ((v-v.T)**2).sum()/2
+        #return (v**2+v.T**2-2*np.abs(v*v.T)).sum()/2
     
+    raise NotImplementedError
+    # remains to convert the following calculating of asymmetry to the latest definition
     a = 0.
     for rank, val in enumerate(eigval):
         v = np.insert(eigvec[:,rank], range(0,n*n,n), 0).reshape(n,n)
