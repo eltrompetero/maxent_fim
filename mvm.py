@@ -943,14 +943,14 @@ def solve_om_perturbation(n, J0,
         return (soln['x']-J0)/eps, soln
     return (soln['x']-J0)/eps
 
-def setup_coupling_perturbations(n, Jpair, epsdJ=1e-5):
+def setup_coupling_perturbations(n, Jpair, epsdJ=1e-3, refine_max_iter=10_000):
     """
     Parameters
     ----------
     n : int
     Jpair : ndarray
         Couplings between (M,O) and (O,O) for MVM.
-    epsdJ : float, 1e-5
+    epsdJ : float, 1e-3
 
     Returns
     -------
@@ -980,7 +980,8 @@ def setup_coupling_perturbations(n, Jpair, epsdJ=1e-5):
             Return only the derivative instead of the new couplings moved along direction of gradient.
         """
 
-        dJ = solve_mo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]], refine_max_iter=10_000)
+        dJ = solve_mo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]],
+                                   refine_max_iter=refine_max_iter)
         J_ = J.copy()
         J_[0] += dJ[0]*epsdJ
         J_[[1,9,10]] += dJ[1]*epsdJ
@@ -1014,7 +1015,8 @@ def setup_coupling_perturbations(n, Jpair, epsdJ=1e-5):
             Return only the derivative instead of the new couplings moved along direction of gradient.
         """
 
-        dJ = solve_om_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]], refine_max_iter=10_000)
+        dJ = solve_om_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]],
+                                   refine_max_iter=refine_max_iter)
 
         J_ = J.copy()
         J_[0] += dJ[0]*epsdJ
@@ -1049,7 +1051,8 @@ def setup_coupling_perturbations(n, Jpair, epsdJ=1e-5):
             Return only the derivative instead of the new couplings moved along direction of gradient.
         """
 
-        dJ = solve_oo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1],Jpair[1]], refine_max_iter=10_000)
+        dJ = solve_oo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1],Jpair[1]],
+                                   refine_max_iter=refine_max_iter)
 
         J_ = J.copy()
         J_[10] += dJ[0]*epsdJ
@@ -1160,24 +1163,33 @@ def logZ_to_Ek_pk(logPartitionList, kList):
     return Ek, pk
 
 def diag_fim(n, J_, Ek, pk, epsdJ):
+    """Diagonal elements of the FIM where only a single correlation term is perturbed."""
     logPartitionList, kList, sisjCoeffs = setup_perturbation(J_, n)
     Eknew, pknew = logZ_to_Ek_pk(logPartitionList, kList)
     dE = Eknew-Ek
-    return pk.dot((dE-dE.dot(pk))**2) / epsdJ**2 / np.log(2)
+    return (pk.dot(dE**2)-dE.dot(pk)**2) / epsdJ**2 / np.log(2)
 
 def off_diag_fim(n, newJ1, newJ2, Ek, pk, epsdJ):
+    """Off-diagonal elements of the FIM where pairs of correlation term are perturbed."""
     logPartitionList, kList, sisjCoeffs = setup_perturbation(newJ1, n)
     Eknew, pknew = logZ_to_Ek_pk(logPartitionList, kList)
     dE1 = Eknew-Ek
+    assert np.isclose(pknew.sum(),1)
     
     logPartitionList, kList, sisjCoeffs = setup_perturbation(newJ2, n)
     Eknew, pknew = logZ_to_Ek_pk(logPartitionList, kList)
     dE2 = Eknew-Ek
+    assert np.isclose(pknew.sum(),1)
     
     return pk.dot((dE1-dE1.dot(pk))*(dE2-dE2.dot(pk))) / epsdJ**2 / np.log(2)
 
 def _fim(n):
     """FIM for the MVM. Hard way of calculating it using IsingFisherCurvatureMethod2.
+
+    This only allows us to check if we are computing the Hessian properly once we already
+    have the change in couplings. If you wish to check whether the change in the couplings
+    are correct you should check test_mvm.py where the correlations are perturbed and the
+    inverse Iisng problem solved.
 
     Parameters
     ----------
@@ -1256,6 +1268,7 @@ def fim(n, epsdJ=1e-5):
     # p(k) for the MVM without perturbation
     logPartitionList, kList, sisjCoeffs = setup_perturbation(J, n)
     Ek, pk = logZ_to_Ek_pk(logPartitionList, kList)
+    assert np.isclose(pk.sum(), 1)
     
     # calculation entries of the FIM
     # fill diagonal elements
@@ -1270,7 +1283,7 @@ def fim(n, epsdJ=1e-5):
 
     fim = expand_small_fim(smallfim, n)
 
-    eigval, eigvec = np.linalg.eig(fim)
+    eigval, eigvec = np.linalg.eigh(fim)
     sortix = np.argsort(eigval)[::-1][:2]
     eigval = eigval[sortix].real
     eigvec = eigvec[:,sortix].real

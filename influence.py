@@ -71,10 +71,10 @@ def pair_asymmetry(eigvec, n, rank=0, by_voter=False, eigval=None):
     if eigval is None:
         v = np.insert(eigvec[:,rank], range(0,n*n,n), 0).reshape(n,n)
         if by_voter:
-            return ((v-v.T)**2).sum(0)/2
+            return ((v-v.T)**2).sum(0)/4
             # old measure
             #return (v**2+v.T**2-2*np.abs(v*v.T)).sum(0)/2
-        return ((v-v.T)**2).sum()/2
+        return ((v-v.T)**2).sum()/4
         #return (v**2+v.T**2-2*np.abs(v*v.T)).sum()/2
     
     raise NotImplementedError
