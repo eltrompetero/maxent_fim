@@ -5,8 +5,8 @@
 import numpy as np
 from coniii.utils import *
 from coniii.enumerate import fast_logsumexp
-from scipy.special import binom, factorial
-from scipy.optimize import minimize
+from scipy.special import binom, factorial, comb
+from scipy.optimize import minimize, root
 
 
 def create_mvm_p(n, q):
@@ -107,74 +107,31 @@ def couplings(n,
     if data_corr is None:
         smo, soo = corr(n)
         smo_fun, _, soo_fun, _, _ = setup_maxent(n)
-        def cost(params):
+        def cost(params, as_vec=False):
             Jmo, Joo = params
+            if as_vec:
+                return np.array([smo-smo_fun(Jmo, Jmo, Joo, Joo),
+                                 soo-soo_fun(Jmo, Jmo, Joo, Joo)])
             return np.sqrt((smo-smo_fun(Jmo, Jmo, Joo, Joo))**2 +
                            (soo-soo_fun(Jmo, Jmo, Joo, Joo))**2)
         soln = minimize(cost, [0,0], tol=1e-10)
+        soln = root(lambda x:cost(x, as_vec=True), soln['x'])
     else:
         smo, smop, soo, soop = data_corr
         smo_fun, smop_fun, soo_fun, soop_fun, _ = setup_maxent(n)
-        def cost(params):
+        def cost(params, as_vec=False):
+            if as_vec:
+                return np.array([smo - smo_fun(*params),
+                                 smop - smop_fun(*params),
+                                 soo - soo_fun(*params),
+                                 soop - soop_fun(*params)])
             return np.sqrt((smo - smo_fun(*params))**2 +
                            (smop - smop_fun(*params))**2 + 
                            (soo - soo_fun(*params))**2 +
                            (soop - soop_fun(*params))**2)
         soln = minimize(cost, [.1,.1,0,0], tol=1e-10)
+        soln = root(lambda x:cost(x, as_vec=True), soln['x'])
 
-        # refine solutions
-        def each_err(params):
-            return -np.array([smo - smo_fun(*params),
-                              smop - smop_fun(*params),
-                              soo - soo_fun(*params),
-                              soop - soop_fun(*params)])
-        # simple algorithm with inertia (using average of last nAvg points for error estimation)
-        counter = 0
-        err = prevErr = cost(soln['x'])
-        prevJ = soln['x'].copy()
-        eps = 1
-        nAvg = 10
-        cumerr = err*nAvg
-        while counter<max_refine_iter and err>tol and eps>tol:
-            if (counter%nAvg)==0:
-                if np.sqrt(cumerr/nAvg)>prevErr:
-                    # undo
-                    soln['x'] = prevJ.copy()
-                    eps /= 2
-                else:
-                    prevErr = np.sqrt(cumerr/nAvg)
-                    prevJ = soln['x'].copy()
-                    eps *= 1.5
-                cumerr = 0
-
-            dJ = -each_err(soln['x']) * eps
-            soln['x'] += dJ
-            err = cost(soln['x'])
-            cumerr += err**2
-            counter += 1
-        # simplest iterative algorithm
-        #counter = 0
-        #err = prevErr = cost(soln['x'])
-        #prevJ = soln['x'].copy()
-        #eps = 1
-        #seqSuccess = 0
-        #while counter<max_refine_iter and err>tol and eps>tol:
-        #    dJ = -each_err(soln['x']) * eps
-        #    soln['x'] += dJ
-
-        #    err = cost(soln['x'])
-        #    if err>prevErr:
-        #        soln['x'] -= dJ
-        #        eps /= 2
-        #        seqSuccess = 0
-        #    else:
-        #        prevErr = err
-        #        seqSuccess += 1
-        #        if seqSuccess==10:  # every 10 successful steps, update eps
-        #            eps *= 1.5
-        #            seqSuccess = 0
-        #    counter += 1
-        #print(counter,eps,err)
     if return_as_full_vec:
         params = np.zeros(n+n*(n-1)//2)
         params[n:2*n-1] = soln['x'][0]
@@ -679,6 +636,8 @@ def setup_perturbation(J, n):
                 sisjCoeffs[9].append(couplingsCoeff[9]/(n-5))
                 sisjCoeffs[10].append(couplingsCoeff[10]/2)
                 sisjCoeffs[11].append(couplingsCoeff[11])
+                # making this exact makes no difference
+                #logPartitionList.append( -E +np.log(coeff) +np.log(comb(n,k,exact=True)) )
                 logPartitionList.append( -E +np.log(coeff) +np.log(binom(n,k)) )
         # this should be 1
         # assert np.isclose( thiskCoeffSum, 1 )
@@ -699,7 +658,9 @@ def setup_perturbation(J, n):
     return logPartitionList, kList, sisjCoeffs
 
 def refine_perturbation(cost, J, refine_max_iter, refine_multiplier, tol):
-    """Simple iterative refinement of perturbation solution for couplings. This just
+    """This is useless.
+    
+    Simple iterative refinement of perturbation solution for couplings. This just
     increases the coupling if the pairwise correlation is too large and decreases it if
     the pairwise correlation is too small, multiplying the error by the refine_multiplier
     factor to change the coupling. When the error is already small, this can converge
@@ -795,17 +756,10 @@ def solve_mo_perturbation(n, J0,
                 (soo-sooExact)**2)
 
     soln = minimize(cost, J0)
-
     if refine:
-        soln['x'], errflag, errHistory = refine_perturbation(cost,
-                                                             soln['x'],
-                                                             refine_max_iter,
-                                                             refine_multiplier,
-                                                             tol)
+        soln = root(lambda x: cost(x, True), soln['x'])
 
-    if full_output and refine:
-        return (soln['x']-J0)/eps, soln, errHistory
-    elif full_output:
+    if full_output:
         return (soln['x']-J0)/eps, soln
     return (soln['x']-J0)/eps
 
@@ -865,15 +819,9 @@ def solve_oo_perturbation(n, J0,
 
     soln = minimize(cost, J0)     
     if refine:
-        soln['x'], errflag, errHistory = refine_perturbation(cost,
-                                                             soln['x'],
-                                                             refine_max_iter,
-                                                             refine_multiplier,
-                                                             tol)
-
-    if full_output and refine:
-        return (soln['x']-J0)/eps, soln, errHistory
-    elif full_output:
+        soln = root(lambda x: cost(x, True), soln['x'])
+    
+    if full_output:
         return (soln['x']-J0)/eps, soln
     return (soln['x']-J0)/eps
 
@@ -931,15 +879,9 @@ def solve_om_perturbation(n, J0,
 
     soln = minimize(cost, J0)
     if refine:
-        soln['x'], errflag, errHistory = refine_perturbation(cost,
-                                                             soln['x'],
-                                                             refine_max_iter,
-                                                             refine_multiplier,
-                                                             tol)
-
-    if full_output and refine:
-        return (soln['x']-J0)/eps, soln, errHistory
-    elif full_output:
+        soln = root(lambda x: cost(x, True), soln['x'])
+ 
+    if full_output:
         return (soln['x']-J0)/eps, soln
     return (soln['x']-J0)/eps
 
@@ -1017,7 +959,6 @@ def setup_coupling_perturbations(n, Jpair, epsdJ=1e-3, refine_max_iter=10_000):
 
         dJ = solve_om_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1]],
                                    refine_max_iter=refine_max_iter)
-
         J_ = J.copy()
         J_[0] += dJ[0]*epsdJ
         J_[[1,9,10]] += dJ[1]*epsdJ
@@ -1053,7 +994,6 @@ def setup_coupling_perturbations(n, Jpair, epsdJ=1e-3, refine_max_iter=10_000):
 
         dJ = solve_oo_perturbation(n, [Jpair[0],Jpair[0],Jpair[1],Jpair[1],Jpair[1]],
                                    refine_max_iter=refine_max_iter)
-
         J_ = J.copy()
         J_[10] += dJ[0]*epsdJ
         J_[[0,1,9]] += dJ[1]*epsdJ
@@ -1080,7 +1020,7 @@ def square_J(J, n):
     Parameters
     ----------
     J : ndarray
-        Couplings ordered as passed into setup_perturbation().
+        12 couplings ordered as passed into setup_perturbation().
     n : int
         System size.
         
@@ -1154,6 +1094,9 @@ def expand_small_fim(smallfim, n):
     return fim
 
 def logZ_to_Ek_pk(logPartitionList, kList):
+    """Use list of terms in partition function to calculate the energies and probabilities
+    of states.
+    """
     n = max(kList)
     Ek = np.array([-fast_logsumexp([logPartitionList[i] for i in range(len(kList)) if kList[i]==k])[0]
                   for k in range(n//2+1,n+1)])
@@ -1174,11 +1117,13 @@ def off_diag_fim(n, newJ1, newJ2, Ek, pk, epsdJ):
     logPartitionList, kList, sisjCoeffs = setup_perturbation(newJ1, n)
     Eknew, pknew = logZ_to_Ek_pk(logPartitionList, kList)
     dE1 = Eknew-Ek
+    # check for numerical precision errors
     assert np.isclose(pknew.sum(),1)
     
     logPartitionList, kList, sisjCoeffs = setup_perturbation(newJ2, n)
     Eknew, pknew = logZ_to_Ek_pk(logPartitionList, kList)
     dE2 = Eknew-Ek
+    # check for numerical precision errors
     assert np.isclose(pknew.sum(),1)
     
     return pk.dot((dE1-dE1.dot(pk))*(dE2-dE2.dot(pk))) / epsdJ**2 / np.log(2)
@@ -1287,4 +1232,4 @@ def fim(n, epsdJ=1e-5):
     sortix = np.argsort(eigval)[::-1][:2]
     eigval = eigval[sortix].real
     eigvec = eigvec[:,sortix].real
-    return fim, eigval, eigvec
+    return smallfim, eigval, eigvec, pk

@@ -139,3 +139,26 @@ def test_setup_oo_perturbation():
                 coeffs_to_corr(sOOpcoeffs, logPartitionList),
                 coeffs_to_corr(sOOcoeffs, logPartitionList))
         assert np.isclose(sisj,sisjME).all()
+
+def test_setup_perturbation(n=9):
+    rng = np.random.RandomState(0)
+    Jpair = couplings(n)
+
+    for i in range(10):
+        J = np.zeros(12)
+        J[[0,1,9,10]] = Jpair[0] + rng.normal()
+        J[J==0] = Jpair[1] + rng.normal()
+
+        # calculate sisj using simplified model
+        logPartitionList, kList, sisjCoeffs = setup_perturbation(J, n)
+
+        sisj = np.array([coeffs_to_corr(coeffs, logPartitionList)
+                         for coeffs in sisjCoeffs])
+        sisj = squareform(square_J(sisj, n))
+
+        Jasvec = np.insert(squareform(square_J(J, n)), np.zeros(n), 0)
+        ising = import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
+        sisjME = ising.calc_observables(Jasvec)[n:]
+
+        assert np.linalg.norm(sisj-sisjME)<1e-13
+    print("Test passed: pairwise correlations are numerically in agreement with ConIII calculation.")
