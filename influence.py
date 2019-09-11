@@ -1,5 +1,5 @@
 # ====================================================================================== #
-# Analysis of FIM quantities.
+# Analysis of FIM "influence" quantities.
 # Author: Eddie Lee, edlee@alumni.princeton.edu
 # ====================================================================================== #
 from .utils import *

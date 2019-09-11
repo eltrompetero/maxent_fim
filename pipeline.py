@@ -261,8 +261,11 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False, force_krylov=False):
         data[k].append(soln[i])
     assert all([len(i)==4 for i in data.values()])
 
-def calculate_fisher_on_pk(data, system='', method='',
+def calculate_fisher_on_pk(data,
+                           system='',
+                           method='',
                            computed_results=None,
+                           eps=1e-6,
                            high_prec_dps=30,
                            save=True,
                            save_every_loop=True,
@@ -311,19 +314,19 @@ def calculate_fisher_on_pk(data, system='', method='',
             
             try:
                 if str(fi_method)=='1':
-                    isingdkl = IsingFisherCurvatureMethod1(n, h=hJ[:n], J=hJ[n:], eps=1e-6, high_prec=high_prec)
+                    isingdkl = IsingFisherCurvatureMethod1(n, h=hJ[:n], J=hJ[n:], eps=eps, high_prec=high_prec)
                 elif fi_method=='1a':
-                    isingdkl = IsingFisherCurvatureMethod1a(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+                    isingdkl = IsingFisherCurvatureMethod1a(n, h=hJ[:n], J=hJ[n:], eps=eps)
                 elif str(fi_method)=='2':
-                    isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+                    isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:], eps=eps)
                 elif str(fi_method)=='2b':
-                    isingdkl = IsingSpinReplacementFIM(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+                    isingdkl = IsingSpinReplacementFIM(n, h=hJ[:n], J=hJ[n:], eps=eps)
                 elif str(fi_method)=='3':
-                    isingdkl = IsingFisherCurvatureMethod3(n, h=hJ[:n], J=hJ[n:], eps=1e-6)
+                    isingdkl = IsingFisherCurvatureMethod3(n, h=hJ[:n], J=hJ[n:], eps=eps)
                 elif str(fi_method)=='4':
-                    isingdkl = IsingFisherCurvatureMethod4(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)
+                    isingdkl = IsingFisherCurvatureMethod4(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=eps)
                 elif fi_method=='4a':
-                    isingdkl = IsingFisherCurvatureMethod4a(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=1e-6)
+                    isingdkl = IsingFisherCurvatureMethod4a(n, 3, h=hJ[:n*3], J=hJ[3*n:], eps=eps)
                 else:
                     raise Exception("Invalid method.")
                 if fi_method=='2b':
