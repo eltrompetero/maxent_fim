@@ -156,7 +156,7 @@ def test_setup_perturbation(n=9):
                          for coeffs in sisjCoeffs])
         sisj = squareform(square_J(sisj, n))
 
-        Jasvec = np.insert(squareform(square_J(J, n)), np.zeros(n), 0)
+        Jasvec = np.insert(squareform(square_J(J, n)), np.zeros(n, dtype=int), 0)
         ising = import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
         sisjME = ising.calc_observables(Jasvec)[n:]
 

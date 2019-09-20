@@ -45,6 +45,8 @@ def pivotal_blocs(X, component_names=None, solve_inverse_kw={}):
     pipe.solve_inverse_on_data(data, **solve_inverse_kw)
     if np.linalg.norm(data['example'][-1]['fun'])>1e-3:
         warn("Large numerical error in maxent solution.")
+
+    print("Calculating FI...")
     fimResult = pipe.calculate_fisher_on_pk(data, save=False, fi_method='2')
     
     # extract useful parts
@@ -235,7 +237,7 @@ def solve_inverse_on_data(data, n_cpus=4, potts=False, force_krylov=False):
                                         full_output=True,
                                         scipy_solver_kwargs={'method':'krylov'})
 
-        print("Done %s."%name)
+        print("Done with %s."%name)
         return hJ, soln
     
     if n_cpus>1:
