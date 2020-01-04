@@ -20,7 +20,7 @@ np.seterr(divide='ignore')
 
 
 
-class IsingFisherCurvatureMethod1():
+class Magnetization():
     """Perturbation of local magnetizations one at a time. By default, perturbation is
     towards +1 and not -1.
     """
@@ -181,12 +181,12 @@ class IsingFisherCurvatureMethod1():
             eps = self.eps
         C, perturb_up = self.observables_after_perturbation(iStar, eps=eps)
 
-        solver = Enumerate(n, calc_observables_multipliers=self.ising.calc_observables)
+        solver = Enumerate(np.ones((1,n)))
         if perturb_up:
-            return (solver.solve(C)-self.hJ)/eps
+            return (solver.solve(constraints=C) - self.hJ) / eps
 
         # account for sign of perturbation on fields
-        dJ = -(solver.solve(C)-self.hJ)/eps
+        dJ = -(solver.solve(constraints=C) - self.hJ) / eps
         return dJ
 
     def solve_linearized_perturbation(self, *args, **kwargs):
@@ -765,6 +765,7 @@ class IsingFisherCurvatureMethod1():
                     print("Done with off diag.")
         else:
             if calc_diag:
+                print(list(self.pool.map(diag, range(len(dJ)))))
                 hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
                 if iprint:
                     print("Done with diag.")
@@ -1117,10 +1118,10 @@ class IsingFisherCurvatureMethod1():
                       precompute=False,
                       n_cpus=state_dict.get('n_cpus',None))
         self.dJ = state_dict['dJ']
-#end IsingFisherCurvatureMethod1
+#end Magnetization
 
 
-class IsingFisherCurvatureMethod1a(IsingFisherCurvatureMethod1):
+class MagnetizationConstant(Magnetization):
     """Perturbation of local magnetizations one at a time keeping fixed the amount of
     perturbation (this is akin to replacing only states that are contrary to the objective
     direction.
@@ -1267,10 +1268,10 @@ class IsingFisherCurvatureMethod1a(IsingFisherCurvatureMethod1):
         if full_output:
             return dJ, errflag, (A, C)
         return dJ, errflag
-#end IsingFisherCurvatureMethod1a
+#end Magnetizationa
 
 
-class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
+class Coupling(Magnetization):
     """Perturbation to increase correlation between pairs of spins.
     """
     def compute_dJ(self, p=None, sisj=None):
@@ -1385,8 +1386,8 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
         C = self.observables_after_perturbation(iStar, aStar)
         
         from coniii.solvers import Enumerate
-        solver = Enumerate(n, calc_observables_multipliers=self.ising.calc_observables)
-        return (solver.solve(C)-self.hJ)/self.eps
+        solver = Enumerate(np.ones((1,n)))
+        return (solver.solve(constraints=C)-self.hJ)/self.eps
     
     def solve_linearized_perturbation(self, *args, **kwargs):
         """Wrapper for automating search for best eps value for given perturbation.
@@ -1528,10 +1529,10 @@ class IsingFisherCurvatureMethod2(IsingFisherCurvatureMethod1):
                 return dJ, errflag, (A, C), relerr
             return dJ, errflag, (A, C)
         return dJ, errflag
-#end IsingFisherCurvatureMethod2a
+#end Couplinga
 
 
-class IsingSpinReplacementFIM(IsingFisherCurvatureMethod2):
+class IsingSpinReplacementFIM(Coupling):
     """FIM calculations for Ising model probability distribution where full spin
     transition matrix for pair spin replacement is spelled out. Alias Method2b.
     """
@@ -1769,7 +1770,7 @@ class IsingSpinReplacementFIM(IsingFisherCurvatureMethod2):
 #end IsingSpinReplacementFIM
 
 
-class MVMIsingFIM(IsingFisherCurvatureMethod1):
+class MVMIsingFIM(Magnetization):
     """Curvature for the pairwise maxent model of the Median Voter Model (q=1).
     """
     def __init__(self, n,
@@ -1927,12 +1928,12 @@ class MVMIsingFIM(IsingFisherCurvatureMethod1):
             eps = self.eps
         C, perturb_up = self.observables_after_perturbation(iStar, eps=eps)
 
-        solver = Enumerate(n, calc_observables_multipliers=self.ising.calc_observables)
+        solver = Enumerate(np.ones((1,n)))
         if perturb_up:
-            return (solver.solve(C)-self.hJ)/eps
+            return (solver.solve(constraints=C)-self.hJ)/eps
 
         # account for sign of perturbation on fields
-        dJ = -(solver.solve(C)-self.hJ)/eps
+        dJ = -(solver.solve(constraints=C)-self.hJ)/eps
         return dJ
 
     def solve_linearized_perturbation(self, *args, **kwargs):
@@ -2237,12 +2238,10 @@ class MVMIsingFIM(IsingFisherCurvatureMethod1):
         if not full_output:
             return hess
         return hess, errflag, normerr
-    
-
 #end MVMIsingFIM
 
 
-class IsingFisherCurvatureMethod3(IsingFisherCurvatureMethod1):
+class MagCoupling(Magnetization):
     """Considering perturbations in both fields and couplings. Perturbations in means are
     asymmetric where ones in pairwise correlations are symmetric wrt {-1,1}.
 
@@ -2477,12 +2476,13 @@ class IsingFisherCurvatureMethod3(IsingFisherCurvatureMethod1):
                 return dJ, errflag, (A, C), relerr
             return dJ, errflag, (A, C)
         return dJ, errflag
-#end IsingFisherCurvatureMethod3
+#end MagCoupling
 
 
-class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
+class TernaryCoupling(Coupling):
     """Method2 (pairwise correlations) tweaked for ternary states like C. elegans."""
-    def __init__(self, n, kStates, h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
+    def __init__(self, n, kStates,
+                 h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
         Parameters
         ----------
@@ -2538,14 +2538,15 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
                 ix = (allStates[:,i]==gammai)&(allStates[:,j]==gammaj)
                 self.pairs[(gammai,i,gammaj,j)] = ix
 
-        # triplets that matter are when one spin is in a particular state and the remaining two agree with
-        # each other
+        # triplets that matter are when one spin is in a particular state and the
+        # remaining two agree with each other
         for gamma in range(kStates):
             for i in range(n):
                 for j,k in combinations(range(n),2):
                     ix = (allStates[:,i]==gamma)&(allStates[:,j]==allStates[:,k])
                     self.triplets[(gamma,i,j,k)] = ix
-        # quartets that matter are when the first pair are the same and the second pair are the same
+        # quartets that matter are when the first pair are the same and the second pair
+        # are the same
         for i,j in combinations(range(n),2):
             for k,l in combinations(range(n),2):
                 ix1 = allStates[:,i]==allStates[:,j]
@@ -2633,6 +2634,220 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
             jit_observables_after_perturbation_minus(n, siNew, sisjNew, i_, a_, eps_)
 
         return np.concatenate((siNew, sisjNew)), True
+   
+    def _maj_curvature(self,
+                       hJ=None,
+                       dJ=None,
+                       epsdJ=1e-7,
+                       check_stability=False,
+                       rtol=1e-3,
+                       full_output=False,
+                       calc_off_diag=True,
+                       calc_diag=True,
+                       iprint=True):
+        """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
+        the theta_{ij} parameters replacing the spin i by sampling from j for the number
+        of k votes in the majority.
+
+        Use single step finite difference method to estimate Hessian.
+        
+        Parameters
+        ----------
+        hJ : ndarray, None
+            Ising model parameters.
+        dJ : ndarray, None
+            Linear perturbations in parameter space corresponding to Hessian at given hJ.
+            These can be calculuated using self.solve_linearized_perturbation().
+        epsdJ : float, 1e-4
+            Step size for taking linear perturbation wrt parameters.
+        check_stability : bool, False
+        rtol : float, 1e-3
+            Relative tolerance for each entry in Hessian when checking stability.
+        full_output : bool, False
+        calc_off_diag : bool, True
+        calc_diag : bool, True
+        iprint : bool, True
+            
+        Returns
+        -------
+        ndarray
+            Hessian.
+        int (optional)
+            Error flag. 1 indicates rtol was exceeded. None indicates that no check was
+            done.
+        float (optional)
+            Norm difference between hessian with step size eps and eps/2.
+        """
+
+        n = self.n
+        if hJ is None:
+            hJ = self.hJ
+        E = calc_all_energies(n, self.kStates, hJ)
+        logZ = fast_logsumexp(-E)[0]
+        logsumEk = self.logp2pk(E, self.coarseUix, self.coarseInvix)
+        p = np.exp(logsumEk - logZ)
+        assert np.isclose(p.sum(),1), p.sum()
+        if dJ is None:
+            dJ = self.dJ
+            assert self.dJ.shape[1]==(self.kStates*n+n*(n-1)//2)
+        if iprint:
+            print('Done with preamble.')
+
+        # diagonal entries of hessian
+        def diag(i, hJ=hJ, dJ=dJ, p=self.p, pk=p, logp2pk=self.logp2pk,
+                 uix=self.coarseUix, invix=self.coarseInvix,
+                 n=self.n, E=E, logZ=logZ, kStates=self.kStates):
+            # round eps step to machine precision
+            mxix = np.abs(dJ[i]).argmax()
+            newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
+            epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
+            if np.isnan(epsdJ_): return 0.
+            correction = calc_all_energies(n, kStates, dJ[i]*epsdJ_)
+            correction = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
+                                   for ix in range(len(uix))])
+            num = ((correction.dot(pk) - correction)**2).dot(pk)
+            dd = num / np.log(2) / epsdJ_**2
+            if iprint and np.isnan(dd):
+                print('nan for diag', i, epsdJ_)
+            
+            return dd
+
+        # off-diagonal entries of hessian
+        def off_diag(args, hJ=hJ, dJ=dJ, p=self.p, pk=p, logp2pk=self.logp2pk,
+                     uix=self.coarseUix, invix=self.coarseInvix,
+                     n=self.n, E=E, logZ=logZ, kStates=self.kStates):
+            i, j = args
+            
+            # round eps step to machine precision
+            mxix = np.abs(dJ[i]).argmax()
+            newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
+            epsdJi = (newhJ - hJ[mxix])/dJ[i][mxix]/2
+            if np.isnan(epsdJi): return 0.
+            correction = calc_all_energies(n, kStates, dJ[i]*epsdJi)
+            correctioni = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
+                                    for ix in range(len(uix))])
+
+            # round eps step to machine precision
+            mxix = np.abs(dJ[j]).argmax()
+            newhJ = hJ[mxix] + dJ[j][mxix]*epsdJ
+            epsdJj = (newhJ - hJ[mxix])/dJ[j][mxix]/2
+            if np.isnan(epsdJj): return 0.
+            correction = calc_all_energies(n, kStates, dJ[j]*epsdJj)
+            correctionj = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
+                                    for ix in range(len(uix))])
+
+            num = ((correctioni.dot(pk) - correctioni)*(correctionj.dot(pk) - correctionj)).dot(pk)
+            dd = num / np.log(2) / (epsdJi * epsdJj)
+            if iprint and np.isnan(dd):
+                print('nan for off diag', args, epsdJi, epsdJj)
+            return dd
+        
+        hess = np.zeros((len(dJ),len(dJ)))
+        if not 'pool' in self.__dict__.keys():
+            warn("Not using multiprocess can lead to excessive memory usage.")
+            if calc_diag:
+                for i in range(len(dJ)):
+                    hess[i,i] = diag(i)
+                if iprint:
+                    print("Done with diag.")
+            if calc_off_diag:
+                for i,j in combinations(range(len(dJ)),2):
+                    hess[i,j] = off_diag((i,j))
+                    if iprint:
+                        print("Done with off diag (%d,%d)."%(i,j))
+                if iprint:
+                    print("Done with off diag.")
+        else:
+            if calc_diag:
+                print(list(self.pool.map(diag, range(len(dJ)))))
+                hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
+                if iprint:
+                    print("Done with diag.")
+            if calc_off_diag:
+                hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag,
+                                                                     combinations(range(len(dJ)),2))
+                if iprint:
+                    print("Done with off diag.")
+
+        if calc_off_diag:
+            # fill in lower triangle
+            hess += hess.T
+            hess[np.eye(len(dJ))==1] /= 2
+
+        # check for precision problems
+        assert ~np.isnan(hess).any(), hess
+        assert ~np.isinf(hess).any(), hess
+
+        if check_stability:
+            hess2 = self._maj_curvature(epsdJ=epsdJ/2,
+                                        check_stability=False,
+                                        iprint=iprint,
+                                        hJ=hJ,
+                                        dJ=dJ,
+                                        calc_diag=calc_diag,
+                                        calc_off_diag=calc_off_diag)
+            err = hess - hess2
+            if (np.abs(err/hess) > rtol).any():
+                errflag = 1
+                if iprint:
+                    msg = ("Finite difference estimate has not converged with rtol=%f. "+
+                           "May want to shrink epsdJ. Norm error %f.")
+                    print(msg%(rtol,np.linalg.norm(err)))
+            else:
+                errflag = 0
+                if iprint:
+                    msg = "Finite difference estimate converged with rtol=%f."
+                    print(msg%rtol)
+        else:
+            errflag = None
+            err = None
+
+        if not full_output:
+            return hess
+        return hess, errflag, err
+
+    def _test_maj_curvature(self):
+        n = self.n
+        hJ = self.hJ
+        E = calc_all_energies(n, self.kStates, hJ)
+        logZ = fast_logsumexp(-E)[0]
+        logsumEk = self.logp2pk(E, self.coarseUix, self.coarseInvix)
+        p = np.exp(logsumEk - logZ)
+        dJ = self.dJ
+
+        # diagonal entries of hessian
+        def diag(i, eps, hJ=hJ, dJ=dJ, p=p, logp2pk=self.logp2pk,
+                 uix=self.coarseUix, invix=self.coarseInvix,
+                 n=self.n, E=E, logZ=logZ, kStates=self.kStates):
+            # round eps step to machine precision
+            mxix = np.abs(dJ[i]).argmax()
+            newhJ = hJ[mxix] + dJ[i][mxix]*eps
+            eps = (newhJ-hJ[mxix]) / dJ[i][mxix]
+            if np.isnan(eps): return 0.
+            correction = calc_all_energies(n, kStates, dJ[i]*eps)
+            
+            # forward step
+            Enew = E+correction
+            modlogsumEkplus = logp2pk(Enew, uix, invix)
+            #Zkplus = fast_logsumexp(-Enew)[0]
+            
+            # backwards step
+            Enew = E-correction
+            modlogsumEkminus = logp2pk(Enew, uix, invix)
+            #Zkminus = fast_logsumexp(-Enew)[0]
+
+            num = (logsumEk - modlogsumEkplus)**2
+            ddplus = num.dot(p) / np.log(2) / eps**2
+
+            num = (logsumEk - modlogsumEkminus)**2
+            ddminus = num.dot(p) / np.log(2) / eps**2
+
+            #num_ = 2*(logsumEk - logZ) + (Zkplus - modlogsumEkplus) + (Zkminus - modlogsumEkminus)
+            #print( num_.dot(p) / np.log(2) / 2 / eps**2 )
+            return ddplus, ddplus-ddminus
+        return diag
+
+
    
     def _solve_linearized_perturbation(self, iStar, kStar,
                                        p=None,
@@ -2761,11 +2976,11 @@ class IsingFisherCurvatureMethod4(IsingFisherCurvatureMethod2):
                       precompute=False,
                       n_cpus=state_dict.get('n_cpus',None))
         self.dJ = state_dict['dJ']
-#end IsingFisherCurvatureMethod4
+#end TernaryCoupling
 
 
 
-class IsingFisherCurvatureMethod4a(IsingFisherCurvatureMethod4):
+class TernaryMag(TernaryCoupling):
     """Method4 (ternary states) with mean perturbations (uniform and random substitution
     of each spin with a each possible discrete state."""
     def compute_dJ(self, p=None, sisj=None):
@@ -2878,14 +3093,23 @@ class IsingFisherCurvatureMethod4a(IsingFisherCurvatureMethod4):
         k = self.kStates
         p = self.p
         C = self.observables_after_perturbation(iStar, gamma, eps=self.eps)[0]
+        assert k==3, "Only handles k=3."
 
         from coniii.solvers import Enumerate
-        solver = Enumerate(n, calc_observables_multipliers=self.ising.calc_observables)
-        soln = solver.solve(C, initial_guess=self.hJ, scipy_solver_kwargs={'method':'hybr'})
+        from coniii.models import TernaryIsing
+        model = TernaryIsing([np.zeros(k*n), np.zeros(n*(n-1)//2)])
+        calc_observables = define_ternary_helper_functions()[1]
+        solver = Enumerate(np.ones((1,n)),
+                           model=model,
+                           calc_observables=calc_observables)
+        
+        soln = solver.solve(constraints=C,
+                            initial_guess=self.hJ,
+                            scipy_solver_kwargs={'method':'hybr'})
         # remove translational offset for first set of fields
         soln[:n*k] -= np.tile(soln[:n], k)
         return (soln - self.hJ)/(self.eps)
-#end IsingFisherCurvatureMethod4a
+#end TernaryMag
 
 
 
