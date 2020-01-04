@@ -5,7 +5,7 @@
 import numpy as np
 from numba import njit
 from coniii.utils import *
-from .fim import IsingFisherCurvatureMethod2  # for compatibility with old pickles
+from .fim import Coupling  # for compatibility with old pickles
 import importlib
 from warnings import warn
 from itertools import combinations

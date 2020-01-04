@@ -9,11 +9,11 @@ import numdifftools as ndt
 np.random.seed(0)
 
 
-def test_IsingFisherCurvatureMethod1(disp=True, time=False):
+def test_Magnetization(disp=True, time=False):
     n = 5
     rng = np.random.RandomState(0)
     hJ = rng.normal(scale=.1, size=15)
-    isingdkl = IsingFisherCurvatureMethod1(n, h=hJ[:n], J=hJ[n:])
+    isingdkl = Magnetization(n, h=hJ[:n], J=hJ[n:])
 
     # Compare linearized perturbation matrix calculation with direct solution by solving
     # the inverse problem.
@@ -50,11 +50,11 @@ def test_IsingFisherCurvatureMethod1(disp=True, time=False):
         print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
     assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-5).all()
 
-def test_IsingFisherCurvatureMethod1a(disp=True, time=False):
+def test_MagnetizationConstant(disp=True, time=False):
     n = 5
     rng = np.random.RandomState(0)
     hJ = rng.normal(scale=.1, size=15)
-    isingdkl = IsingFisherCurvatureMethod1a(n, h=hJ[:n], J=hJ[n:])
+    isingdkl = MagnetizationConstant(n, h=hJ[:n], J=hJ[n:])
 
     # Compare linearized perturbation matrix calculation with direct solution by solving
     # the inverse problem.
@@ -91,10 +91,10 @@ def test_IsingFisherCurvatureMethod1a(disp=True, time=False):
         print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
     assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-5).all()
 
-def test_IsingFisherCurvatureMethod2(n=5, disp=True, time=False):
+def test_Coupling(n=5, disp=True, time=False):
     rng = np.random.RandomState(0)
     hJ = rng.normal(scale=.1, size=n*(n-1)//2+n)
-    isingdkl = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:])
+    isingdkl = Coupling(n, h=hJ[:n], J=hJ[n:])
 
     # Compare linearized perturbation matrix calculation with direct solution by solving
     # the inverse problem.
@@ -150,8 +150,8 @@ def test_IsingSpinReplacementFIM(n=4, disp=True, time=False):
 #    rng = np.random.RandomState(0)
 #    hJ = rng.normal(scale=.1, size=15)
 #    isingdkl3 = IsingFisherCurvatureMethod3(n, h=hJ[:n], J=hJ[n:])
-#    isingdkl2 = IsingFisherCurvatureMethod2(n, h=hJ[:n], J=hJ[n:])
-#    isingdkl1 = IsingFisherCurvatureMethod1(n, h=hJ[:n], J=hJ[n:])
+#    isingdkl2 = Coupling(n, h=hJ[:n], J=hJ[n:])
+#    isingdkl1 = Magnetization(n, h=hJ[:n], J=hJ[n:])
 #    
 #    # use the other two methods to check this one which bundles calculations from them
 #    assert np.isclose(isingdkl3.dJ[:n],isingdkl1.dJ).all()
@@ -198,8 +198,7 @@ def test_IsingSpinReplacementFIM(n=4, disp=True, time=False):
 #    assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-5).all(), (
 #            np.abs((hessNdt-hessToCheck)/hessToCheck).max())
 
-def test_IsingFisherCurvatureMethod4a(n=3, disp=True, time=False):
-    from coniii.utils import convert_params
+def test_TernaryMag(n=3, disp=True, time=False):
     rng = np.random.RandomState(0)
     k = 3
 
@@ -208,7 +207,7 @@ def test_IsingFisherCurvatureMethod4a(n=3, disp=True, time=False):
     hJ[:-n] = 0
     hJ[:n*k] -= np.tile(hJ[:n],k)
 
-    isingdkl = IsingFisherCurvatureMethod4a(n, k, h=hJ[:n*k], J=hJ[k*n:])
+    isingdkl = TernaryMag(n, k, h=hJ[:n*k], J=hJ[k*n:])
     for ijix,(i,j) in enumerate(combinations(range(n),2)):
         tot = 0
         for gamma in range(k):
@@ -317,7 +316,7 @@ def test_IsingFisherCurvatureMethod4a(n=3, disp=True, time=False):
     # Nonzero fields ================================================================== #
     hJ = rng.normal(scale=.5, size=n*(n-1)//2+k*n)
     hJ[:n*k] -= np.tile(hJ[:n],k)
-    isingdkl = IsingFisherCurvatureMethod4a(n, k, h=hJ[:n*k], J=hJ[k*n:], n_cpus=1)
+    isingdkl = TernaryMag(n, k, h=hJ[:n*k], J=hJ[k*n:], n_cpus=1)
 
     i = 0
     for k_ in range(3):
@@ -396,9 +395,11 @@ def generate_test_params(n, k=2, seed=0):
     rng = np.random.RandomState(seed)
 
     if k==2:
-        return (n, np.concatenate((np.zeros(n),rng.normal(size=(k-1)*n))),
-                rng.normal(size=n*(n-1)//2))
+        return (n, np.concatenate((np.zeros(n),
+                                   rng.normal(size=(k-1)*n))),
+                                   rng.normal(size=n*(n-1)//2, scale=1/n))
     elif k==3:
-        return (n, k, np.concatenate((np.zeros(n),rng.normal(size=(k-1)*n))),
-                rng.normal(size=n*(n-1)//2))
+        return (n, k, np.concatenate((np.zeros(n),
+                                      rng.normal(size=(k-1)*n))),
+                                      rng.normal(size=n*(n-1)//2, scale=1/n))
     raise NotImplementedError
