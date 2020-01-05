@@ -198,13 +198,103 @@ def test_IsingSpinReplacementFIM(n=4, disp=True, time=False):
 #    assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-5).all(), (
 #            np.abs((hessNdt-hessToCheck)/hessToCheck).max())
 
+def test_TernaryCoupling(n=3, disp=True, time=False):
+    """Tests for TernaryCoupling."""
+    
+    # Setup test
+    rng = np.random.RandomState(0)
+    k = 3  # three-state Potts model
+    hJ = rng.normal(scale=.05, size=n*(n-1)//2+k*n)
+    hJ[:n*k] -= np.tile(hJ[:n],k)
+    isingdkl = TernaryCoupling(n, k, h=hJ[:n*k], J=hJ[k*n:])
+
+    # test 1
+    for ijix,(i,j) in enumerate(combinations(range(n),2)):
+        tot = 0
+        for gamma in range(k):
+            ix = isingdkl.pairs[(gamma,i,gamma,j)]
+            tot += isingdkl.p.dot(ix)
+        assert np.isclose(isingdkl.sisj[ijix+n*k],tot), (isingdkl.sisj[ijix+n*k],tot)
+    print("Test passed: pairwise correlation is sum of probabilities of agreement for each k.")
+    
+    # go thru each pair of spins and check that perturbation only effects pairwise
+    # correlations that should be changed: if i is made like a, then only i's pairwise
+    # correlations with others should be changed
+    for i in range(n):      # spin to change
+        for a in range(n):  # spin to mimic
+            if i!=a:
+                sisj = isingdkl.observables_after_perturbation(i, a)[0]
+                assert np.isclose(sum([sisj[i+k*ix] for ix in range(k)]), 1)
+                for j in range(n):
+                    if j!=i:
+                        if i<j:
+                            ijix = unravel_index((i,j),n)
+                        else:
+                            ijix = unravel_index((j,i),n)
+                        # compare new pairwise corrs with original ones
+                        assert sisj[k*n+ijix]!=isingdkl.sisj[k*n+ijix]
+                # check that other pairwise correlations (e.g. for i+1) are not perturbed
+                i_ = (i+1)%n
+                for j in range(n):
+                    if j!=i and j!=i_:
+                        if i_<j:
+                            ijix = unravel_index((i_,j),n)
+                        else:
+                            ijix = unravel_index((j,i_),n)
+                        assert sisj[k*n+ijix]==isingdkl.sisj[k*n+ijix], (i_,j)
+    print("Test passed: only focus pairs are perturbed (observables).")
+    
+    # test for a single fixed spin i
+    i = 0
+    counter = 0
+    for a in range(n):
+        if a!=i:
+            dJ = isingdkl._solve_linearized_perturbation_tester(i, a)
+            assert np.linalg.norm(dJ-isingdkl.dJ[counter])<1e-2, (dJ, isingdkl.dJ[counter], i, a)
+            counter += 1
+    print("Test passed: parameter perturbation agrees with direct solution using inverse maxent.")
+    
+    # compute Hessian directly and compare with (better/more efficient/more precise) code
+    # here, a pairwise perturbation from any i to a is possible, leading to n*(n-1)
+    # possible perturbations
+    pk = isingdkl.p2pk(isingdkl.p, isingdkl.coarseUix, isingdkl.coarseInvix)
+    log2pk = np.log2(pk)
+    def f(eps):
+        dJ = isingdkl.dJ.T.dot(eps)
+        return (log2pk - np.log2(isingdkl.p2pk(isingdkl.ising.p(isingdkl.hJ + dJ),
+                                               isingdkl.coarseUix,
+                                               isingdkl.coarseInvix))).dot(pk)
+    hessfun = ndt.Hessian(f, step=1e-4)
+    hessNdt = hessfun(np.zeros(n*(n-1)))
+    if time:
+        t0 = perf_counter()
+    hessToCheck, errflag, err = isingdkl.maj_curvature(epsdJ=1e-7, full_output=True, iprint=False)
+    if time:
+        print("FI for p(k) took %fs to calculate."%(perf_counter()-t0))
+    
+    relErrMax = np.abs((hessNdt-hessToCheck)/hessToCheck).max()
+    # some of these derivatives are near 0 so relative error can be large
+    relErrTol = 2e-3
+    if disp and relErrMax>relErrTol:
+        print("Entries in Hessian")
+        print(hessNdt[:5,:5]-hessToCheck[:5,:5])
+        print()
+
+        print("Relative error")
+        print(np.linalg.norm(err)/np.linalg.norm(hessToCheck))
+        print()
+
+        print("NDT error")
+        print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
+        print()
+    assert relErrMax<relErrTol, relErrMax
+    print("Test passed: Hessian checked with numdifftools.")
+
 def test_TernaryMag(n=3, disp=True, time=False):
+    # setup test with nonzero fields
     rng = np.random.RandomState(0)
     k = 3
-
-    # Test with field = 0 ============================================================= #
     hJ = rng.normal(scale=.5, size=n*(n-1)//2+k*n)
-    hJ[:-n] = 0
     hJ[:n*k] -= np.tile(hJ[:n],k)
 
     isingdkl = TernaryMag(n, k, h=hJ[:n*k], J=hJ[k*n:])
@@ -302,52 +392,6 @@ def test_TernaryMag(n=3, disp=True, time=False):
     # some of these derivatives are near 0 so relative error can be large
     relErrTol = 2e-3
     if disp and relErrMax>relErrTol:
-        print(hessNdt[:5,:5]-hessToCheck[:5,:5])
-
-        print("Relative error")
-        print(np.linalg.norm(err)/np.linalg.norm(hessToCheck))
-        print()
-
-        print("NDT error")
-        print(np.sort(np.abs((hessNdt-hessToCheck)/hessToCheck).ravel())[::-1][:20])
-    assert relErrMax<relErrTol, relErrMax
-    print("Test passed: Hessian checked with numdifftools.")
-
-    # Nonzero fields ================================================================== #
-    hJ = rng.normal(scale=.5, size=n*(n-1)//2+k*n)
-    hJ[:n*k] -= np.tile(hJ[:n],k)
-    isingdkl = TernaryMag(n, k, h=hJ[:n*k], J=hJ[k*n:], n_cpus=1)
-
-    i = 0
-    for k_ in range(3):
-        dJ = isingdkl._solve_linearized_perturbation_tester(i, k_)
-        assert np.linalg.norm(dJ-isingdkl.dJ[i+n*k_])<1e-3, (dJ,isingdkl.dJ[i+n*k_])
-    print("Test passed: parameter perturbation agrees with direct solution using inverse maxent.")
-
-    pk = isingdkl.p2pk(isingdkl.p, isingdkl.coarseUix, isingdkl.coarseInvix)
-    log2pk = np.log2(pk)
-    def f(eps):
-        dJ = isingdkl.dJ.T.dot(eps)
-        return (log2pk - np.log2(isingdkl.p2pk(isingdkl.ising.p(isingdkl.hJ + dJ),
-                                               isingdkl.coarseUix,
-                                               isingdkl.coarseInvix))).dot(pk)
-
-    hessfun = ndt.Hessian(f, step=1e-4)
-    hessNdt = hessfun(np.zeros(n*k))
-    if time:
-        t0 = perf_counter()
-    hessToCheck, errflag, err = isingdkl.maj_curvature(epsdJ=1e-7, full_output=True, iprint=False)
-    if time:
-        print("FI for p(k) took %fs to calculate."%(perf_counter()-t0))
-    
-    relErrMax = np.abs((hessNdt-hessToCheck)/hessToCheck).max()
-    relErrTol = 1e-3
-    if disp and relErrMax>relErrTol:
-        print("Hess ndt")
-        print(hessNdt[:5,:5])
-        print('Hess linear')
-        print(hessToCheck[:5,:5])
-        print('Hess diff')
         print(hessNdt[:5,:5]-hessToCheck[:5,:5])
 
         print("Relative error")

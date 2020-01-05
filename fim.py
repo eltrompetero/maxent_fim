@@ -2572,7 +2572,7 @@ class TernaryCoupling(Coupling):
         n_cpus = n_cpus or self.n_cpus
 
         def wrapper(params):
-            i,a = params
+            i, a = params
             return self.solve_linearized_perturbation(i, a, p=p, sisj=sisj)[0]
 
         def args():
@@ -2759,7 +2759,6 @@ class TernaryCoupling(Coupling):
                     print("Done with off diag.")
         else:
             if calc_diag:
-                print(list(self.pool.map(diag, range(len(dJ)))))
                 hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
                 if iprint:
                     print("Done with diag.")
@@ -2846,9 +2845,46 @@ class TernaryCoupling(Coupling):
             #print( num_.dot(p) / np.log(2) / 2 / eps**2 )
             return ddplus, ddplus-ddminus
         return diag
+  
+    def _solve_linearized_perturbation_tester(self, iStar, aStar):
+        """
+        ***FOR DEBUGGING ONLY***
 
+        Parameters
+        ----------
+        iStar : int
+        aStar : int
 
-   
+        Returns
+        -------
+        ndarray
+            Estimated linear change in maxent parameters.
+        """
+        
+        n = self.n
+        k = self.kStates
+        p = self.p
+        C = self.observables_after_perturbation(iStar, aStar)[0]
+        assert k==3, "Only handles k=3."
+
+        from coniii.solvers import Enumerate
+        from coniii.models import TernaryIsing
+        model = TernaryIsing([np.zeros(k*n), np.zeros(n*(n-1)//2)])
+        calc_observables = define_ternary_helper_functions()[1]
+        solver = Enumerate(np.ones((1,n)),
+                           model=model,
+                           calc_observables=calc_observables)
+        
+        # hybr solver seems to work more consistently than default krylov
+        soln = solver.solve(constraints=C,
+                            initial_guess=self.hJ,
+                            full_output=True,
+                            scipy_solver_kwargs={'method':'hybr', 'tol':1e-12})
+        soln = soln[0]
+        # remove translational offset for first set of fields
+        soln[:n*k] -= np.tile(soln[:n], k)
+        return (soln - self.hJ)/(self.eps)
+
     def _solve_linearized_perturbation(self, iStar, kStar,
                                        p=None,
                                        sisj=None,
