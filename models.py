@@ -64,20 +64,20 @@ class LargeIsing():
         corr = [corr[:self.n], corr[self.n:]]
         
         # third order corr
-        c = np.zeros(int(binom(self.n,3)))
-        counter = 0
-        for ijk in combinations(range(self.n), 3):
-            c[counter] = np.prod(samples[:,ijk],1).mean()
-            counter += 1
-        corr.append(c)
+        #c = np.zeros(int(binom(self.n,3)))
+        #counter = 0
+        #for ijk in combinations(range(self.n), 3):
+        #    c[counter] = np.prod(samples[:,ijk],1).mean()
+        #    counter += 1
+        #corr.append(c)
 
         # fourth order corr
-        c = np.zeros(int(binom(self.n,4)))
-        counter = 0
-        for ijk in combinations(range(self.n), 4):
-            c[counter] = np.prod(samples[:,ijk],1).mean()
-            counter += 1
-        corr.append(c)
+        #c = np.zeros(int(binom(self.n,4)))
+        #counter = 0
+        #for ijk in combinations(range(self.n), 4):
+        #    c[counter] = np.prod(samples[:,ijk],1).mean()
+        #    counter += 1
+        #corr.append(c)
         if self.iprint: print("Done calculating correlations.")
 
         # probability distribution over sample
