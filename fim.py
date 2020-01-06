@@ -1272,7 +1272,7 @@ class MagnetizationConstant(Magnetization):
 
 
 class Coupling(Magnetization):
-    """Perturbation to increase correlation between pairs of spins.
+    """Perturbation that increases correlation between pairs of spins.
     """
     def compute_dJ(self, p=None, sisj=None):
         # precompute linear change to parameters for small perturbation
