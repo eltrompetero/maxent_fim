@@ -2479,9 +2479,9 @@ class MagCoupling(Magnetization):
 #end MagCoupling
 
 
-class TernaryCoupling(Coupling):
+class Coupling3(Coupling):
     """Method2 (pairwise correlations) tweaked for ternary states like C. elegans."""
-    def __init__(self, n, kStates,
+    def __init__(self, n, 
                  h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
         """
         Parameters
@@ -2498,11 +2498,11 @@ class TernaryCoupling(Coupling):
         from coniii.utils import xpotts_states
 
         assert n>1 and 0<eps<1e-2
-        assert (h[:n]==0).all()
-        assert h.size==kStates*n and J.size==n*(n-1)//2
+        assert (h[2*n:3*n]==0).all()
+        assert h.size==3*n and J.size==n*(n-1)//2
 
         self.n = n
-        self.kStates = kStates
+        self.kStates = 3
         self.eps = eps
         self.hJ = np.concatenate((h,J))
         self.n_cpus = n_cpus
@@ -2511,7 +2511,8 @@ class TernaryCoupling(Coupling):
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
         kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
-                          xpotts_states(n,kStates)))
+                          xpotts_states(n,self.kStates)))
+        #self.majdivisions, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         
         # cache triplet and quartet products
@@ -3012,11 +3013,11 @@ class TernaryCoupling(Coupling):
                       precompute=False,
                       n_cpus=state_dict.get('n_cpus',None))
         self.dJ = state_dict['dJ']
-#end TernaryCoupling
+#end Coupling3
 
 
 
-class TernaryMag(TernaryCoupling):
+class TernaryMag(Coupling3):
     """Method4 (ternary states) with mean perturbations (uniform and random substitution
     of each spin with a each possible discrete state."""
     def compute_dJ(self, p=None, sisj=None):

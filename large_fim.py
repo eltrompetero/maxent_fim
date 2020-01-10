@@ -508,52 +508,6 @@ class Magnetization():
             logsumEk[i] = fast_logsumexp(-E[invix==i])[0]
         return logsumEk
 
-    @staticmethod
-    def p2pk_high_prec(p, uix, invix):
-        """Convert the full probability distribution to the probability of having k votes
-        in the majority. Assuming that n is odd.
-
-        High precision version (p is an array of mp.mpf types).
-
-        Parameters
-        ----------
-        p : ndarray
-
-        Returns
-        -------
-        ndarray
-            p(k)
-        """
-        
-        pk = np.zeros(len(uix), dtype=object)
-        for i in range(len(uix)):
-            pk[i] = p[invix==i].sum()
-
-        return pk
-
-    @staticmethod
-    def logp2pk_high_prec(E, uix, invix):
-        """Convert the full probability distribution to the probability of having k votes
-        in the majority.
-
-        Parameters
-        ----------
-        E : ndarray
-            Energies of each configuration.
-        uix : ndarray
-        invix : ndarray
-
-        Returns
-        -------
-        ndarray
-            The unnormalized log probability: log p(k) + logZ.
-        """
-         
-        logsumEk = np.zeros(len(uix), dtype=object)
-        for i in range(len(uix)):
-            logsumEk[i] = mp_fast_logsumexp(-E[invix==i])[0]
-        return logsumEk
-
     def maj_curvature(self, *args, **kwargs):
         """Wrapper for _maj_curvature() to find best finite diff step size."""
 
@@ -1482,8 +1436,6 @@ class Coupling3(Coupling):
             Number of samples for Metropolis sampling.
         """
 
-        from coniii.utils import xpotts_states
-
         assert n>1 and 0<eps<1e-2
         assert (h[2*n:3*n]==0).all()
         assert h.size==3*n and J.size==n*(n-1)//2
@@ -1498,7 +1450,9 @@ class Coupling3(Coupling):
         self.sisj = np.concatenate(self.ising.corr[:2])
         self.p = self.ising.p
         self.allStates = self.ising.states.astype(np.int8)
-        _, self.coarseInvix = np.unique(np.abs(self.allStates.sum(1)), return_inverse=True)
+        kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
+                          self.allStates))
+        self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         self.coarseUix = np.unique(self.coarseInvix)
 
         # cache triplet and quartet products
@@ -1517,7 +1471,7 @@ class Coupling3(Coupling):
         self.pairs = {}
         self.triplets = {}
         self.quartets = {}
-        allStates = np.vstack(list(xpotts_states(n, kStates))).astype(int)
+        allStates = self.allStates
 
         # <d_{i,gammai} * d_{j,gammaj}> where i<j
         for i,j in combinations(range(n),2):
@@ -1527,18 +1481,18 @@ class Coupling3(Coupling):
 
         # triplets that matter are when one spin is in a particular state and the
         # remaining two agree with each other
-        for gamma in range(kStates):
-            for i in range(n):
-                for j,k in combinations(range(n),2):
-                    ix = (allStates[:,i]==gamma)&(allStates[:,j]==allStates[:,k])
-                    self.triplets[(gamma,i,j,k)] = ix
+        #for gamma in range(kStates):
+        #    for i in range(n):
+        #        for j,k in combinations(range(n),2):
+        #            ix = (allStates[:,i]==gamma)&(allStates[:,j]==allStates[:,k])
+        #            self.triplets[(gamma,i,j,k)] = ix
         # quartets that matter are when the first pair are the same and the second pair
         # are the same
-        for i,j in combinations(range(n),2):
-            for k,l in combinations(range(n),2):
-                ix1 = allStates[:,i]==allStates[:,j]
-                ix2 = allStates[:,k]==allStates[:,l]
-                self.quartets[(i,j,k,l)] = ix1&ix2
+        #for i,j in combinations(range(n),2):
+        #    for k,l in combinations(range(n),2):
+        #        ix1 = allStates[:,i]==allStates[:,j]
+        #        ix2 = allStates[:,k]==allStates[:,l]
+        #        self.quartets[(i,j,k,l)] = ix1&ix2
 
     def compute_dJ(self, p=None, sisj=None, n_cpus=0):
         """Compute linear change to parameters for small perturbation.
@@ -1669,7 +1623,7 @@ class Coupling3(Coupling):
         n = self.n
         if hJ is None:
             hJ = self.hJ
-        E = calc_all_energies(n, self.kStates, hJ)
+        E = calc_all_energies(n, self.kStates, self.allStates, hJ)
         logZ = fast_logsumexp(-E)[0]
         logsumEk = self.logp2pk(E, self.coarseUix, self.coarseInvix)
         p = np.exp(logsumEk - logZ)
@@ -1683,13 +1637,14 @@ class Coupling3(Coupling):
         # diagonal entries of hessian
         def diag(i, hJ=hJ, dJ=dJ, p=self.p, pk=p, logp2pk=self.logp2pk,
                  uix=self.coarseUix, invix=self.coarseInvix,
-                 n=self.n, E=E, logZ=logZ, kStates=self.kStates):
+                 n=self.n, E=E, logZ=logZ, kStates=self.kStates,
+                 allStates=self.allStates):
             # round eps step to machine precision
             mxix = np.abs(dJ[i]).argmax()
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
             epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
             if np.isnan(epsdJ_): return 0.
-            correction = calc_all_energies(n, kStates, dJ[i]*epsdJ_)
+            correction = calc_all_energies(n, kStates, allStates, dJ[i]*epsdJ_)
             correction = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
                                    for ix in range(len(uix))])
             num = ((correction.dot(pk) - correction)**2).dot(pk)
@@ -1702,7 +1657,8 @@ class Coupling3(Coupling):
         # off-diagonal entries of hessian
         def off_diag(args, hJ=hJ, dJ=dJ, p=self.p, pk=p, logp2pk=self.logp2pk,
                      uix=self.coarseUix, invix=self.coarseInvix,
-                     n=self.n, E=E, logZ=logZ, kStates=self.kStates):
+                     n=self.n, E=E, logZ=logZ, kStates=self.kStates,
+                     allStates=self.allStates):
             i, j = args
             
             # round eps step to machine precision
@@ -1710,7 +1666,7 @@ class Coupling3(Coupling):
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
             epsdJi = (newhJ - hJ[mxix])/dJ[i][mxix]/2
             if np.isnan(epsdJi): return 0.
-            correction = calc_all_energies(n, kStates, dJ[i]*epsdJi)
+            correction = calc_all_energies(n, kStates, allStates, dJ[i]*epsdJi)
             correctioni = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
                                     for ix in range(len(uix))])
 
@@ -1719,7 +1675,7 @@ class Coupling3(Coupling):
             newhJ = hJ[mxix] + dJ[j][mxix]*epsdJ
             epsdJj = (newhJ - hJ[mxix])/dJ[j][mxix]/2
             if np.isnan(epsdJj): return 0.
-            correction = calc_all_energies(n, kStates, dJ[j]*epsdJj)
+            correction = calc_all_energies(n, kStates, allStates, dJ[j]*epsdJj)
             correctionj = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
                                     for ix in range(len(uix))])
 
@@ -1936,16 +1892,17 @@ class Coupling3(Coupling):
                         A[i,j-n] = self.pairs[(j//n,j%n,i//n,i%n)].dot(p) - C[i]*si[j]
 
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[i,(kStates-1)*n+klcount] = self.triplets[(i//n,i%n,k,l)].dot(p) - C[i]*sisj[klcount]
+                ix = (self.allStates[:,i%n]==(i//n)) & (self.allStates[:,k]==self.allStates[:,l])
+                A[i,(kStates-1)*n+klcount] = p[ix].sum() - C[i]*sisj[klcount]
         
         # pair constraints
         for ijcount,(i,j) in enumerate(combinations(range(n),2)):
             for k in range(kStates*n):
-                A[kStates*n+ijcount,k-n] = (self.triplets[(k//n,k%n,i,j)].dot(p) -
-                                            C[kStates*n+ijcount]*si[k])
+                ix = (self.allStates[:,k%n]==(k//n)) & (self.allStates[:,i]==self.allStates[:,j])
+                A[kStates*n+ijcount,k-n] = p[ix].sum() - C[kStates*n+ijcount]*si[k]
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                A[kStates*n+ijcount,(kStates-1)*n+klcount] = (self.quartets[(i,j,k,l)].dot(p) -
-                                                              C[kStates*n+ijcount]*sisj[klcount])
+                ix = (self.allStates[:,i]==self.allStates[:,j]) & (self.allStates[:,k]==self.allStates[:,l])
+                A[kStates*n+ijcount,(kStates-1)*n+klcount] = p[ix].sum() - C[kStates*n+ijcount]*sisj[klcount]
         C -= self.sisj
         # factor out linear dependence on eps
         dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
@@ -2154,7 +2111,7 @@ def unravel_index(ijk, n):
     ix += ijk[-1] -ijk[-2] -1
     return ix
 
-@njit
+@njit("float64(float64[:],int8[:])")
 def fast_sum(J, s):
     """Helper function for calculating energy in calc_e(). Iterates couplings J."""
     e = 0
@@ -2165,7 +2122,7 @@ def fast_sum(J, s):
             k += 1
     return e
 
-@njit
+@njit("float64(float64[:],int8[:])")
 def fast_sum_ternary(J, s):
     """Helper function for calculating energy in calc_e(). Iterates couplings J."""
     assert len(J)==(len(s)*(len(s)-1)//2)
@@ -2179,15 +2136,17 @@ def fast_sum_ternary(J, s):
             k += 1
     return e
 
-@njit("float64[:](int64,int64,float64[:])")
-def calc_all_energies(n, k, params):
-    """Calculate all the energies for the 2^n or 3^n states in model.
+@njit("float64[:](int64,int64,int8[:,:],float64[:])")
+def calc_all_energies(n, k, states, params):
+    """Calculate all the energies for the states given.
     
     Parameters
     ----------
     n : int
         Number of spins.
     k : int
+        Ising or Potts3 model.
+    states : ndarray
         Number of distinct states.
     params : ndarray
         (h,J) vector
@@ -2198,31 +2157,20 @@ def calc_all_energies(n, k, params):
         Energies of all given states.
     """
     
-    e = np.zeros(k**n)
-    s_ = np.zeros(n, dtype=np.int64)
+    e = np.zeros(len(states))
+    s_ = np.zeros((1,n), dtype=np.int8)
     if k==2:
-        for i,s in enumerate(xpotts_states(n, k)):
-            for ix in range(n):
-                if s[ix]=='0':
-                    s_[ix] = -1
-                else:
-                    s_[ix] = 1
-            e[i] -= fast_sum(params[n:], s_)
-            e[i] -= np.sum(s_*params[:n])
+        for i in range(len(states)):
+            s = states[i]
+            e[i] -= fast_sum(params[n:], s)
+            e[i] -= np.sum(s*params[:n])
     elif k==3:
-        for i,s in enumerate(xpotts_states(n, k)):
+        for i in range(len(states)):
+            s = states[i]
             for ix in range(n):
-                if s[ix]=='0':
-                    s_[ix] = 0
-                elif s[ix]=='1':
-                    s_[ix] = 1
-                elif s[ix]=='2':
-                    s_[ix] = 2
-                else:
-                    raise Exception
                 # fields
-                e[i] -= params[ix+s_[ix]*n]
-            e[i] -= fast_sum_ternary(params[n*k:], s_)
+                e[i] -= params[ix+s[ix]*n]
+            e[i] -= fast_sum_ternary(params[n*k:], s)
     else: raise NotImplementedError
     return e
 

@@ -128,12 +128,13 @@ class LargePotts3():
         ----------
         multipliers : ndarray
         """
-
+        
+        n = self.n
         calc_e, calc_observables = cutils.define_potts3_helper_functions()
         self.multipliers = np.concatenate(multipliers)
 
         if self.iprint: print("Generating samples...")
-        self.sampler = Potts3(self.n, self.multipliers, calc_e)
+        self.sampler = Potts3(n, self.multipliers, calc_e)
         self.sampler.generate_samples_parallel(self.sample_size,
                                                self.n_iters,
                                                burn_in=self.burn_in)
@@ -143,8 +144,20 @@ class LargePotts3():
         # correlations
         if self.iprint: print("Calculating correlations...")
         # means and pairwise corr
-        corr = calc_observables(samples).mean(0)
-        corr = [corr[:self.n], corr[self.n:]]
+        corr = [np.zeros(n*3), np.zeros(n*(n-1)//2)]
+        counter = 0
+        for i in range(3):
+            for j in range(n):
+                corr[0][counter] = (samples[:,j]==i).mean()
+                counter += 1
+
+        counter = 0
+        for i in range(n-1):
+            for j in range(i+1,n):
+                corr[1][counter] = (samples[:,i]==samples[:,j]).mean()
+                counter += 1
+        #corr = calc_observables(samples).mean(0)
+        #corr = [corr[:self.n], corr[self.n:]]
         
         # third order corr
         #c = np.zeros(int(binom(self.n,3)))
