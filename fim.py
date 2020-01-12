@@ -30,6 +30,7 @@ class Magnetization():
                  eps=1e-7,
                  precompute=True,
                  n_cpus=None,
+                 coarse_grain_f=None,
                  high_prec=False):
         """
         Parameters
@@ -40,6 +41,10 @@ class Magnetization():
         eps : float, 1e-7
         precompute : bool, True
         n_cpus : int, None
+        coarse_grain_f : function
+            Must return coarse-grained indices (specifying which of 2^n states belong to
+            which coarse-grained state) and unique coarse-grained states. 
+            Must take array of all possible configurations.
         high_prec : bool, False
         """
 
@@ -58,8 +63,11 @@ class Magnetization():
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
         self.allStates = bin_states(n, True).astype(int)
-        _, self.coarseInvix = np.unique(np.abs(self.allStates.sum(1)), return_inverse=True)
-        self.coarseUix = np.unique(self.coarseInvix)
+        if coarse_grain_f:
+            self.coarseUix, self.coarseInvix = coarse_grain_f(self.allStates)
+        else:
+            _, self.coarseInvix = np.unique(np.abs(self.allStates.sum(1)), return_inverse=True)
+            self.coarseUix = np.unique(self.coarseInvix)
         
         # cache triplet and quartet products
         self._triplets_and_quartets() 
@@ -765,7 +773,6 @@ class Magnetization():
                     print("Done with off diag.")
         else:
             if calc_diag:
-                print(list(self.pool.map(diag, range(len(dJ)))))
                 hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
                 if iprint:
                     print("Done with diag.")
@@ -1529,7 +1536,7 @@ class Coupling(Magnetization):
                 return dJ, errflag, (A, C), relerr
             return dJ, errflag, (A, C)
         return dJ, errflag
-#end Couplinga
+#end Coupling
 
 
 class IsingSpinReplacementFIM(Coupling):

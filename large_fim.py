@@ -1,7 +1,7 @@
 # ====================================================================================== #
 # Classes for calculating FIM on Ising and Potts models for large systems where sampling
 # is necessary.
-# Author : Eddie Lee, edlee@alumni.princeton.edu
+# Author : Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 import numpy as np
 from numba import njit
@@ -13,6 +13,7 @@ from coniii.enumerate import fast_logsumexp, mp_fast_logsumexp
 from multiprocess import Pool, cpu_count
 import mpmath as mp
 from scipy.sparse import coo_matrix
+from numba.typed import Dict as nDict
 from .models import LargeIsing, LargePotts3
 np.seterr(divide='ignore')
 
@@ -1422,7 +1423,8 @@ class Coupling3(Coupling):
                  eps=1e-7,
                  precompute=True,
                  n_cpus=None,
-                 n_samples=10_000_000):
+                 n_samples=10_000_000,
+                 iprint=True):
         """
         Parameters
         ----------
@@ -1434,6 +1436,8 @@ class Coupling3(Coupling):
         n_cpus : int, None
         n_samples : int, 10_000_000
             Number of samples for Metropolis sampling.
+        iprint : bool, True
+            Display info if True.
         """
 
         assert n>1 and 0<eps<1e-2
@@ -1445,6 +1449,7 @@ class Coupling3(Coupling):
         self.eps = eps
         self.hJ = np.concatenate((h,J))
         self.n_cpus = n_cpus
+        self.iprint = iprint
 
         self.ising = LargePotts3((h,J), n_samples)
         self.sisj = np.concatenate(self.ising.corr[:2])
@@ -1459,11 +1464,15 @@ class Coupling3(Coupling):
         self._triplets_and_quartets() 
     
         if precompute:
+            if iprint: print("Computing dJ...")
             self.dJ = self.compute_dJ()
+            if iprint: print("Done.")
         else:
             self.dJ = None
 
     def _triplets_and_quartets(self):
+        """Caching triplets and quartets for large systems is too memory intensive. Only
+        pairwise are cached."""
         from itertools import product
 
         n = self.n
@@ -1478,21 +1487,6 @@ class Coupling3(Coupling):
             for gammai,gammaj in product(range(kStates),range(kStates)):
                 ix = (allStates[:,i]==gammai)&(allStates[:,j]==gammaj)
                 self.pairs[(gammai,i,gammaj,j)] = ix
-
-        # triplets that matter are when one spin is in a particular state and the
-        # remaining two agree with each other
-        #for gamma in range(kStates):
-        #    for i in range(n):
-        #        for j,k in combinations(range(n),2):
-        #            ix = (allStates[:,i]==gamma)&(allStates[:,j]==allStates[:,k])
-        #            self.triplets[(gamma,i,j,k)] = ix
-        # quartets that matter are when the first pair are the same and the second pair
-        # are the same
-        #for i,j in combinations(range(n),2):
-        #    for k,l in combinations(range(n),2):
-        #        ix1 = allStates[:,i]==allStates[:,j]
-        #        ix2 = allStates[:,k]==allStates[:,l]
-        #        self.quartets[(i,j,k,l)] = ix1&ix2
 
     def compute_dJ(self, p=None, sisj=None, n_cpus=0):
         """Compute linear change to parameters for small perturbation.
@@ -1522,6 +1516,7 @@ class Coupling3(Coupling):
                     yield (i,a)
 
         if self.n_cpus is None or self.n_cpus>1:
+            if self.iprint: print("Using multiprocessing...")
             try: 
                 # don't use all the cpus since lin alg calculations will be slower
                 pool = Pool(self.n_cpus or cpu_count()//2)
@@ -1572,7 +1567,7 @@ class Coupling3(Coupling):
         sisjNew = sisj.copy()
         
         for i_,a_,eps_ in zip(i,a,eps):
-            jit_observables_after_perturbation_minus(n, siNew, sisjNew, i_, a_, eps_)
+            jit_observables_after_perturbation_plus(n, siNew, sisjNew, i_, a_, eps_)
 
         return np.concatenate((siNew, sisjNew)), True
    
@@ -1651,7 +1646,6 @@ class Coupling3(Coupling):
             dd = num / np.log(2) / epsdJ_**2
             if iprint and np.isnan(dd):
                 print('nan for diag', i, epsdJ_)
-            
             return dd
 
         # off-diagonal entries of hessian
@@ -1721,6 +1715,7 @@ class Coupling3(Coupling):
         assert ~np.isinf(hess).any(), hess
 
         if check_stability:
+            if iprint: print("Checking stability...")
             hess2 = self._maj_curvature(epsdJ=epsdJ/2,
                                         check_stability=False,
                                         iprint=iprint,
@@ -1873,36 +1868,14 @@ class Coupling3(Coupling):
             si = sisj[:kStates*n]
             sisj = sisj[kStates*n:]
         # matrix that will be multiplied by the vector of canonical parameter perturbations
-        A = np.zeros((kStates*n+n*(n-1)//2, (kStates-1)*n+n*(n-1)//2))
         C, perturb_up = self.observables_after_perturbation(iStar, kStar, eps=eps)
         errflag = 0
-        
-        # mean constraints (remember that A does not include changes in first set of fields)
-        for i in range(kStates*n):
-            for j in range(n,kStates*n):
-                if i==j:
-                    A[i,j-n] = si[i] - C[i]*si[j]
-                # if they're in different states but the same spin
-                elif (i%n)==(j%n):
-                    A[i,j-n] = -C[i]*si[j]
-                else:
-                    if (i%n)<(j%n):
-                        A[i,j-n] = self.pairs[(i//n,i%n,j//n,j%n)].dot(p) - C[i]*si[j]
-                    else:
-                        A[i,j-n] = self.pairs[(j//n,j%n,i//n,i%n)].dot(p) - C[i]*si[j]
 
-            for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                ix = (self.allStates[:,i%n]==(i//n)) & (self.allStates[:,k]==self.allStates[:,l])
-                A[i,(kStates-1)*n+klcount] = p[ix].sum() - C[i]*sisj[klcount]
-        
-        # pair constraints
-        for ijcount,(i,j) in enumerate(combinations(range(n),2)):
-            for k in range(kStates*n):
-                ix = (self.allStates[:,k%n]==(k//n)) & (self.allStates[:,i]==self.allStates[:,j])
-                A[kStates*n+ijcount,k-n] = p[ix].sum() - C[kStates*n+ijcount]*si[k]
-            for klcount,(k,l) in enumerate(combinations(range(n),2)):
-                ix = (self.allStates[:,i]==self.allStates[:,j]) & (self.allStates[:,k]==self.allStates[:,l])
-                A[kStates*n+ijcount,(kStates-1)*n+klcount] = p[ix].sum() - C[kStates*n+ijcount]*sisj[klcount]
+        npairs = nDict()
+        for k,v in self.pairs.items():
+            npairs[k] = v
+
+        A = calc_A(n, kStates, npairs, self.allStates, p, si, sisj, C)
         C -= self.sisj
         # factor out linear dependence on eps
         dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
@@ -1981,26 +1954,6 @@ def jit_observables_after_perturbation_plus(n, si, sisj, i, a, eps):
             else:
                 jaix = unravel_index((a,j),n)
             sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] - osisj[jaix])
-
-@njit
-def jit_observables_after_perturbation_minus(n, si, sisj, i, a, eps):
-    osisj = sisj.copy()
-    si[i] = si[i] - eps*(si[i] + si[a])
-
-    for j in delete(list(range(n)),i):
-        if i<j:
-            ijix = unravel_index((i,j),n)
-        else:
-            ijix = unravel_index((j,i),n)
-
-        if j==a:
-            sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + 1)
-        else:
-            if j<a:
-                jaix = unravel_index((j,a),n)
-            else:
-                jaix = unravel_index((a,j),n)
-            sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + osisj[jaix])
 
 @njit
 def jit_observables_after_perturbation_plus_field(n, si, sisj, i, eps):
@@ -2246,6 +2199,73 @@ def jit_triplets_and_quartets(n, allStates):
 
 @njit(cache=True)
 def jit_pair_combination(x):
+    """Substitue for itertools.combinations(range(x),2)).
+
+    Parameters
+    ----------
+    x : int
+
+    Returns
+    -------
+    generator
+    """
+
     for i in range(x-1):
         for j in range(i+1,x):
             yield i,j
+
+@njit(cache=True)
+def calc_A(n, kStates, pairs, allStates, p, si, sisj, C):
+    """For calculating perturbation matrix A for solving the problem for perturbations to
+    couplings.
+
+    This is necessary because memory constraints prevent us from caching higher order
+    correlations which take a long time to iterate. Even with this highly optimized code,
+    this calculation can take a while.
+
+    Parameters
+    ----------
+    n : int
+    kStates : int
+    pairs : numba.typed.Dict
+    allStates : ndarray
+    p : ndarray
+    si : ndarray
+    sisj : ndarray
+    C : ndarray
+
+    Returns
+    -------
+    ndarray
+        The matrix A.
+    """
+
+    A = np.zeros((kStates*n+n*(n-1)//2, (kStates-1)*n+n*(n-1)//2))
+
+    # mean constraints (remember that A does not include changes in first set of fields)
+    for i in range(kStates*n):
+        for j in range(n,kStates*n):
+            if i==j:
+                A[i,j-n] = si[i] - C[i]*si[j]
+            # if they're in different states but the same spin
+            elif (i%n)==(j%n):
+                A[i,j-n] = -C[i]*si[j]
+            else:
+                if (i%n)<(j%n):
+                    A[i,j-n] = (pairs[(i//n,i%n,j//n,j%n)]*p).sum() - C[i]*si[j]
+                else:
+                    A[i,j-n] = (pairs[(j//n,j%n,i//n,i%n)]*p).sum() - C[i]*si[j]
+
+        for klcount,(k,l) in enumerate(jit_pair_combination(n)):
+            ix = (allStates[:,i%n]==(i//n)) & (allStates[:,k]==allStates[:,l])
+            A[i,(kStates-1)*n+klcount] = p[ix].sum() - C[i]*sisj[klcount]
+    
+    # pair constraints
+    for ijcount,(i,j) in enumerate(jit_pair_combination(n)):
+        for k in range(kStates*n):
+            ix = (allStates[:,k%n]==(k//n)) & (allStates[:,i]==allStates[:,j])
+            A[kStates*n+ijcount,k-n] = p[ix].sum() - C[kStates*n+ijcount]*si[k]
+        for klcount,(k,l) in enumerate(jit_pair_combination(n)):
+            ix = (allStates[:,i]==allStates[:,j]) & (allStates[:,k]==allStates[:,l])
+            A[kStates*n+ijcount,(kStates-1)*n+klcount] = p[ix].sum() - C[kStates*n+ijcount]*sisj[klcount]
+    return A
