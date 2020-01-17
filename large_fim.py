@@ -1525,7 +1525,8 @@ class Coupling3(Coupling):
                 pool.close()
         else:
             dJ = np.zeros((self.n*(self.n-1), 3*self.n+(self.n-1)*self.n//2))
-            for counter,(i,a) in enumerate(args):
+            for counter,(i,a) in enumerate(args()):
+                print("Done with (%d,%d)."%(i,a))
                 dJ[counter] = wrapper((i,a))
         return dJ
     
