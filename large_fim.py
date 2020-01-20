@@ -4,7 +4,7 @@
 # Author : Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 import numpy as np
-from numba import njit
+from numba import njit, prange
 from coniii.utils import *
 from .utils import *
 from warnings import warn
@@ -15,6 +15,7 @@ import mpmath as mp
 from scipy.sparse import coo_matrix
 from numba.typed import Dict as nDict
 from .models import LargeIsing, LargePotts3
+from .fim import *
 np.seterr(divide='ignore')
 
 
@@ -1424,6 +1425,7 @@ class Coupling3(Coupling):
                  precompute=True,
                  n_cpus=None,
                  n_samples=10_000_000,
+                 rng=None,
                  iprint=True):
         """
         Parameters
@@ -1436,6 +1438,7 @@ class Coupling3(Coupling):
         n_cpus : int, None
         n_samples : int, 10_000_000
             Number of samples for Metropolis sampling.
+        rng : np.random.RandomState, None
         iprint : bool, True
             Display info if True.
         """
@@ -1449,9 +1452,10 @@ class Coupling3(Coupling):
         self.eps = eps
         self.hJ = np.concatenate((h,J))
         self.n_cpus = n_cpus
+        self.rng = rng or np.random
         self.iprint = iprint
 
-        self.ising = LargePotts3((h,J), n_samples)
+        self.ising = LargePotts3((h,J), n_samples, iprint=iprint, rng=self.rng)
         self.sisj = np.concatenate(self.ising.corr[:2])
         self.p = self.ising.p
         self.allStates = self.ising.states.astype(np.int8)
@@ -1461,11 +1465,13 @@ class Coupling3(Coupling):
         self.coarseUix = np.unique(self.coarseInvix)
 
         # cache triplet and quartet products
+        if self.iprint: print("Starting correlations calculation...")
         self._triplets_and_quartets() 
+        if self.iprint: print("Done.")
     
         if precompute:
             if iprint: print("Computing dJ...")
-            self.dJ = self.compute_dJ()
+            self.compute_dJ()
             if iprint: print("Done.")
         else:
             self.dJ = None
@@ -1473,20 +1479,12 @@ class Coupling3(Coupling):
     def _triplets_and_quartets(self):
         """Caching triplets and quartets for large systems is too memory intensive. Only
         pairwise are cached."""
-        from itertools import product
 
         n = self.n
         kStates = self.kStates
-        self.pairs = {}
-        self.triplets = {}
-        self.quartets = {}
         allStates = self.allStates
 
-        # <d_{i,gammai} * d_{j,gammaj}> where i<j
-        for i,j in combinations(range(n),2):
-            for gammai,gammaj in product(range(kStates),range(kStates)):
-                ix = (allStates[:,i]==gammai)&(allStates[:,j]==gammaj)
-                self.pairs[(gammai,i,gammaj,j)] = ix
+        self.pairs, self.triplets, self.quartets = jit_triplets_and_quartets(n, kStates, allStates, self.p)
 
     def compute_dJ(self, p=None, sisj=None, n_cpus=0):
         """Compute linear change to parameters for small perturbation.
@@ -1515,20 +1513,48 @@ class Coupling3(Coupling):
                 for a in np.delete(range(self.n),i):
                     yield (i,a)
 
-        if self.n_cpus is None or self.n_cpus>1:
-            if self.iprint: print("Using multiprocessing...")
-            try: 
-                # don't use all the cpus since lin alg calculations will be slower
-                pool = Pool(self.n_cpus or cpu_count()//2)
-                dJ = np.vstack(( pool.map(wrapper, args()) ))
-            finally:
-                pool.close()
-        else:
-            dJ = np.zeros((self.n*(self.n-1), 3*self.n+(self.n-1)*self.n//2))
-            for counter,(i,a) in enumerate(args()):
-                print("Done with (%d,%d)."%(i,a))
-                dJ[counter] = wrapper((i,a))
+        #if self.n_cpus is None or self.n_cpus>1:
+        #    if self.iprint: print("Using multiprocessing...")
+        #    try: 
+        #        # don't use all the cpus since lin alg calculations will be slower
+        #        pool = Pool(self.n_cpus or cpu_count()//2)
+        #        dJ = np.vstack(( pool.map(wrapper, args()) ))
+        #    finally:
+        #        pool.close()
+        #else:
+        dJ = np.zeros((self.n*(self.n-1), 3*self.n+(self.n-1)*self.n//2))
+        for counter,(i,a) in enumerate(args()):
+            dJ[counter] = wrapper((i,a))
+
+        self.dJ = dJ
         return dJ
+
+    def _observables_after_perturbation(self, si, sisj, i, a, eps):
+        """Make two spins more like one another.
+        """
+        
+        n = self.n
+        osi = si.copy()
+        osisj = sisj.copy()
+        
+        # mimic average values
+        for k in range(self.kStates):
+            si[i+k*n] = osi[i+k*n] - eps*(osi[i+k*n] - osi[a+k*n])
+
+        for j in delete(list(range(n)),i):
+            if i<j:
+                ijix = unravel_index((i,j),n)
+            else:
+                ijix = unravel_index((j,i),n)
+
+            if j==a:
+                sisj[ijix] = osisj[ijix] - eps*(osisj[ijix] - 1)
+            else:
+                if j<a:
+                    jaix = unravel_index((j,a),n)
+                else:
+                    jaix = unravel_index((a,j),n)
+                sisj[ijix] = osisj[ijix] - eps*(osisj[ijix] - osisj[jaix])
     
     def observables_after_perturbation(self, i, a, eps=None):
         """Make spin index i more like spin a by eps. Perturb the corresponding mean and
@@ -1568,7 +1594,7 @@ class Coupling3(Coupling):
         sisjNew = sisj.copy()
         
         for i_,a_,eps_ in zip(i,a,eps):
-            jit_observables_after_perturbation_plus(n, siNew, sisjNew, i_, a_, eps_)
+            self._observables_after_perturbation(siNew, sisjNew, i_, a_, eps_)
 
         return np.concatenate((siNew, sisjNew)), True
    
@@ -1785,7 +1811,7 @@ class Coupling3(Coupling):
             return ddplus, ddplus-ddminus
         return diag
   
-    def _solve_linearized_perturbation_tester(self, iStar, aStar):
+    def _solve_linearized_perturbation_tester(self, iStar, aStar, full_output=False):
         """
         ***FOR DEBUGGING ONLY***
 
@@ -1807,22 +1833,32 @@ class Coupling3(Coupling):
         assert k==3, "Only handles k=3."
 
         from coniii.solvers import Enumerate
-        from coniii.models import TernaryIsing
-        model = TernaryIsing([np.zeros(k*n), np.zeros(n*(n-1)//2)])
+        from coniii.models import Potts3
+        model = Potts3([np.zeros(k*n), np.zeros(n*(n-1)//2)])
         calc_observables = define_ternary_helper_functions()[1]
-        solver = Enumerate(np.ones((1,n)),
+        solver = Enumerate(np.vstack((np.ones(n), -np.ones(n))),
                            model=model,
                            calc_observables=calc_observables)
-        
+       
         # hybr solver seems to work more consistently than default krylov
-        soln = solver.solve(constraints=C,
-                            initial_guess=self.hJ,
-                            full_output=True,
-                            scipy_solver_kwargs={'method':'hybr', 'tol':1e-12})
-        soln = soln[0]
-        # remove translational offset for first set of fields
-        soln[:n*k] -= np.tile(soln[:n], k)
-        return (soln - self.hJ)/(self.eps)
+        hJ0 = solver.solve(constraints=self.sisj,
+                           initial_guess=self.hJ,
+                           full_output=True,
+                           scipy_solver_kwargs={'method':'hybr', 'tol':1e-12})[0]
+
+        # hybr solver seems to work more consistently than default krylov
+        fullsoln = solver.solve(constraints=C,
+                                initial_guess=self.hJ,
+                                full_output=True,
+                                scipy_solver_kwargs={'method':'hybr', 'tol':1e-12})
+        soln = fullsoln[0]
+
+        # remove translational offset for last set of fields
+        hJ0[:n*k] -= np.tile(hJ0[n*(k-1):n*k], k)
+        soln[:n*k] -= np.tile(soln[n*(k-1):n*k], k)
+        if full_output:
+            return (soln - self.hJ)/(self.eps), fullsoln
+        return (soln - hJ0)/(self.eps)
 
     def _solve_linearized_perturbation(self, iStar, kStar,
                                        p=None,
@@ -1872,16 +1908,12 @@ class Coupling3(Coupling):
         C, perturb_up = self.observables_after_perturbation(iStar, kStar, eps=eps)
         errflag = 0
 
-        npairs = nDict()
-        for k,v in self.pairs.items():
-            npairs[k] = v
-
-        A = calc_A(n, kStates, npairs, self.allStates, p, si, sisj, C)
+        A = calc_A(n, kStates, self.allStates, p, si, sisj, self.pairs, self.triplets, self.quartets, C)
         C -= self.sisj
         # factor out linear dependence on eps
         dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
         # put back in fields that we've fixed
-        dJ = np.concatenate((np.zeros(n), dJ))
+        dJ = np.insert(dJ, (kStates-1)*n, np.zeros(n))
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
@@ -1936,135 +1968,6 @@ class Coupling3(Coupling):
 # ============= #
 # JIT functions #
 # ============= #
-@njit
-def jit_observables_after_perturbation_plus(n, si, sisj, i, a, eps):
-    osisj = sisj.copy()
-    si[i] = si[i] - eps*(si[i] - si[a])
-
-    for j in delete(list(range(n)),i):
-        if i<j:
-            ijix = unravel_index((i,j),n)
-        else:
-            ijix = unravel_index((j,i),n)
-
-        if j==a:
-            sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] - 1)
-        else:
-            if j<a:
-                jaix = unravel_index((j,a),n)
-            else:
-                jaix = unravel_index((a,j),n)
-            sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] - osisj[jaix])
-
-@njit
-def jit_observables_after_perturbation_plus_field(n, si, sisj, i, eps):
-    si[i] = si[i] - eps*(si[i] - 1)
-
-    for j in delete(list(range(n)),i):
-        if i<j:
-            ijix = unravel_index((i,j),n)
-        else:
-            ijix = unravel_index((j,i),n)
-
-        sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] - si[j])
-
-@njit
-def jit_observables_after_perturbation_minus_field(n, si, sisj, i, eps):
-    si[i] = si[i] - eps*(si[i] + 1)
-
-    for j in delete(list(range(n)),i):
-        if i<j:
-            ijix = unravel_index((i,j),n)
-        else:
-            ijix = unravel_index((j,i),n)
-
-        sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + si[j])
-
-@njit
-def jit_observables_after_perturbation_plus_mean(n, si, sisj, i, eps):
-    si[i] = (1-eps)*si[i] + eps
-
-    for j in delete(list(range(n)),i):
-        if i<j:
-            ijix = unravel_index((i,j),n)
-        else:
-            ijix = unravel_index((j,i),n)
-
-        sisj[ijix] = (1-eps)*sisj[ijix] + eps*si[j]
-
-@njit
-def jit_observables_after_perturbation_minus_mean(n, si, sisj, i, eps):
-    si[i] = si[i] - eps
-
-    for j in delete(list(range(n)),i):
-        if i<j:
-            ijix = unravel_index((i,j),n)
-        else:
-            ijix = unravel_index((j,i),n)
-
-        sisj[ijix] = sisj[ijix] - eps*si[j]
-
-@njit
-def delete(X, i):
-    """Return vector X with the ith element removed."""
-    X_ = [0]
-    X_.pop(0)
-    for j in range(len(X)):
-        if i!=j:
-            X_.append(X[j])
-    return X_
-
-@njit
-def factorial(x):
-    f = 1.
-    while x>0:
-        f *= x
-        x -= 1
-    return f
-
-@njit
-def binom(n,k):
-    return factorial(n)/factorial(n-k)/factorial(k)
-
-@njit
-def jit_all(x):
-    for x_ in x:
-        if not x_:
-            return False
-    return True
-
-@njit
-def unravel_index(ijk, n):
-    """Unravel multi-dimensional index to flattened index but specifically for
-    multi-dimensional analog of an upper triangular array (lower triangle indices are not
-    counted).
-
-    Parameters
-    ----------
-    ijk : tuple
-        Raveled index to unravel.
-    n : int
-        System size.
-
-    Returns
-    -------
-    ix : int
-        Unraveled index.
-    """
-    
-    if len(ijk)==1:
-        raise Exception
-
-    assert jit_all([ijk[i]<ijk[i+1] for i in range(len(ijk)-1)])
-    assert jit_all([i<n for i in ijk])
-
-    ix = np.sum(np.array([int(binom(n-1-i,len(ijk)-1)) for i in range(ijk[0])]))
-    for d in range(1, len(ijk)-1):
-        if (ijk[d]-ijk[d-1])>1:
-            ix += np.sum(np.array([int(binom(n-i-1,len(ijk)-d-1)) for i in range(ijk[d-1]+1, ijk[d])]))
-    ix += ijk[-1] -ijk[-2] -1
-    return ix
-
 @njit("float64(float64[:],int8[:])")
 def fast_sum(J, s):
     """Helper function for calculating energy in calc_e(). Iterates couplings J."""
@@ -2185,54 +2088,53 @@ def calc_e(s, params):
     return e
 
 @njit(cache=True)
-def jit_triplets_and_quartets(n, allStates):
+def jit_triplets_and_quartets(n, kStates, allStates, p):
+    """Calculate pairwise, triplet, and quartet correlations.
+    """
+    pairs = dict()
     triplets = dict()
     quartets = dict()
-    for i in range(n):
-        for j,k in jit_pair_combination(n):
-            triplets[(i,j,k)] = allStates[:,i]*allStates[:,j]*allStates[:,k]
+
+    # <d_{i,gammai} * d_{j,gammaj}> where i<j
     for i,j in jit_pair_combination(n):
-        for k in range(n):
-            triplets[(i,j,k)] = allStates[:,i]*allStates[:,j]*allStates[:,k]
+        for gammai in range(kStates):
+            for gammaj in range(kStates):
+                pairs[(gammai,i,gammaj,j)] = sum_single_cols(p, allStates, i, gammai, j, gammaj)
+
+    # triplets that matter are when one spin is in a particular state and the
+    # remaining two agree with each other
+    for gamma in range(kStates):
+        for i in range(n):
+            for j,k in jit_pair_combination(n):
+                triplets[(gamma,i,j,k)] = sum_col_pair(p, allStates, i, gamma, j, k)
+
+    # quartets that matter are when the first pair are the same and the second pair
+    # are the same
+    for i,j in jit_pair_combination(n):
         for k,l in jit_pair_combination(n):
-            quartets[(i,j,k,l)] = allStates[:,i]*allStates[:,j]*allStates[:,k]*allStates[:,l]
-    return triplets, quartets
+            quartets[(i,j,k,l)] = sum_pair_pair(p, allStates, i, j, k, l)
+
+    return pairs, triplets, quartets
 
 @njit(cache=True)
-def jit_pair_combination(x):
-    """Substitue for itertools.combinations(range(x),2)).
+def calc_A(n, kStates, allStates, p, si, sisj, pairs, triplets, quartets, C):
+    """Calculate matrix A in the linearized problem for a specific given perturbation
+    to the means and pairwise correlations captured in vector C.
 
-    Parameters
-    ----------
-    x : int
-
-    Returns
-    -------
-    generator
-    """
-
-    for i in range(x-1):
-        for j in range(i+1,x):
-            yield i,j
-
-@njit(cache=True)
-def calc_A(n, kStates, pairs, allStates, p, si, sisj, C):
-    """For calculating perturbation matrix A for solving the problem for perturbations to
-    couplings.
-
-    This is necessary because memory constraints prevent us from caching higher order
-    correlations which take a long time to iterate. Even with this highly optimized code,
-    this calculation can take a while.
+    The linear problem that will be solved for dJ is
+        A * dJ = C
 
     Parameters
     ----------
     n : int
     kStates : int
-    pairs : numba.typed.Dict
     allStates : ndarray
     p : ndarray
     si : ndarray
     sisj : ndarray
+    pairs : numba.dict
+    triplets : numba.dict
+    quartets : numba.dict
     C : ndarray
 
     Returns
@@ -2243,30 +2145,66 @@ def calc_A(n, kStates, pairs, allStates, p, si, sisj, C):
 
     A = np.zeros((kStates*n+n*(n-1)//2, (kStates-1)*n+n*(n-1)//2))
 
-    # mean constraints (remember that A does not include changes in first set of fields)
-    for i in range(kStates*n):
-        for j in range(n,kStates*n):
+    # mean constraints corresponding to odd order correlations 
+    # remember that A does not include changes in last set of fields (corresponding to the last Potts state)
+    # i is the index of the perturbed spin
+    for i in prange(kStates*n):
+        for j in prange((kStates-1)*n):
             if i==j:
-                A[i,j-n] = si[i] - C[i]*si[j]
-            # if they're in different states but the same spin
-            elif (i%n)==(j%n):
-                A[i,j-n] = -C[i]*si[j]
-            else:
-                if (i%n)<(j%n):
-                    A[i,j-n] = (pairs[(i//n,i%n,j//n,j%n)]*p).sum() - C[i]*si[j]
+                # p(s_i=gamma) - p(s_i=gamma) * p(s_i=zeta)
+                A[i,j] = si[i] - C[i]*si[i]
+            elif (i%n)==(j%n):  # if they're in different states but the same spin
+                A[i,j] = -C[i]*si[j]
+            else:  # if they're different spins in different states
+                if (i%n)<(j%n):  # just because there is a fixed ordering to the indexing of pairs
+                    A[i,j] = pairs[(i//n,i%n,j//n,j%n)] - C[i] * si[j]
                 else:
-                    A[i,j-n] = (pairs[(j//n,j%n,i//n,i%n)]*p).sum() - C[i]*si[j]
+                    A[i,j] = pairs[(j//n,j%n,i//n,i%n)] - C[i] * si[j]
 
         for klcount,(k,l) in enumerate(jit_pair_combination(n)):
-            ix = (allStates[:,i%n]==(i//n)) & (allStates[:,k]==allStates[:,l])
-            A[i,(kStates-1)*n+klcount] = p[ix].sum() - C[i]*sisj[klcount]
+            A[i,(kStates-1)*n+klcount] = triplets[(i//n,i%n,k,l)] - C[i] * sisj[klcount]
     
     # pair constraints
     for ijcount,(i,j) in enumerate(jit_pair_combination(n)):
-        for k in range(kStates*n):
-            ix = (allStates[:,k%n]==(k//n)) & (allStates[:,i]==allStates[:,j])
-            A[kStates*n+ijcount,k-n] = p[ix].sum() - C[kStates*n+ijcount]*si[k]
+        for k in prange((kStates-1)*n):
+            A[kStates*n+ijcount,k] = triplets[(k//n,k%n,i,j)] - C[kStates*n+ijcount] * si[k]
+
         for klcount,(k,l) in enumerate(jit_pair_combination(n)):
-            ix = (allStates[:,i]==allStates[:,j]) & (allStates[:,k]==allStates[:,l])
-            A[kStates*n+ijcount,(kStates-1)*n+klcount] = p[ix].sum() - C[kStates*n+ijcount]*sisj[klcount]
+            A[kStates*n+ijcount,(kStates-1)*n+klcount] = quartets[(i,j,k,l)] - C[kStates*n+ijcount] * sisj[klcount]
     return A
+
+@njit("float64(float64[:],int8[:,:],int64,int64,int64,int64)", parallel=True)
+def sum_single_cols(p, allStates, col1, col1val, col2, col2val):
+    """Two columns that take different values.
+    """
+    total = 0.
+
+    for i in prange(p.size):
+        if allStates[i,col1]==col1val and allStates[i,col2]==col2val:
+            total += p[i]
+
+    return total
+
+@njit("float64(float64[:],int8[:,:],int64,int64,int64,int64)", parallel=True)
+def sum_col_pair(p, allStates, col1, col1val, col2, col3):
+    """One col that takes some value and two cols in agreement.
+    """
+    total = 0.
+
+    for i in prange(p.size):
+        if allStates[i,col1]==col1val and allStates[i,col2]==allStates[i,col3]:
+            total += p[i]
+
+    return total
+
+@njit("float64(float64[:],int8[:,:],int64,int64,int64,int64)", parallel=True)
+def sum_pair_pair(p, allStates, col1, col2, col3, col4):
+    """Two separate cols in agreement with one another.
+    """
+    total = 0.
+
+    for i in prange(p.size):
+        if allStates[i,col1]==allStates[i,col2] and allStates[i,col3]==allStates[i,col4]:
+            total += p[i]
+
+    return total

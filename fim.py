@@ -2501,7 +2501,8 @@ class Coupling3(Coupling):
         precompute : bool, True
         n_cpus : int, None
         """
-
+        
+        raise NotImplementedError
         from coniii.utils import xpotts_states
 
         assert n>1 and 0<eps<1e-2
@@ -3251,6 +3252,7 @@ def jit_observables_after_perturbation_minus_mean(n, si, sisj, i, eps):
 @njit
 def delete(X, i):
     """Return vector X with the ith element removed."""
+
     X_ = [0]
     X_.pop(0)
     for j in range(len(X)):

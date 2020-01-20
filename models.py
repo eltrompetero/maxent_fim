@@ -100,6 +100,7 @@ class LargePotts3():
                  sample_size=10_000_000,
                  n_iters=1_000,
                  burn_in=10_000,
+                 rng=None,
                  iprint=True):
         """
         Parameters
@@ -114,6 +115,7 @@ class LargePotts3():
         self.sample_size = sample_size
         self.n_iters = n_iters
         self.burn_in = burn_in
+        self.rng = rng or np.random
         self.iprint = iprint
 
         self.update_multipliers(multipliers)
@@ -134,7 +136,7 @@ class LargePotts3():
         self.multipliers = np.concatenate(multipliers)
 
         if self.iprint: print("Generating samples...")
-        self.sampler = Potts3(n, self.multipliers, calc_e)
+        self.sampler = Potts3(n, self.multipliers, calc_e, rng=self.rng)
         self.sampler.generate_samples_parallel(self.sample_size,
                                                self.n_iters,
                                                burn_in=self.burn_in)
