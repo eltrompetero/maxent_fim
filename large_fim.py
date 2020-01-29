@@ -133,7 +133,7 @@ class Magnetization():
         # observables after perturbations
         si[i]  = (1-eps)*si[i] + eps
 
-        for j in delete(list(range(n)),i):
+        for j in np.delete(list(range(n)),i):
             if i<j:
                 ijix = unravel_index((i,j),n)
             else:
@@ -1434,7 +1434,9 @@ class Coupling3(Coupling):
         h : ndarray, None
         J : ndarray, None
         eps : float, 1e-7
+            Must be careful to set this relative to the precision of the MC sample.
         precompute : bool, True
+            Set up and do perturation calculation.
         n_cpus : int, None
         n_samples : int, 10_000_000
             Number of samples for Metropolis sampling.
@@ -1463,18 +1465,33 @@ class Coupling3(Coupling):
                           self.allStates))
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         self.coarseUix = np.unique(self.coarseInvix)
-
-        # cache triplet and quartet products
-        if self.iprint: print("Starting correlations calculation...")
-        self._triplets_and_quartets() 
-        if self.iprint: print("Done.")
     
         if precompute:
+            # cache triplet and quartet products
+            if self.iprint: print("Starting correlations calculation...")
+            self._triplets_and_quartets() 
+            if self.iprint: print("Done.")
+
             if iprint: print("Computing dJ...")
             self.compute_dJ()
             if iprint: print("Done.")
         else:
             self.dJ = None
+    
+    def __get_state__(self):
+        """Throw away numba dict objects. These will have to be calculated again.
+        """
+
+        state = self.__dict__.copy()
+        del state['pairs'], state['triplets'], state['quartets']
+
+        return state
+
+    def __set_state__(self, state):
+        """Numba typed dicts need to be computed again.
+        """
+        self.__dict__.update(state) 
+        # self._triplets_and_quartets()
 
     def _triplets_and_quartets(self):
         """Caching triplets and quartets for large systems is too memory intensive. Only
@@ -1541,7 +1558,7 @@ class Coupling3(Coupling):
         for k in range(self.kStates):
             si[i+k*n] = osi[i+k*n] - eps*(osi[i+k*n] - osi[a+k*n])
 
-        for j in delete(list(range(n)),i):
+        for j in np.delete(list(range(n)),i):
             if i<j:
                 ijix = unravel_index((i,j),n)
             else:
@@ -1922,8 +1939,10 @@ class Coupling3(Coupling):
                                                                       sisj=np.concatenate((si,sisj)),
                                                                       eps=eps/2,
                                                                       check_stability=False)
-            # print if relative change is more than .1% for any entry
-            relerr = np.log10(np.abs(dJ[n:]-dJtwiceEps[n:]))-np.log10(np.abs(dJ[n:]))
+            # print if relative change is more than .1% for any entry excepting zeros which are set by zeroed
+            # fields
+            zeroix = dJ==0
+            relerr = np.log10(np.abs(dJ[~zeroix]-dJtwiceEps[~zeroix])) - np.log10(np.abs(dJ[~zeroix]))
             if (relerr>-3).any():
                 if disp:
                     print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
@@ -1939,29 +1958,6 @@ class Coupling3(Coupling):
                 return dJ, errflag, (A, C), relerr
             return dJ, errflag, (A, C)
         return dJ, errflag
- 
-    def __get_state__(self):
-        # always close multiprocess pool when pickling
-        if 'pool' in self.__dict__.keys():
-            self.pool.close()
-            del self.pool
-
-        return {'n':self.n,
-                'k':self.kStates,
-                'h':self.hJ[:self.n*self.kStates],
-                'J':self.hJ[self.n*self.kStates:],
-                'dJ':self.dJ,
-                'eps':self.eps,
-                'n_cpus':self.n_cpus}
-
-    def __set_state__(self, state_dict):
-        self.__init__(state_dict['n'], state_dict['k'],
-                      h=state_dict['h'],
-                      J=state_dict['J'],
-                      eps=state_dict['eps'],
-                      precompute=False,
-                      n_cpus=state_dict.get('n_cpus',None))
-        self.dJ = state_dict['dJ']
 #end Coupling3
 
 
@@ -2086,6 +2082,12 @@ def calc_e(s, params):
     e = -fast_sum(params[s.shape[1]:],s)
     e -= np.sum(s*params[:s.shape[1]],1)
     return e
+
+@njit(cache=True)
+def jit_pair_combination(n):
+    for i in range(n-1):
+        for j in range(i+1,n):
+            yield i,j
 
 @njit(cache=True)
 def jit_triplets_and_quartets(n, kStates, allStates, p):
