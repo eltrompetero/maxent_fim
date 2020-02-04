@@ -1,12 +1,13 @@
 # ====================================================================================== #
 # Module for Median Voter Model.
-# Author: Eddie Lee, edl56@cornell.edu
+# Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 import numpy as np
 from coniii.utils import *
 from coniii.enumerate import fast_logsumexp
 from scipy.special import binom, factorial, comb
 from scipy.optimize import minimize, root
+
 
 
 def create_mvm_p(n, q):
@@ -96,7 +97,7 @@ def couplings(n,
     Returns
     -------
     ndarray
-        [Jmo, Joo] or (h, J) vector that can be passed to coniii.
+        [Jmo, Joo] or (h, J) vector that can be passed to ConIII.
     dict (optional)
         From scipy.minimize.
     """
@@ -1129,7 +1130,7 @@ def off_diag_fim(n, newJ1, newJ2, Ek, pk, epsdJ):
     return pk.dot((dE1-dE1.dot(pk))*(dE2-dE2.dot(pk))) / epsdJ**2 / np.log(2)
 
 def _fim(n):
-    """FIM for the MVM. Hard way of calculating it using IsingFisherCurvatureMethod2.
+    """FIM for the MVM. Hard way of calculating it using Coupling.
 
     This only allows us to check if we are computing the Hessian properly once we already
     have the change in couplings. If you wish to check whether the change in the couplings
@@ -1150,7 +1151,7 @@ def _fim(n):
         eigvec
     """
     
-    from .fim import IsingFisherCurvatureMethod2
+    from .fim import Coupling
 
     Jpair = couplings(n)
     # map the couplings to the full perturbation scheme
@@ -1160,11 +1161,11 @@ def _fim(n):
 
     _perturb_m_to_o, _perturb_o_to_m, _perturb_o_to_o = setup_coupling_perturbations(n, Jpair)
 
-    # Use IsingFisherCurvatureMethod2 to calculate FIM quickly.
-    isingdkl = IsingFisherCurvatureMethod2(n,
-                                           h=np.zeros(n),
-                                           J=squareform(square_J(J,n)),
-                                           precompute=False)
+    # Use Coupling to calculate FIM quickly.
+    isingdkl = Coupling(n,
+                        h=np.zeros(n),
+                        J=squareform(square_J(J,n)),
+                        precompute=False)
     dJ1 = np.insert(squareform(square_J(_perturb_m_to_o(J, True)[1],n)), 0, np.zeros(n))
     dJ2 = np.insert(squareform(square_J(_perturb_o_to_m(J, True)[1],n)), 0, np.zeros(n))
     dJ3 = np.insert(squareform(square_J(_perturb_o_to_o(J, True)[1],n)), 0, np.zeros(n))
@@ -1215,7 +1216,7 @@ def fim(n, epsdJ=1e-5):
     Ek, pk = logZ_to_Ek_pk(logPartitionList, kList)
     assert np.isclose(pk.sum(), 1)
     
-    # calculation entries of the FIM
+    # calculation entries of the FIM (in compressed representation)
     # fill diagonal elements
     smallfim = np.zeros((3,3))
     smallfim[0,0] = diag_fim(n, Jmo, Ek, pk, epsdJ)
@@ -1225,11 +1226,13 @@ def fim(n, epsdJ=1e-5):
     smallfim[0,1] = smallfim[1,0] = off_diag_fim(n, Jmo, Jom, Ek, pk, epsdJ)
     smallfim[0,2] = smallfim[2,0] = off_diag_fim(n, Jmo, Joo, Ek, pk, epsdJ)
     smallfim[1,2] = smallfim[2,1] = off_diag_fim(n, Joo, Jom, Ek, pk, epsdJ)
-
+    
+    # expand compressed representation into full-sized FIM
     fim = expand_small_fim(smallfim, n)
 
     eigval, eigvec = np.linalg.eigh(fim)
     sortix = np.argsort(eigval)[::-1][:2]
     eigval = eigval[sortix].real
     eigvec = eigvec[:,sortix].real
+
     return smallfim, eigval, eigvec, pk

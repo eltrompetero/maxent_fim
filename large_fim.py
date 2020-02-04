@@ -6,16 +6,19 @@
 import numpy as np
 from numba import njit, prange
 from coniii.utils import *
-from .utils import *
 from warnings import warn
 from itertools import combinations, product
 from coniii.enumerate import fast_logsumexp, mp_fast_logsumexp
-from multiprocess import Pool, cpu_count
+from multiprocess import Pool, cpu_count, set_start_method
 import mpmath as mp
 from scipy.sparse import coo_matrix
 from numba.typed import Dict as nDict
+from tempfile import mkdtemp
+from multiprocess import RawArray
+from .utils import *
 from .models import LargeIsing, LargePotts3
 from .fim import *
+#set_start_method('spawn')
 np.seterr(divide='ignore')
 
 
@@ -531,34 +534,25 @@ class Magnetization():
         kwargs['full_output'] = True
         epsDecreaseFactor = 10
         
-        try:
-            if self.n_cpus is None or self.n_cpus>1:
-                n_cpus = self.n_cpus or mp.cpu_count()
-                self.pool = mp.Pool(n_cpus,maxtasksperchild=1)
-
-            # start loop for finding optimal eps for Hessian with num diff
-            converged = False
+        # start loop for finding optimal eps for Hessian with num diff
+        converged = False
+        if high_prec:
+            prevHess, errflag, preverr = self._maj_curvature_high_prec(*args, **kwargs)
+        else:
+            prevHess, errflag, preverr = self._maj_curvature(*args, **kwargs)
+        kwargs['epsdJ'] /= epsDecreaseFactor
+        while (not converged) and errflag:
             if high_prec:
-                prevHess, errflag, preverr = self._maj_curvature_high_prec(*args, **kwargs)
+                hess, errflag, err = self._maj_curvature_high_prec(*args, **kwargs)
             else:
-                prevHess, errflag, preverr = self._maj_curvature(*args, **kwargs)
-            kwargs['epsdJ'] /= epsDecreaseFactor
-            while (not converged) and errflag:
-                if high_prec:
-                    hess, errflag, err = self._maj_curvature_high_prec(*args, **kwargs)
-                else:
-                    hess, errflag, err = self._maj_curvature(*args, **kwargs)
-                # end loop if error starts increasing again
-                if errflag and np.linalg.norm(err)<np.linalg.norm(preverr):
-                    prevHess = hess
-                    preverr = err
-                    kwargs['epsdJ'] /= epsDecreaseFactor
-                else:
-                    converged = True
-        finally:
-            if self.n_cpus is None or self.n_cpus>1:
-                self.pool.close()
-                del self.pool
+                hess, errflag, err = self._maj_curvature(*args, **kwargs)
+            # end loop if error starts increasing again
+            if errflag and np.linalg.norm(err)<np.linalg.norm(preverr):
+                prevHess = hess
+                preverr = err
+                kwargs['epsdJ'] /= epsDecreaseFactor
+            else:
+                converged = True
 
         hess = prevHess
         err = preverr
@@ -1547,14 +1541,14 @@ class Coupling3(Coupling):
         return dJ
 
     def _observables_after_perturbation(self, si, sisj, i, a, eps):
-        """Make two spins more like one another.
+        """Make one spin more like another.
         """
         
         n = self.n
         osi = si.copy()
         osisj = sisj.copy()
         
-        # mimic average values
+        # mimic average magnetization
         for k in range(self.kStates):
             si[i+k*n] = osi[i+k*n] - eps*(osi[i+k*n] - osi[a+k*n])
 
@@ -1616,8 +1610,6 @@ class Coupling3(Coupling):
         return np.concatenate((siNew, sisjNew)), True
    
     def _maj_curvature(self,
-                       hJ=None,
-                       dJ=None,
                        epsdJ=1e-7,
                        check_stability=False,
                        rtol=1e-3,
@@ -1630,14 +1622,12 @@ class Coupling3(Coupling):
         of k votes in the majority.
 
         Use single step finite difference method to estimate Hessian.
+
+        Memory map is used to store results during computation. Shared memory is used to
+        reduce time spent serializing parameters.
         
         Parameters
         ----------
-        hJ : ndarray, None
-            Ising model parameters.
-        dJ : ndarray, None
-            Linear perturbations in parameter space corresponding to Hessian at given hJ.
-            These can be calculuated using self.solve_linearized_perturbation().
         epsdJ : float, 1e-4
             Step size for taking linear perturbation wrt parameters.
         check_stability : bool, False
@@ -1658,26 +1648,64 @@ class Coupling3(Coupling):
         float (optional)
             Norm difference between hessian with step size eps and eps/2.
         """
-
+        
         n = self.n
-        if hJ is None:
-            hJ = self.hJ
-        E = calc_all_energies(n, self.kStates, self.allStates, hJ)
+        E = calc_all_energies(n, self.kStates, self.allStates, self.hJ)
         logZ = fast_logsumexp(-E)[0]
         logsumEk = self.logp2pk(E, self.coarseUix, self.coarseInvix)
-        p = np.exp(logsumEk - logZ)
-        assert np.isclose(p.sum(),1), p.sum()
-        if dJ is None:
-            dJ = self.dJ
-            assert self.dJ.shape[1]==(self.kStates*n+n*(n-1)//2)
         if iprint:
             print('Done with preamble.')
+        
+        # set up multiprocessing
+        # shared memory on drive for FIM temporary results
+        mmfname = '%s/hess.dat'%mkdtemp()
+        mmhess = np.memmap(mmfname,
+                           dtype=np.float64,
+                           shape=(len(self.dJ),len(self.dJ)),
+                           mode='w+')
+        mmhess[:,:] = np.nan  # default value to make it easy to check saved results
 
+        # shared memory for large arrays, these must be global to be accessed via inheritance
+        global rdJ, rpk, rp, rAllStates, rcoarseUix, rcoarseInvix
+        rdJ = RawArray('d', self.dJ.size)
+        dJ = np.frombuffer(rdJ).reshape(self.dJ.shape)
+        rpk = RawArray('d', logsumEk.size)
+        pk = np.frombuffer(rpk)
+        rp = RawArray('d', self.p.size)
+        p = np.frombuffer(rp)
+        rAllStates = RawArray('b', self.allStates.size)
+        allStates = np.frombuffer(rAllStates, dtype=np.int8).reshape(self.allStates.shape)
+        rcoarseUix = RawArray('l', self.coarseUix.size)
+        coarseUix = np.frombuffer(rcoarseUix, dtype=np.int64)
+        rcoarseInvix = RawArray('l', self.coarseInvix.size)
+        coarseInvix = np.frombuffer(rcoarseInvix, dtype=np.int64)
+        
+        # fill in shared memory arrays
+        np.copyto(dJ, self.dJ)
+        np.copyto(pk, np.exp(logsumEk - logZ))
+        np.copyto(p, self.p)
+        np.copyto(allStates, self.allStates)
+        np.copyto(coarseUix, self.coarseUix)
+        np.copyto(coarseInvix, self.coarseInvix)
+
+        shapesDict = {'dJ':dJ.shape,
+                      'allStates':allStates.shape}  # necessary for reading in from mem
+
+        assert np.isclose(pk.sum(),1), pk.sum()
+        
+        # calculation
         # diagonal entries of hessian
-        def diag(i, hJ=hJ, dJ=dJ, p=self.p, pk=p, logp2pk=self.logp2pk,
-                 uix=self.coarseUix, invix=self.coarseInvix,
-                 n=self.n, E=E, logZ=logZ, kStates=self.kStates,
-                 allStates=self.allStates):
+        def diag(i, hJ=self.hJ, logp2pk=self.logp2pk,
+                 n=self.n, logZ=logZ, kStates=self.kStates,
+                 shapesDict=shapesDict):
+            # load arrays from shared memory
+            dJ = np.frombuffer(rdJ).reshape(shapesDict['dJ'])
+            pk = np.frombuffer(rpk)
+            p = np.frombuffer(rp)
+            allStates = np.frombuffer(rAllStates, dtype=np.int8).reshape(shapesDict['allStates'])
+            uix = np.frombuffer(rcoarseUix, dtype=np.int64)
+            invix = np.frombuffer(rcoarseInvix, dtype=np.int64)
+
             # round eps step to machine precision
             mxix = np.abs(dJ[i]).argmax()
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
@@ -1690,15 +1718,32 @@ class Coupling3(Coupling):
             dd = num / np.log(2) / epsdJ_**2
             if iprint and np.isnan(dd):
                 print('nan for diag', i, epsdJ_)
-            return dd
-
-        # off-diagonal entries of hessian
-        def off_diag(args, hJ=hJ, dJ=dJ, p=self.p, pk=p, logp2pk=self.logp2pk,
-                     uix=self.coarseUix, invix=self.coarseInvix,
-                     n=self.n, E=E, logZ=logZ, kStates=self.kStates,
-                     allStates=self.allStates):
-            i, j = args
             
+            # write result to memmap
+            mmhessEntry = np.memmap(mmfname,
+                                    dtype=np.float64,
+                                    mode='r+',
+                                    shape=(1,),
+                                    offset=(i * len(dJ) + i) * 8)
+            mmhessEntry[0] = dd
+            del mmhessEntry
+
+            return dd
+         
+        # off-diagonal entries of hessian
+        def off_diag(args, hJ=self.hJ, logp2pk=self.logp2pk,
+                     n=self.n, logZ=logZ, kStates=self.kStates,
+                     shapesDict=shapesDict):
+            i, j = args
+
+            # load arrays from shared memory
+            dJ = np.frombuffer(rdJ).reshape(shapesDict['dJ'])
+            pk = np.frombuffer(rpk)
+            p = np.frombuffer(rp)
+            allStates = np.frombuffer(rAllStates, dtype=np.int8).reshape(shapesDict['allStates'])
+            uix = np.frombuffer(rcoarseUix, dtype=np.int64)
+            invix = np.frombuffer(rcoarseInvix, dtype=np.int64)
+
             # round eps step to machine precision
             mxix = np.abs(dJ[i]).argmax()
             newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
@@ -1721,10 +1766,33 @@ class Coupling3(Coupling):
             dd = num / np.log(2) / (epsdJi * epsdJj)
             if iprint and np.isnan(dd):
                 print('nan for off diag', args, epsdJi, epsdJj)
+            
+            # write result to memmap
+            mmhessEntry = np.memmap(mmfname,
+                                    dtype=np.float64,
+                                    mode='r+',
+                                    shape=(1,),
+                                    offset=(i * len(dJ) + j) * 8)
+            mmhessEntry[0] = dd
+            del mmhessEntry
+
             return dd
         
         hess = np.zeros((len(dJ),len(dJ)))
-        if not 'pool' in self.__dict__.keys():
+        
+        if self.n_cpus is None or self.n_cpus>1:
+            n_cpus = self.n_cpus or cpu_count()
+            with Pool(n_cpus, maxtasksperchild=1) as pool:
+                if calc_diag:
+                    hess[np.eye(len(dJ))==1] = pool.map(diag, range(len(dJ)))
+                    if iprint:
+                        print("Done with diag.")
+                if calc_off_diag:
+                    hess[np.triu_indices_from(hess,k=1)] = pool.map(off_diag,
+                                                                    combinations(range(len(dJ)),2))
+                    if iprint:
+                        print("Done with off diag.")
+        else:
             warn("Not using multiprocess can lead to excessive memory usage.")
             if calc_diag:
                 for i in range(len(dJ)):
@@ -1738,16 +1806,7 @@ class Coupling3(Coupling):
                         print("Done with off diag (%d,%d)."%(i,j))
                 if iprint:
                     print("Done with off diag.")
-        else:
-            if calc_diag:
-                hess[np.eye(len(dJ))==1] = self.pool.map(diag, range(len(dJ)))
-                if iprint:
-                    print("Done with diag.")
-            if calc_off_diag:
-                hess[np.triu_indices_from(hess,k=1)] = self.pool.map(off_diag,
-                                                                     combinations(range(len(dJ)),2))
-                if iprint:
-                    print("Done with off diag.")
+
 
         if calc_off_diag:
             # fill in lower triangle
@@ -1763,8 +1822,6 @@ class Coupling3(Coupling):
             hess2 = self._maj_curvature(epsdJ=epsdJ/2,
                                         check_stability=False,
                                         iprint=iprint,
-                                        hJ=hJ,
-                                        dJ=dJ,
                                         calc_diag=calc_diag,
                                         calc_off_diag=calc_off_diag)
             err = hess - hess2
@@ -1782,7 +1839,8 @@ class Coupling3(Coupling):
         else:
             errflag = None
             err = None
-
+        
+        del mmhess
         if not full_output:
             return hess
         return hess, errflag, err
@@ -1959,6 +2017,7 @@ class Coupling3(Coupling):
             return dJ, errflag, (A, C)
         return dJ, errflag
 #end Coupling3
+
 
 
 # ============= #
