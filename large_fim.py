@@ -18,7 +18,6 @@ from multiprocess import RawArray
 from .utils import *
 from .models import LargeIsing, LargePotts3
 from .fim import *
-#set_start_method('spawn')
 np.seterr(divide='ignore')
 
 
@@ -1615,6 +1614,7 @@ class Coupling3(Coupling):
                        rtol=1e-3,
                        full_output=False,
                        calc_off_diag=True,
+                       off_diag_ix=None,
                        calc_diag=True,
                        iprint=True):
         """Calculate the hessian of the KL divergence (Fisher information metric) w.r.t.
@@ -1635,6 +1635,10 @@ class Coupling3(Coupling):
             Relative tolerance for each entry in Hessian when checking stability.
         full_output : bool, False
         calc_off_diag : bool, True
+        off_diag_ix : list of tuples, None
+            If list of tuples, dictates which elements of off-diagonal to calculate. Since
+            the matrix must be symmetric, no combinations of (i,j) indices can be repeated
+            and i<j.
         calc_diag : bool, True
         iprint : bool, True
             
@@ -1653,9 +1657,11 @@ class Coupling3(Coupling):
         E = calc_all_energies(n, self.kStates, self.allStates, self.hJ)
         logZ = fast_logsumexp(-E)[0]
         logsumEk = self.logp2pk(E, self.coarseUix, self.coarseInvix)
-        if iprint:
-            print('Done with preamble.')
-        
+        # check if calc_off_diag specifies calculating all entries or just specific ones
+        if off_diag_ix:
+            assert all([i<j for i,j in off_diag_ix])
+            assert np.unique(off_diag_ix, axis=0).shape[0]==len(off_diag_ix)
+                
         # set up multiprocessing
         # shared memory on drive for FIM temporary results
         mmfname = '%s/hess.dat'%mkdtemp()
@@ -1692,6 +1698,8 @@ class Coupling3(Coupling):
                       'allStates':allStates.shape}  # necessary for reading in from mem
 
         assert np.isclose(pk.sum(),1), pk.sum()
+        if iprint:
+            print('Done with preamble.')
         
         # calculation
         # diagonal entries of hessian
@@ -1788,8 +1796,11 @@ class Coupling3(Coupling):
                     if iprint:
                         print("Done with diag.")
                 if calc_off_diag:
-                    hess[np.triu_indices_from(hess,k=1)] = pool.map(off_diag,
-                                                                    combinations(range(len(dJ)),2))
+                    if off_diag_ix:
+                        hess[tuple(zip(*off_diag_ix))] = pool.map(off_diag, off_diag_ix)
+                    else:
+                        hess[np.triu_indices_from(hess,k=1)] = pool.map(off_diag,
+                                                                        combinations(range(len(dJ)), 2))
                     if iprint:
                         print("Done with off diag.")
         else:
@@ -1800,32 +1811,31 @@ class Coupling3(Coupling):
                 if iprint:
                     print("Done with diag.")
             if calc_off_diag:
-                for i,j in combinations(range(len(dJ)),2):
+                for i,j in off_diag_ix:
                     hess[i,j] = off_diag((i,j))
                     if iprint:
                         print("Done with off diag (%d,%d)."%(i,j))
                 if iprint:
                     print("Done with off diag.")
 
-
         if calc_off_diag:
             # fill in lower triangle
             hess += hess.T
             hess[np.eye(len(dJ))==1] /= 2
 
-        # check for precision problems
-        assert ~np.isnan(hess).any(), hess
-        assert ~np.isinf(hess).any(), hess
-
         if check_stability:
             if iprint: print("Checking stability...")
             hess2 = self._maj_curvature(epsdJ=epsdJ/2,
-                                        check_stability=False,
-                                        iprint=iprint,
-                                        calc_diag=calc_diag,
-                                        calc_off_diag=calc_off_diag)
-            err = hess - hess2
-            if (np.abs(err/hess) > rtol).any():
+                                check_stability=False,
+                                iprint=iprint,
+                                calc_diag=calc_diag,
+                                calc_off_diag=calc_off_diag,
+                                off_diag_ix=off_diag_ix)
+            # check stability for entries that have not been set to np.nan (either on purpose or because of
+            # precision problems)
+            nanix = ~(np.isnan(hess) | np.isnan(hess2))
+            err = hess[nanix] - hess2[nanix]
+            if (np.abs(err/hess[nanix]) > rtol).any():
                 errflag = 1
                 if iprint:
                     msg = ("Finite difference estimate has not converged with rtol=%f. "+
@@ -1839,8 +1849,11 @@ class Coupling3(Coupling):
         else:
             errflag = None
             err = None
+
+        # get rid of memory map
+        del mmhess  
         
-        del mmhess
+        # return
         if not full_output:
             return hess
         return hess, errflag, err
