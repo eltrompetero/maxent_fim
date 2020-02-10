@@ -9,12 +9,55 @@ from .fim import Coupling  # for compatibility with old pickles
 import importlib
 from warnings import warn
 from itertools import combinations
+import os
+import pickle
 np.seterr(divide='ignore')
 
 
 # ========= #
 # Functions #
 # ========= #
+def combine_fim_files(*args):
+    """Combine calculations of FIM from multiple different files.
+
+    Parameters
+    ----------
+    *args : str
+        Each the name of a pickle with an 'fim' variable.
+
+    Returns
+    -------
+    ndarray
+    bool
+        True if everything works out fine.
+    """
+
+    allGood = True
+    
+    for i,f in enumerate(args):
+        assert os.path.isfile(f)
+        thisfim = pickle.load(open(f,'rb'))['fim']
+
+        if i==0:
+            fim = thisfim
+        else:
+            count = (fim[thisfim!=0]!=0).sum()
+            if count>fim.shape[0]: 
+                warn("%d off-diagonal entries appear twice."%count)
+                allGood = False
+            if not np.array_equal(thisfim.diagonal(), fim.diagonal()):
+                warn("Diagonals do not match.")
+                allGood = False
+            
+            # copy in elements
+            fim[thisfim!=0] = thisfim[thisfim!=0]
+    
+    if (fim==0).any():
+        warn("Not every entry filled.")
+        allGood = False
+
+    return fim, allGood
+
 def refine_maxent_solution(n, sisj, J0,
                            full_output=True,
                            tol=1e-10,
