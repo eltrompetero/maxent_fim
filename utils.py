@@ -10,13 +10,40 @@ import importlib
 from warnings import warn
 from itertools import combinations
 import os
-import pickle
+import pickle, dill
 np.seterr(divide='ignore')
 
 
 # ========= #
 # Functions #
 # ========= #
+def load_Coupling3(fname):
+    """Load a model from large_fim that has been pickled. Regular pickling routine does
+    not work form them!
+
+    Parameters
+    ----------
+    fname : str
+        name of pickled file
+
+    Returns
+    -------
+    """
+    
+    from .large_fim import Coupling3
+    assert os.path.isfile(fname)
+
+    # load model. must initialize a template instance first
+    n = 5
+    h = np.concatenate((np.random.normal(size=n*2, scale=.5), np.zeros(n)))
+    J = np.random.normal(size=n*(n-1)//2, scale=1/n)
+    model = Coupling3(n, h, J, n_samples=100, eps=1e-4, precompute=False, iprint=False)
+    state = dill.load(open(fname,'rb'))
+    model.__set_state__(state) 
+    n = model.n
+    
+    return model
+
 def combine_fim_files(*args):
     """Combine calculations of FIM from multiple different files.
 
