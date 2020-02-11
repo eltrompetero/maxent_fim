@@ -17,6 +17,25 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def vec2mat(vec):
+    """Reshape eigenvector detailing results of pairwise perturbations into a matrix.
+
+    Parameters
+    ----------
+    vec : ndarray
+
+    Returns
+    -------
+    ndarray
+        Pairwise perturbation matrix from FIM eigenvector.
+    """
+
+    n = (1+np.sqrt(1+4*vec.size)) / 2
+    assert int(n)==n, "Cannot be reshaped into n,n pairwise matrix with zeroed diagonal."
+    n = int(n)
+
+    return np.insert(vec, range(0, n*n, n), 0).reshape(n,n)
+
 def load_Coupling3(fname):
     """Load a model from large_fim that has been pickled. Regular pickling routine does
     not work form them!
