@@ -1351,15 +1351,7 @@ class Coupling(Magnetization):
             Observables <si> and <sisj> after perturbation.
         """
         
-        if not hasattr(i,'__len__'):
-            i = (i,)
-        if not hasattr(a,'__len__'):
-            a = (a,)
-        for (i_,a_) in zip(i,a):
-            assert i_!=a_
-        if not hasattr(eps,'__len__'):
-            eps = eps or self.eps
-            eps = [eps]*len(i)
+        eps = eps or self.eps
         n = self.n
         si = self.sisj[:n]
         sisj = self.sisj[n:]
@@ -1368,8 +1360,7 @@ class Coupling(Magnetization):
         siNew = si.copy()
         sisjNew = sisj.copy()
         
-        for i_,a_,eps_ in zip(i,a,eps):
-            jit_observables_after_perturbation_plus(n, siNew, sisjNew, i_, a_, eps_)
+        jit_observables_after_perturbation_plus(n, siNew, sisjNew, i, a, eps)
 
         return np.concatenate((siNew, sisjNew))
     
@@ -1445,7 +1436,7 @@ class Coupling(Magnetization):
                                        full_output=False,
                                        eps=None,
                                        check_stability=True,
-                                       iprint=True):
+                                       iprint=False):
         """Consider a perturbation to a single spin.
         
         Parameters
@@ -1470,14 +1461,50 @@ class Coupling(Magnetization):
         """
         
         eps = eps or self.eps
+        errflag = 0
+
+        Cplus = self.observables_after_perturbation(iStar, aStar, eps=eps)
+        Cminus = self.observables_after_perturbation(iStar, aStar, eps=-eps)
+        Aplus = self.calc_A(Cplus)
+        Aminus = self.calc_A(Cminus)
+    
+        Cplus -= self.sisj
+        Cminus -= self.sisj
+        # calculate change in parameters
+        # factor out linear dependence on eps
+        dJ = np.linalg.solve(Aplus+Aminus, Cplus-Cminus)/eps
+
+        if check_stability:
+            # double epsilon and make sure solution does not change by a large amount
+            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, aStar,
+                                                                      eps=eps/2,
+                                                                      check_stability=False)
+            # print if relative change is more than .1% for any entry
+            relerr = np.log10(np.abs(dJ-dJtwiceEps)) - np.log10(np.abs(dJ))
+            nanix = np.isnan(relerr)
+            if (relerr[~nanix]>-3).any():
+                if iprint:
+                    print("Unstable solution. Recommend shrinking eps. Max err=%E."%(10**relerr.max()))
+                errflag = 2
+        
+        if np.linalg.cond(Aplus)>1e15:
+            warn("A is badly conditioned.")
+            # this takes precedence over relerr over threshold
+            errflag = 1
+        
+        if full_output:
+            if check_stability:
+                return dJ, errflag, (Aplus, Cplus), relerr
+            return dJ, errflag, (Aplus, Cplus)
+        return dJ, errflag
+
+    def calc_A(self, C):
         n = self.n
         p = self.p
         si = self.sisj[:n]
         sisj = self.sisj[n:]
         A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2))
-        C = self.observables_after_perturbation(iStar, aStar, eps=eps)
-        errflag = 0
-        
+
         # mean constraints
         for i in range(n):
             for k in range(n):
@@ -1499,35 +1526,8 @@ class Coupling(Magnetization):
                 A[n+ijcount,k] = self.triplets[(i,j,k)].dot(p) - C[n+ijcount]*si[k]
             for klcount,(k,l) in enumerate(combinations(range(n),2)):
                 A[n+ijcount,n+klcount] = self.quartets[(i,j,k,l)].dot(p) - C[n+ijcount]*sisj[klcount]
-    
-        C -= self.sisj
-        # calculate change in parameters
-        # factor out linear dependence on eps
-        dJ = np.linalg.solve(A,C)/eps
 
-        if check_stability:
-            # double epsilon and make sure solution does not change by a large amount
-            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, aStar,
-                                                                      eps=eps/2,
-                                                                      check_stability=False)
-            # print if relative change is more than .1% for any entry
-            relerr = np.log10(np.abs(dJ-dJtwiceEps)) - np.log10(np.abs(dJ))
-            nanix = np.isnan(relerr)
-            if (relerr[~nanix]>-3).any():
-                if iprint:
-                    print("Unstable solution. Recommend shrinking eps. Max err=%E."%(10**relerr.max()))
-                errflag = 2
-        
-        if np.linalg.cond(A)>1e15:
-            warn("A is badly conditioned.")
-            # this takes precedence over relerr over threshold
-            errflag = 1
-
-        if full_output:
-            if check_stability:
-                return dJ, errflag, (A, C), relerr
-            return dJ, errflag, (A, C)
-        return dJ, errflag
+        return A
 #end Coupling
 
 
