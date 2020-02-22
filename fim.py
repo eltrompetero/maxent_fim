@@ -1281,13 +1281,13 @@ class MagnetizationConstant(Magnetization):
 class Coupling(Magnetization):
     """Perturbation that increases correlation between pairs of spins.
     """
-    def compute_dJ(self, p=None, sisj=None):
+    def compute_dJ(self):
         # precompute linear change to parameters for small perturbation
         dJ = np.zeros((self.n*(self.n-1), self.n+(self.n-1)*self.n//2))
         counter = 0
         for i in range(self.n):
             for a in np.delete(range(self.n),i):
-                dJ[counter], errflag = self.solve_linearized_perturbation(i, a, p=p, sisj=sisj)
+                dJ[counter], errflag = self.solve_linearized_perturbation(i, a)
                 counter += 1
         return dJ
 
@@ -1442,23 +1442,20 @@ class Coupling(Magnetization):
         return dJ, errflag
 
     def _solve_linearized_perturbation(self, iStar, aStar,
-                                      p=None,
-                                      sisj=None,
-                                      full_output=False,
-                                      eps=None,
-                                      check_stability=True,
-                                      disp=False):
+                                       full_output=False,
+                                       eps=None,
+                                       check_stability=True,
+                                       iprint=True):
         """Consider a perturbation to a single spin.
         
         Parameters
         ----------
         iStar : int
         aStar : int
-        p : ndarray, None
-        sisj : ndarray, None
         full_output : bool, False
         eps : float, None
         check_stability : bool, False
+        iprint : bool, False
 
         Returns
         -------
@@ -1474,14 +1471,9 @@ class Coupling(Magnetization):
         
         eps = eps or self.eps
         n = self.n
-        if p is None:
-            p = self.p
-        if sisj is None:
-            si = self.sisj[:n]
-            sisj = self.sisj[n:]
-        else:
-            si = sisj[:n]
-            sisj = sisj[n:]
+        p = self.p
+        si = self.sisj[:n]
+        sisj = self.sisj[n:]
         A = np.zeros((n+n*(n-1)//2, n+n*(n-1)//2))
         C = self.observables_after_perturbation(iStar, aStar, eps=eps)
         errflag = 0
@@ -1509,21 +1501,21 @@ class Coupling(Magnetization):
                 A[n+ijcount,n+klcount] = self.quartets[(i,j,k,l)].dot(p) - C[n+ijcount]*sisj[klcount]
     
         C -= self.sisj
+        # calculate change in parameters
         # factor out linear dependence on eps
         dJ = np.linalg.solve(A,C)/eps
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
             dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, aStar,
-                                                                      p=p,
-                                                                      sisj=np.concatenate((si,sisj)),
                                                                       eps=eps/2,
                                                                       check_stability=False)
             # print if relative change is more than .1% for any entry
-            relerr = np.log10(np.abs(dJ-dJtwiceEps))-np.log10(np.abs(dJ))
-            if (relerr>-3).any():
-                if disp:
-                    print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
+            relerr = np.log10(np.abs(dJ-dJtwiceEps)) - np.log10(np.abs(dJ))
+            nanix = np.isnan(relerr)
+            if (relerr[~nanix]>-3).any():
+                if iprint:
+                    print("Unstable solution. Recommend shrinking eps. Max err=%E."%(10**relerr.max()))
                 errflag = 2
         
         if np.linalg.cond(A)>1e15:
