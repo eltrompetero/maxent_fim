@@ -35,7 +35,7 @@ def test_Coupling3(n=5, disp=True, time=False):
             err[counter] = np.linalg.norm(sampledGrad-trueGrad)
             counter += 1
     err = err.reshape(n,n-1)
-    assert err.max()<0.007
+    assert err.max()<0.007, err.max()
     
     # compute Hessian directly and compare with (better/more efficient/more precise) code
     # here, a pairwise perturbation from any i to a is possible, leading to n*(n-1)

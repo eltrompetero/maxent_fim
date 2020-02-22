@@ -1501,15 +1501,12 @@ class Coupling3(Coupling):
         self.triplets = dict(triplets)
         self.quartets = dict(quartets)
 
-    def compute_dJ(self, p=None, sisj=None, n_cpus=None):
+    def compute_dJ(self, n_cpus=None):
         """Compute linear change to parameters for small perturbation.
         
         Parameters
         ----------
-        p : ndarray, None
-        sisj : ndarray, None
-        n_cpus : int, 0
-            This is not any faster with multiprocessing.
+        n_cpus : int, None
 
         Returns
         -------
@@ -1537,14 +1534,14 @@ class Coupling3(Coupling):
                 quartets[k] = v
             self.pairs, self.triplets, self.quartets = pairs, triplets, quartets
 
-            return self.solve_linearized_perturbation(i, a, p=p, sisj=sisj)[0]
+            return self.solve_linearized_perturbation(i, a)[0]
 
         def args():
             for i in range(self.n):
                 for a in np.delete(range(self.n),i):
                     yield (i,a)
         
-        if self.n_cpus is None or self.n_cpus>1:
+        if n_cpus is None or n_cpus>1:
             if self.iprint: print("Using multiprocessing...")
             with threadpool_limits(limits=1, user_api='blas'):
                 with Pool(n_cpus) as pool:
@@ -1968,8 +1965,6 @@ class Coupling3(Coupling):
         return (soln - hJ0)/(self.eps)
 
     def _solve_linearized_perturbation(self, iStar, aStar,
-                                       p=None,
-                                       sisj=None,
                                        full_output=False,
                                        eps=None,
                                        check_stability=True,
@@ -2001,19 +1996,19 @@ class Coupling3(Coupling):
         eps = eps or self.eps
         n = self.n
         kStates = self.kStates
-        if p is None:
-            p = self.p
-        if sisj is None:
-            si = self.sisj[:n*kStates]
-            sisj = self.sisj[kStates*n:]
-        else:
-            si = sisj[:kStates*n]
-            sisj = sisj[kStates*n:]
+        p = self.p
+        si = self.sisj[:n*kStates]
+        sisj = self.sisj[kStates*n:]
+
         # matrix that will be multiplied by the vector of canonical parameter perturbations
         C, perturb_up = self.observables_after_perturbation(iStar, aStar, eps=eps)
         errflag = 0
-
-        A = calc_A(n, kStates, self.allStates, p, si, sisj, self.pairs, self.triplets, self.quartets, C)
+        
+        if type(self.pairs) is dict:
+            warn("Using slower version of calc_A.")
+            A = calc_A(n, kStates, self.allStates, p, si, sisj, self.pairs, self.triplets, self.quartets, C)
+        else:
+            A = jit_calc_A(n, kStates, self.allStates, p, si, sisj, self.pairs, self.triplets, self.quartets, C)
         C -= self.sisj
         # factor out linear dependence on eps
         dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
@@ -2023,8 +2018,6 @@ class Coupling3(Coupling):
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
             dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, aStar,
-                                                                      p=p,
-                                                                      sisj=np.concatenate((si,sisj)),
                                                                       eps=eps/2,
                                                                       check_stability=False)
             # print if relative change is more than .1% for any entry excepting zeros which are set by zeroed
@@ -2172,7 +2165,7 @@ def calc_e(s, params):
     e -= np.sum(s*params[:s.shape[1]],1)
     return e
 
-@njit(cache=True)
+@njit
 def jit_pair_combination(n):
     for i in range(n-1):
         for j in range(i+1,n):
@@ -2208,7 +2201,7 @@ def jit_triplets_and_quartets(n, kStates, allStates, p):
     return pairs, triplets, quartets
 
 @njit(cache=True)
-def calc_A(n, kStates, allStates, p, si, sisj, pairs, triplets, quartets, C):
+def jit_calc_A(n, kStates, allStates, p, si, sisj, pairs, triplets, quartets, C):
     """Calculate matrix A in the linearized problem for a specific given perturbation
     to the means and pairwise correlations captured in vector C.
 
@@ -2226,6 +2219,62 @@ def calc_A(n, kStates, allStates, p, si, sisj, pairs, triplets, quartets, C):
     pairs : numba.dict
     triplets : numba.dict
     quartets : numba.dict
+    C : ndarray
+
+    Returns
+    -------
+    ndarray
+        The matrix A.
+    """
+
+    A = np.zeros((kStates*n+n*(n-1)//2, (kStates-1)*n+n*(n-1)//2))
+
+    # mean constraints corresponding to odd order correlations 
+    # remember that A does not include changes in last set of fields (corresponding to the last Potts state)
+    # i is the index of the perturbed spin
+    for i in prange(kStates*n):
+        for j in prange((kStates-1)*n):
+            if i==j:
+                # p(s_i=gamma) - p(s_i=gamma) * p(s_i=zeta)
+                A[i,j] = si[i] - C[i]*si[i]
+            elif (i%n)==(j%n):  # if they're in different states but the same spin
+                A[i,j] = -C[i]*si[j]
+            else:  # if they're different spins in different states
+                if (i%n)<(j%n):  # just because there is a fixed ordering to the indexing of pairs
+                    A[i,j] = pairs[(i//n,i%n,j//n,j%n)] - C[i] * si[j]
+                else:
+                    A[i,j] = pairs[(j//n,j%n,i//n,i%n)] - C[i] * si[j]
+
+        for klcount,(k,l) in enumerate(jit_pair_combination(n)):
+            A[i,(kStates-1)*n+klcount] = triplets[(i//n,i%n,k,l)] - C[i] * sisj[klcount]
+    
+    # pair constraints
+    for ijcount,(i,j) in enumerate(jit_pair_combination(n)):
+        for k in prange((kStates-1)*n):
+            A[kStates*n+ijcount,k] = triplets[(k//n,k%n,i,j)] - C[kStates*n+ijcount] * si[k]
+
+        for klcount,(k,l) in enumerate(jit_pair_combination(n)):
+            A[kStates*n+ijcount,(kStates-1)*n+klcount] = quartets[(i,j,k,l)] - C[kStates*n+ijcount] * sisj[klcount]
+    return A
+
+def calc_A(n, kStates, allStates, p, si, sisj, pairs, triplets, quartets, C):
+    """Calculate matrix A in the linearized problem for a specific given perturbation
+    to the means and pairwise correlations captured in vector C.
+
+    The linear problem that will be solved for dJ is
+        A * dJ = C
+
+    Parameters
+    ----------
+    n : int
+    kStates : int
+    allStates : ndarray
+    p : ndarray
+    si : ndarray
+    sisj : ndarray
+    pairs : dict
+    triplets : dict
+    quartets : dict
     C : ndarray
 
     Returns

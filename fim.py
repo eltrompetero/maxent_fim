@@ -2487,14 +2487,17 @@ class MagCoupling(Magnetization):
 
 
 class Coupling3(Coupling):
-    """Method2 (pairwise correlations) tweaked for ternary states like C. elegans."""
+    """Pairwise perturbations tweaked for ternary states like C. elegans."""
     def __init__(self, n, 
-                 h=None, J=None, eps=1e-7, precompute=True, n_cpus=None):
+                 h=None,
+                 J=None,
+                 eps=1e-7,
+                 precompute=True,
+                 n_cpus=None):
         """
         Parameters
         ----------
         n : int
-        kStates : int
         h : ndarray, None
         J : ndarray, None
         eps : float, 1e-7
@@ -2523,14 +2526,18 @@ class Coupling3(Coupling):
         #self.majdivisions, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         
-        # cache triplet and quartet products
-        self._triplets_and_quartets() 
-    
         if precompute:
-            self.dJ = self.compute_dJ()
+            # cache triplet and quartet products
+            if self.iprint: print("Starting correlations calculation...")
+            self._triplets_and_quartets() 
+            if self.iprint: print("Done.")
+
+            if iprint: print("Computing dJ...")
+            self.compute_dJ()
+            if iprint: print("Done.")
         else:
             self.dJ = None
-
+ 
     def _triplets_and_quartets(self):
         from itertools import product
 

@@ -117,6 +117,7 @@ class LargePotts3():
         self.burn_in = burn_in
         self.rng = rng or np.random
         self.iprint = iprint
+        self.calc_e, self.calc_observables = cutils.define_potts_helper_functions(3)[:2]
 
         self.update_multipliers(multipliers)
 
@@ -132,11 +133,10 @@ class LargePotts3():
         """
         
         n = self.n
-        calc_e, calc_observables = cutils.define_potts_helper_functions(3)[:2]
         self.multipliers = np.concatenate(multipliers)
 
         if self.iprint: print("Generating samples...")
-        self.sampler = Potts3(n, self.multipliers, calc_e, rng=self.rng)
+        self.sampler = Potts3(n, self.multipliers, self.calc_e, rng=self.rng)
         self.sampler.generate_samples_parallel(self.sample_size,
                                                self.n_iters,
                                                burn_in=self.burn_in)
