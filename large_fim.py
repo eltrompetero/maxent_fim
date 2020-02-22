@@ -15,6 +15,7 @@ from scipy.sparse import coo_matrix
 from numba.typed import Dict as nDict
 from tempfile import mkdtemp
 from multiprocess import RawArray
+from threadpoolctl import threadpool_limits
 from .utils import *
 from .models import LargeIsing, LargePotts3
 from .fim import *
@@ -1417,7 +1418,7 @@ class Coupling3(Coupling):
                  eps=1e-7,
                  precompute=True,
                  n_cpus=None,
-                 n_samples=10_000_000,
+                 n_samples=100_000,
                  rng=None,
                  iprint=True):
         """
@@ -1494,9 +1495,13 @@ class Coupling3(Coupling):
         kStates = self.kStates
         allStates = self.allStates
 
-        self.pairs, self.triplets, self.quartets = jit_triplets_and_quartets(n, kStates, allStates, self.p)
+        pairs, triplets, quartets = jit_triplets_and_quartets(n, kStates, allStates, self.p)
+        # copy these into normal python dicts
+        self.pairs = dict(pairs)
+        self.triplets = dict(triplets)
+        self.quartets = dict(quartets)
 
-    def compute_dJ(self, p=None, sisj=None, n_cpus=0):
+    def compute_dJ(self, p=None, sisj=None, n_cpus=None):
         """Compute linear change to parameters for small perturbation.
         
         Parameters
@@ -1511,36 +1516,49 @@ class Coupling3(Coupling):
         dJ : ndarray
             (n_perturbation_parameters, n_maxent_parameters)
         """
-
+        
         n_cpus = n_cpus or self.n_cpus
 
         def wrapper(params):
+            """Make spin i more like spin a."""
+            from numba import typed, types
+
             i, a = params
+
+            # convert dicts to numba typed dicts for calc_A
+            pairs = typed.Dict.empty(types.UniTuple(types.int64, 4), types.float64)
+            for k,v in self.pairs.items():
+                pairs[k] = v
+            triplets = typed.Dict.empty(types.UniTuple(types.int64, 4), types.float64)
+            for k,v in self.triplets.items():
+                triplets[k] = v
+            quartets = typed.Dict.empty(types.UniTuple(types.int64, 4), types.float64)
+            for k,v in self.quartets.items():
+                quartets[k] = v
+            self.pairs, self.triplets, self.quartets = pairs, triplets, quartets
+
             return self.solve_linearized_perturbation(i, a, p=p, sisj=sisj)[0]
 
         def args():
             for i in range(self.n):
                 for a in np.delete(range(self.n),i):
                     yield (i,a)
-
-        #if self.n_cpus is None or self.n_cpus>1:
-        #    if self.iprint: print("Using multiprocessing...")
-        #    try: 
-        #        # don't use all the cpus since lin alg calculations will be slower
-        #        pool = Pool(self.n_cpus or cpu_count()//2)
-        #        dJ = np.vstack(( pool.map(wrapper, args()) ))
-        #    finally:
-        #        pool.close()
-        #else:
-        dJ = np.zeros((self.n*(self.n-1), 3*self.n+(self.n-1)*self.n//2))
-        for counter,(i,a) in enumerate(args()):
-            dJ[counter] = wrapper((i,a))
+        
+        if self.n_cpus is None or self.n_cpus>1:
+            if self.iprint: print("Using multiprocessing...")
+            with threadpool_limits(limits=1, user_api='blas'):
+                with Pool(n_cpus) as pool:
+                    dJ = np.vstack(( pool.map(wrapper, args()) ))
+        else:
+            dJ = np.zeros((self.n*(self.n-1), 3*self.n+(self.n-1)*self.n//2))
+            for counter,(i,a) in enumerate(args()):
+                dJ[counter] = wrapper((i,a))
 
         self.dJ = dJ
         return dJ
 
     def _observables_after_perturbation(self, si, sisj, i, a, eps):
-        """Make one spin more like another.
+        """Make spin i more like spin a.
         """
         
         n = self.n
@@ -1790,19 +1808,20 @@ class Coupling3(Coupling):
         
         if self.n_cpus is None or self.n_cpus>1:
             n_cpus = self.n_cpus or cpu_count()
-            with Pool(n_cpus, maxtasksperchild=1) as pool:
-                if calc_diag:
-                    hess[np.eye(len(dJ))==1] = pool.map(diag, range(len(dJ)))
-                    if iprint:
-                        print("Done with diag.")
-                if calc_off_diag:
-                    if off_diag_ix:
-                        hess[tuple(zip(*off_diag_ix))] = pool.map(off_diag, off_diag_ix)
-                    else:
-                        hess[np.triu_indices_from(hess,k=1)] = pool.map(off_diag,
-                                                                        combinations(range(len(dJ)), 2))
-                    if iprint:
-                        print("Done with off diag.")
+            with threadpool_limits(limits=1, user_api='blas'):
+                with Pool(n_cpus, maxtasksperchild=1) as pool:
+                    if calc_diag:
+                        hess[np.eye(len(dJ))==1] = pool.map(diag, range(len(dJ)))
+                        if iprint:
+                            print("Done with diag.")
+                    if calc_off_diag:
+                        if off_diag_ix:
+                            hess[tuple(zip(*off_diag_ix))] = pool.map(off_diag, off_diag_ix)
+                        else:
+                            hess[np.triu_indices_from(hess,k=1)] = pool.map(off_diag,
+                                                                            combinations(range(len(dJ)), 2))
+                        if iprint:
+                            print("Done with off diag.")
         else:
             warn("Not using multiprocess can lead to excessive memory usage.")
             if calc_diag:
@@ -1948,21 +1967,19 @@ class Coupling3(Coupling):
             return (soln - self.hJ)/(self.eps), fullsoln
         return (soln - hJ0)/(self.eps)
 
-    def _solve_linearized_perturbation(self, iStar, kStar,
+    def _solve_linearized_perturbation(self, iStar, aStar,
                                        p=None,
                                        sisj=None,
                                        full_output=False,
                                        eps=None,
                                        check_stability=True,
                                        disp=False):
-        """Consider a perturbation to a single spin to make it more likely be in a
-        particular state. Remember that this assumes that the fields for the first state
-        are set to zero to remove the translation symmetry.
+        """Consider a perturbation to a single spin to make it more like another spin. 
         
         Parameters
         ----------
         iStar : int
-        kStar : int
+        aStar : int
         p : ndarray, None
         sisj : ndarray, None
         full_output : bool, False
@@ -1993,7 +2010,7 @@ class Coupling3(Coupling):
             si = sisj[:kStates*n]
             sisj = sisj[kStates*n:]
         # matrix that will be multiplied by the vector of canonical parameter perturbations
-        C, perturb_up = self.observables_after_perturbation(iStar, kStar, eps=eps)
+        C, perturb_up = self.observables_after_perturbation(iStar, aStar, eps=eps)
         errflag = 0
 
         A = calc_A(n, kStates, self.allStates, p, si, sisj, self.pairs, self.triplets, self.quartets, C)
@@ -2005,7 +2022,7 @@ class Coupling3(Coupling):
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
-            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, kStar,
+            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, aStar,
                                                                       p=p,
                                                                       sisj=np.concatenate((si,sisj)),
                                                                       eps=eps/2,
@@ -2020,7 +2037,7 @@ class Coupling3(Coupling):
                 errflag = 2
         
         if np.linalg.cond(A)>1e15:
-            warn("A is badly conditioned.")
+            warn("A is badly conditioned for pair (i, a)=(%d, %d)."%(iStar,aStar))
             # this takes precedence over relerr over threshold
             errflag = 1
 

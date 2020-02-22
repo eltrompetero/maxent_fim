@@ -132,7 +132,7 @@ class LargePotts3():
         """
         
         n = self.n
-        calc_e, calc_observables = cutils.define_potts3_helper_functions()
+        calc_e, calc_observables = cutils.define_potts_helper_functions(3)[:2]
         self.multipliers = np.concatenate(multipliers)
 
         if self.iprint: print("Generating samples...")
