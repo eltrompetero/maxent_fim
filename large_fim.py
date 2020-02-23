@@ -1455,6 +1455,7 @@ class Coupling3(Coupling):
         self.sisj = np.concatenate(self.ising.corr[:2])
         self.p = self.ising.p
         self.allStates = self.ising.states.astype(np.int8)
+        # determine p(k) as the number of votes in the plurality
         kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
                           self.allStates))
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
@@ -1968,15 +1969,13 @@ class Coupling3(Coupling):
                                        full_output=False,
                                        eps=None,
                                        check_stability=True,
-                                       disp=False):
-        """Consider a perturbation to a single spin to make it more like another spin. 
+                                       iprint=False):
+        """Consider a perturbation to make spin i more like another spin a. 
         
         Parameters
         ----------
         iStar : int
         aStar : int
-        p : ndarray, None
-        sisj : ndarray, None
         full_output : bool, False
         eps : float, None
         check_stability : bool, False
@@ -1988,7 +1987,7 @@ class Coupling3(Coupling):
         int
             Error flag. Returns 0 by default. 1 means badly conditioned matrix A.
         tuple (optional)
-            (A,C)
+            (Aplus, Cplus)
         float (optional)
             Relative error to log10.
         """
@@ -2000,18 +1999,34 @@ class Coupling3(Coupling):
         si = self.sisj[:n*kStates]
         sisj = self.sisj[kStates*n:]
 
-        # matrix that will be multiplied by the vector of canonical parameter perturbations
-        C, perturb_up = self.observables_after_perturbation(iStar, aStar, eps=eps)
+        # matrix that will be multiplied by the vector of correlation perturbations
+        Cplus, perturb_up = self.observables_after_perturbation(iStar, aStar, eps=eps)
+        Cminus, perturb_up = self.observables_after_perturbation(iStar, aStar, eps=-eps)
         errflag = 0
         
         if type(self.pairs) is dict:
             warn("Using slower version of calc_A.")
-            A = calc_A(n, kStates, self.allStates, p, si, sisj, self.pairs, self.triplets, self.quartets, C)
+            Aplus = calc_A(n, kStates,
+                           self.allStates, p, si, sisj,
+                           self.pairs, self.triplets, self.quartets,
+                           Cplus)
+            Aminus = calc_A(n, kStates,
+                           self.allStates, p, si, sisj,
+                           self.pairs, self.triplets, self.quartets,
+                           Cminus)
         else:
-            A = jit_calc_A(n, kStates, self.allStates, p, si, sisj, self.pairs, self.triplets, self.quartets, C)
-        C -= self.sisj
+            Aplus = jit_calc_A(n, kStates,
+                               self.allStates, p, si, sisj,
+                               self.pairs, self.triplets, self.quartets,
+                               Cplus)
+            Aminus = jit_calc_A(n, kStates,
+                                self.allStates, p, si, sisj,
+                                self.pairs, self.triplets, self.quartets,
+                                Cminus)
+        Cplus -= self.sisj
+        Cminus -= self.sisj
         # factor out linear dependence on eps
-        dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
+        dJ = np.linalg.lstsq(Aplus+Aminus, Cplus-Cminus, rcond=None)[0]/eps
         # put back in fields that we've fixed
         dJ = np.insert(dJ, (kStates-1)*n, np.zeros(n))
 
@@ -2025,19 +2040,19 @@ class Coupling3(Coupling):
             zeroix = dJ==0
             relerr = np.log10(np.abs(dJ[~zeroix]-dJtwiceEps[~zeroix])) - np.log10(np.abs(dJ[~zeroix]))
             if (relerr>-3).any():
-                if disp:
+                if iprint:
                     print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
                 errflag = 2
         
-        if np.linalg.cond(A)>1e15:
+        if np.linalg.cond(Aplus)>1e15:
             warn("A is badly conditioned for pair (i, a)=(%d, %d)."%(iStar,aStar))
             # this takes precedence over relerr over threshold
             errflag = 1
 
         if full_output:
             if check_stability:
-                return dJ, errflag, (A, C), relerr
-            return dJ, errflag, (A, C)
+                return dJ, errflag, (Aplus, Cplus), relerr
+            return dJ, errflag, (Aplus, Cplus)
         return dJ, errflag
 #end Coupling3
 
