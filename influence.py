@@ -89,3 +89,25 @@ def pair_asymmetry(eigvec, rank=0, by_voter=False, eigval=None):
             a += (v**2+v.T**2-2*np.abs(v*v.T)).sum()/2 * val**2
     
     return a/(eigval**2).sum()
+
+def local2neighbor_ratio(eigvec, rank=0):
+    """Magnitude of localized perturbations to neighborhood perturbations.
+
+    Parameters
+    ----------
+    eigvec : ndarray
+        Matrix of eigenvectors where each col is an eigenvector.
+    rank : int, 0
+        Column of eigvec array to use corresponding to the rank of the eigenvector.
+    by_voter : bool, False
+        If True, return asymmetry per voter.
+
+    Returns
+    -------
+    ndarray
+        Asymmetry measure per voter.
+    """
+    
+    v = vec2mat(eigvec[:,rank])
+    return (v**2).sum(1)/(v**2).sum(0)
+    

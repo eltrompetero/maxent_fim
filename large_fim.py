@@ -1968,8 +1968,7 @@ class Coupling3(Coupling):
     def _solve_linearized_perturbation(self, iStar, aStar,
                                        full_output=False,
                                        eps=None,
-                                       check_stability=True,
-                                       iprint=False):
+                                       check_stability=True):
         """Consider a perturbation to make spin i more like another spin a. 
         
         Parameters
@@ -2040,7 +2039,7 @@ class Coupling3(Coupling):
             zeroix = dJ==0
             relerr = np.log10(np.abs(dJ[~zeroix]-dJtwiceEps[~zeroix])) - np.log10(np.abs(dJ[~zeroix]))
             if (relerr>-3).any():
-                if iprint:
+                if self.iprint:
                     print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
                 errflag = 2
         
