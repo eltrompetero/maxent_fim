@@ -91,7 +91,8 @@ def pair_asymmetry(eigvec, rank=0, by_voter=False, eigval=None):
     return a/(eigval**2).sum()
 
 def local2neighbor_ratio(eigvec, rank=0):
-    """Magnitude of localized perturbations to neighborhood perturbations.
+    """Norm of all localized perturbations to neighborhood perturbations. In other words,
+    the column to row ratio.
 
     Parameters
     ----------

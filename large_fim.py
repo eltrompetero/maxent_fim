@@ -1420,7 +1420,8 @@ class Coupling3(Coupling):
                  n_cpus=None,
                  n_samples=100_000,
                  rng=None,
-                 iprint=True):
+                 iprint=True,
+                 sampler_kw={}):
         """
         Parameters
         ----------
@@ -1437,6 +1438,7 @@ class Coupling3(Coupling):
         rng : np.random.RandomState, None
         iprint : bool, True
             Display info if True.
+        sampler_kw : dict, {}
         """
 
         assert n>1 and 0<eps<1e-2
@@ -1451,7 +1453,7 @@ class Coupling3(Coupling):
         self.rng = rng or np.random
         self.iprint = iprint
 
-        self.ising = LargePotts3((h,J), n_samples, iprint=iprint, rng=self.rng)
+        self.ising = LargePotts3((h,J), n_samples, iprint=iprint, rng=self.rng, **sampler_kw)
         self.sisj = np.concatenate(self.ising.corr[:2])
         self.p = self.ising.p
         self.allStates = self.ising.states.astype(np.int8)

@@ -1,5 +1,9 @@
 # ====================================================================================== #
 # Module for Median Voter Model.
+# 
+# Note that "O" or "o" refer to "ordinary" voters which is what I used to call Random
+# voters.
+# 
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 import numpy as np
