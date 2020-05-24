@@ -1,8 +1,9 @@
 # ====================================================================================== #
-# Analysis of FIM "influence" quantities.
-# Author: Eddie Lee, edlee@alumni.princeton.edu
+# Analysis of features of FIM that could correspond to measures of "influence."
+# Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 from .utils import *
+
 
 
 def block_subspace_eig(hess, remove_n_modes=0):
