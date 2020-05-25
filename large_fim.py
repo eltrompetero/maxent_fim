@@ -1427,6 +1427,7 @@ class Coupling3(Coupling):
         ----------
         n : int
         h : ndarray, None
+            Full specification of all 3xN fields.
         J : ndarray, None
         eps : float, 1e-7
             Must be careful to set this relative to the precision of the MC sample.

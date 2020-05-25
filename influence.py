@@ -74,7 +74,7 @@ def pair_asymmetry(eigvec, rank=0, by_voter=False, eigval=None):
         v = vec2mat(eigvec[:,rank])
         if by_voter:
             return ((v-v.T)**2).sum(0)/4
-            # old measure
+            # old measure (that limited comparison to that of magnitudes)
             #return (v**2+v.T**2-2*np.abs(v*v.T)).sum(0)/2
         return ((v-v.T)**2).sum()/4
         #return (v**2+v.T**2-2*np.abs(v*v.T)).sum()/2
@@ -113,3 +113,22 @@ def local2neighbor_ratio(eigvec, rank=0):
     v = vec2mat(eigvec[:,rank])
     return (v**2).sum(1)/(v**2).sum(0)
     
+def norm_entropy(X):
+    """Entropy of cols.
+
+    Parameters
+    ----------
+    X : ndarray
+        Square eigenmatrix.
+    
+    Returns
+    -------
+    float
+    """
+    
+    assert X.shape[0]==X.shape[1]
+
+    s = (X**2).sum(0)
+    assert np.isclose(s.sum(), 1)
+
+    return -np.nansum( s * np.log(s) )
