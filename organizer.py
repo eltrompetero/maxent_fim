@@ -31,25 +31,25 @@ class MESolution():
         self.data_ix = data_ix
         self.soln_ix = soln_ix
         self.mc_ix = mc_ix
-        self.ix = '%d%s%s'%(data_ix, soln_ix, mc_ix)
+        self.ix = (str(data_ix), soln_ix, mc_ix)
         
         files = os.listdir(self.DEFAULT_DR)
 
         # look for maxent soln results
-        if not '%s_soln%s.p'%(name, self.ix[:-1]) in files:
+        if not '%s_soln%s.p'%(name, ''.join(self.ix[:-1])) in files:
             if iprint: print("Maxent solution file not found.")
-            if not '%s_model%s.p'%(name, self.ix) in files:
+            if not '%s_model%s.p'%(name, ''.join(self.ix)) in files:
                 raise Exception("Neither maxent nor model file found.")
             else:
                 self.n = pickle.load(open('%s/%s_model%s.p'%(self.DEFAULT_DR, name,
-                                                             self.ix), 'rb'))['n']
+                                                             ''.join(self.ix)), 'rb'))['n']
                 self._model = True
             self._me = False
         else:
             self.n = pickle.load(open('%s/%s_soln%s.p'%(self.DEFAULT_DR,
                                                         name,
-                                                        self.ix[:-1]), 'rb'))['X'].shape[1]
-            if not '%s_model%s.p'%(name, self.ix) in files:
+                                                        ''.join(self.ix[:-1])), 'rb'))['X'].shape[1]
+            if not '%s_model%s.p'%(name, ''.join(self.ix)) in files:
                 if iprint: print("Model file not found.")
                 self._model = False
             else:
@@ -57,7 +57,7 @@ class MESolution():
             self._me = True
         
         # look for FIM results
-        if not '%s_fim%s.p'%(name, self.ix) in files:
+        if not '%s_fim%s.p'%(name, ''.join(self.ix)) in files:
             if iprint: print("FIM not found.")
             self._fim = False
         else:
@@ -75,9 +75,9 @@ class MESolution():
         """
         
         if self._me:
-            fname = '%s_soln%s.p'%(self.name, self.ix[:-1])
+            fname = '%s_soln%s.p'%(self.name, ''.join(self.ix[:-1]))
         else:
-            fname = '%s_model%s.p'%(self.name, self.ix[:-1])
+            fname = '%s_model%s.p'%(self.name, ''.join(self.ix[:-1]))
         indata = pickle.load(open('%s/%s'%(self.DEFAULT_DR, fname), 'rb'))
 
         if 'h' in indata.keys() and 'J' in indata.keys():
@@ -107,12 +107,12 @@ class MESolution():
 
         model = Coupling3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
         pickle.dump(model.__get_state__(),
-                    open('cache/c_elegans/%s_model%s.p'%(self.name, self.ix),'wb'), -1)
+                    open('cache/c_elegans/%s_model%s.p'%(self.name, ''.join(self.ix)),'wb'), -1)
         # this pickle can be loaded using utils.load_Coupling3 as shown in self.model()
 
     def model(self):
         from .utils import load_Coupling3
-        return load_Coupling3('%s/%s_model%s.p'%(self.DEFAULT_DR, self.name, self.ix))
+        return load_Coupling3('%s/%s_model%s.p'%(self.DEFAULT_DR, self.name, ''.join(self.ix)))
 
     def fim(self):
         """
@@ -121,6 +121,6 @@ class MESolution():
         ndarray
         """
 
-        fname = '%s_fim%s.p'%(self.name, self.ix)
+        fname = '%s_fim%s.p'%(self.name, ''.join(self.ix))
         return pickle.load(open('%s/%s'%(self.DEFAULT_DR, fname), 'rb'))['fim']
 #end MESolution
