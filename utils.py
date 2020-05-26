@@ -82,7 +82,7 @@ def combine_fim_files(*args):
 
     allGood = True
     
-    for i,f in enumerate(args):
+    for i, f in enumerate(args):
         assert os.path.isfile(f)
         thisfim = pickle.load(open(f,'rb'))['fim']
 
@@ -94,7 +94,8 @@ def combine_fim_files(*args):
                 warn("%d off-diagonal entries appear twice."%count)
                 allGood = False
             if not np.array_equal(thisfim.diagonal(), fim.diagonal()):
-                warn("Diagonals do not match.")
+                err = np.linalg.norm(thisfim.diagonal() - fim.diagonal())
+                warn("Diagonals do not match. Mismatch error of %f with file %s."%(err,f))
                 allGood = False
             
             # copy in elements
