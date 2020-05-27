@@ -935,6 +935,55 @@ class Magnetization():
             dJ = self.dJ
         return dJ.T.dot(eigvec)
 
+    def dlogpk(self, ds, eps=1e-4, ds_as_dJ=False):
+        """Rate of change in log[p(k)] when moving along perturbation direction described
+        by given vector.
+
+        Parameters
+        ----------
+        ds : ndarray
+            Perturbation specification that will be mapped to change in underlying maxent
+            parameters, e.g. a col of the eigenmatrix.
+        eps : float, 1e-4
+        ds_as_dJ : bool, False
+            If True, simple perturbation of maxent model parameters is given.
+
+        Returns
+        -------
+        list of ndarray
+            Each vector specifies rate of change in p(k) ordered where the number of
+            voters in the majority decreases by one voter at a time.
+        """
+
+        # map change in correlation space to that in amxent parameter space
+        if ds_as_dJ:
+            dJ = ds
+        else:
+            dJ = self.dJ.T.dot(ds)
+
+        dlogp = self._dlogpk(dJ, eps)
+        # check what derivative looks like for larger eps to check convergence
+        dlogpCoarse = self._dlogpk(dJ, eps * 2)
+
+        return dlogp, np.linalg.norm(dlogpCoarse - dlogp)
+        
+    def _dlogpk(self, dJ, eps):
+        from coniii.utils import define_ising_helper_functions
+        calc_e = define_ising_helper_functions()[0]
+        
+        dE = calc_e(self.allStates, dJ*eps)
+        E = np.log(self.p)
+        pplus = np.exp(E+dE - fast_logsumexp(E+dE)[0])  # modified probability distribution
+        pminus = np.exp(E-dE - fast_logsumexp(E-dE)[0])  # modified probability distribution
+
+        pkplusdE = np.zeros(n//2+1)
+        pkminusdE = np.zeros(n//2+1)
+        for k in range(n//2+1):
+            pkplusdE[k] = pplus[np.abs(self.allStates.sum(1))==(n-k*2)].sum()
+            pkminusdE[k] = pminus[np.abs(self.allStates.sum(1))==(n-k*2)].sum()
+        dlogp = (np.log2(pkplusdE) - np.log2(pkminusdE)) / (2*eps)
+        return dlogp
+
     def component_subspace_dlogpk(self, hess, eps=1e-5):
         """Rate of change in log[p(k)] when moving along the principal mode of each
         component's subspace.
@@ -1539,12 +1588,14 @@ class Coupling3(Coupling):
             self.pairs, self.triplets, self.quartets = pairs, triplets, quartets
 
             return self.solve_linearized_perturbation(i, a)[0]
-
+        
+        # define fun for setting up args to pass into multiprocessing
         def args():
             for i in range(self.n):
                 for a in np.delete(range(self.n),i):
                     yield (i,a)
         
+        # run parallelized approach to solving perturbations
         if n_cpus is None or n_cpus>1:
             if self.iprint: print("Using multiprocessing...")
             with threadpool_limits(limits=1, user_api='blas'):
@@ -2037,7 +2088,8 @@ class Coupling3(Coupling):
             dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, aStar,
                                                                       eps=eps/2,
                                                                       check_stability=False)
-            # print if relative change is more than .1% for any entry excepting zeros which are set by zeroed
+            # print if relative change is more than .1% for any entry excepting zeros
+            # which are set by zeroed
             # fields
             zeroix = dJ==0
             relerr = np.log10(np.abs(dJ[~zeroix]-dJtwiceEps[~zeroix])) - np.log10(np.abs(dJ[~zeroix]))
@@ -2056,6 +2108,22 @@ class Coupling3(Coupling):
                 return dJ, errflag, (Aplus, Cplus), relerr
             return dJ, errflag, (Aplus, Cplus)
         return dJ, errflag
+
+    def _dlogpk(self, dJ, eps):
+        calc_e = self.ising.calc_e
+        
+        dE = calc_e(self.allStates, dJ*eps)
+        E = np.log(self.p)
+        pplus = np.exp(E+dE - fast_logsumexp(E+dE)[0])  # modified probability distribution
+        pminus = np.exp(E-dE - fast_logsumexp(E-dE)[0])  # modified probability distribution
+
+        pkplusdE = np.zeros(n//2+1)
+        pkminusdE = np.zeros(n//2+1)
+        for k in range(n//2+1):
+            pkplusdE[k] = pplus[np.abs(self.allStates.sum(1))==(n-k*2)].sum()
+            pkminusdE[k] = pminus[np.abs(self.allStates.sum(1))==(n-k*2)].sum()
+        dlogp = (np.log2(pkplusdE) - np.log2(pkminusdE)) / (2*eps)
+        return dlogp
 #end Coupling3
 
 

@@ -2,9 +2,9 @@
 # Module for organizing maxent solutions for neural data.
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
-import dill as pickle
 import os
 from .large_fim import Coupling3
+from .utils import *
 
 
 
@@ -63,6 +63,22 @@ class MESolution():
         else:
             self._fim = True
 
+    def neuron_ix(self):
+        """Get indices of neurons solved from original discretized recording.
+
+        Returns
+        -------
+        ndarray
+        """
+        
+        if self._me:
+            fname = '%s_soln%s.p'%(self.name, ''.join(self.ix[:-1]))
+        else:
+            fname = '%s_model%s.p'%(self.name, ''.join(self.ix[:-1]))
+        indata = pickle.load(open('%s/%s'%(self.DEFAULT_DR, fname), 'rb'))
+        
+        return indata['neuronix']
+
     def parameters(self):
         """Get maxent solution for specified data set.
 
@@ -81,6 +97,8 @@ class MESolution():
         indata = pickle.load(open('%s/%s'%(self.DEFAULT_DR, fname), 'rb'))
 
         if 'h' in indata.keys() and 'J' in indata.keys():
+            if indata['h'].size==2*self.n:
+                return np.concatenate((indata['h'], np.zeros(self.n))), indata['J']
             return indata['h'], indata['J']
         elif 'hJ' in indata.keys():
             if indata['hJ'].size==(self.n*3 + self.n*(self.n-1)//2):

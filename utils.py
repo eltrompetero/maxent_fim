@@ -17,6 +17,39 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def count_unique_splits(n):
+    """Count number of unique binnings of neurons for k=3 Potts model.
+
+    Imagine binning the neurons into 3 groups. The only thing that matters is how many are
+    in each group. Obviously, only the number of neurons in each group matters, not which
+    neuron is in which group. Furthermore, we only care about the numbers in each
+    partition, and not the order in which the partitions are lined up.
+    
+    Thus, we can imagine taking the largest plurality first. This must be equal to or
+    larger than N/3. Then, the second group must be equal to or larger than the last
+    group. So we must iterate through N-i down to (N-i)/2. The number in the last
+    partition is given by the previous two partitions.
+    
+    Parameters
+    ----------
+    n : int
+
+    Returns
+    -------
+    int
+    """
+
+    s = 0  # keep track of arrangements as we iterate through them
+    n = 50
+    for i in range(n, n//3-(n%3)==0, -1):
+        n1 = min(n - i, i)
+        for j in range(n1, n1//2-1, -1):
+            k = n - i - j
+            if k<=j:
+                s += 1
+
+    return s
+
 def vec2mat(vec):
     """Reshape eigenvector detailing results of pairwise perturbations into a matrix. This
     is also transposed such that the columns correspond to local perturbations and the
