@@ -953,6 +953,8 @@ class Magnetization():
         list of ndarray
             Each vector specifies rate of change in p(k) ordered where the number of
             voters in the majority decreases by one voter at a time.
+        float
+            Norm difference between gradient calculation with eps step and 2*eps step.
         """
 
         # map change in correlation space to that in amxent parameter space
@@ -970,7 +972,9 @@ class Magnetization():
     def _dlogpk(self, dJ, eps):
         from coniii.utils import define_ising_helper_functions
         calc_e = define_ising_helper_functions()[0]
-        
+
+        # calculate change in energy of each observed configuration as we induce
+        # perturbation in both pos and neg directions
         dE = calc_e(self.allStates, dJ*eps)
         E = np.log(self.p)
         pplus = np.exp(E+dE - fast_logsumexp(E+dE)[0])  # modified probability distribution
@@ -2110,18 +2114,26 @@ class Coupling3(Coupling):
         return dJ, errflag
 
     def _dlogpk(self, dJ, eps):
+        """Partitions are determined by unique ones found in the sample and referenced in
+        self.coarseUix and self.coarseInvix.
+        """
+
         calc_e = self.ising.calc_e
+        n = self.n
         
+        # calculate change in energy of each observed configuration as we induce
+        # perturbation in both pos and neg directions
         dE = calc_e(self.allStates, dJ*eps)
         E = np.log(self.p)
         pplus = np.exp(E+dE - fast_logsumexp(E+dE)[0])  # modified probability distribution
         pminus = np.exp(E-dE - fast_logsumexp(E-dE)[0])  # modified probability distribution
-
-        pkplusdE = np.zeros(n//2+1)
-        pkminusdE = np.zeros(n//2+1)
-        for k in range(n//2+1):
-            pkplusdE[k] = pplus[np.abs(self.allStates.sum(1))==(n-k*2)].sum()
-            pkminusdE[k] = pminus[np.abs(self.allStates.sum(1))==(n-k*2)].sum()
+        
+        choosek = self.coarseUix.size
+        pkplusdE = np.zeros(choosek)
+        pkminusdE = np.zeros(choosek)
+        for k in range(choosek):
+            pkplusdE[k] = pplus[self.coarseInvix==k].sum()
+            pkminusdE[k] = pminus[self.coarseInvix==k].sum()
         dlogp = (np.log2(pkplusdE) - np.log2(pkminusdE)) / (2*eps)
         return dlogp
 #end Coupling3

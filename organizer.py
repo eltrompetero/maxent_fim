@@ -5,15 +5,18 @@
 import os
 from .large_fim import Coupling3
 from .utils import *
+import dill
 
 
 
 class MESolution():
     DEFAULT_DR = 'cache/c_elegans'  # default dr where pickles are stored
+    #DEFAULT_DR = "/Volumes/Eddie's SSD/Research/scotus4/py/cache/c_elegans"  # temp dr where pickles are stored
 
     def __init__(self, name, data_ix,
                  soln_ix='a',
                  mc_ix='i',
+                 subset_ix='A',
                  iprint=True):
         """
         Parameters
@@ -25,25 +28,27 @@ class MESolution():
             Solution method index.
         mc_ix : 'i'
             Monte Carlo sample index.
+        subset_ix : str, 'A'
+            Subset index of neurons.
         """
         
         self.name = name
+        self.subset_ix = subset_ix
         self.data_ix = data_ix
         self.soln_ix = soln_ix
         self.mc_ix = mc_ix
-        self.ix = (str(data_ix), soln_ix, mc_ix)
+        self.ix = (subset_ix, str(data_ix), soln_ix, mc_ix)
         
         files = os.listdir(self.DEFAULT_DR)
 
         # look for maxent soln results
-        if not '%s_soln%s.p'%(name, ''.join(self.ix[:-1])) in files:
+        if not f'{name}_soln{"".join(self.ix[:-1])}.p' in files:
             if iprint: print("Maxent solution file not found.")
             if not '%s_model%s.p'%(name, ''.join(self.ix)) in files:
                 raise Exception("Neither maxent nor model file found.")
             else:
-                self.n = pickle.load(open('%s/%s_model%s.p'%(self.DEFAULT_DR, name,
-                                                             ''.join(self.ix)), 'rb'))['n']
-                self._model = True
+                self.n = pickle.load(open(f'{self.DEFAULT_DR}/{name}_model{"".join(self.ix)}.p', 'rb'))['n']
+                self.exists_model = True
             self._me = False
         else:
             self.n = pickle.load(open('%s/%s_soln%s.p'%(self.DEFAULT_DR,
@@ -51,9 +56,9 @@ class MESolution():
                                                         ''.join(self.ix[:-1])), 'rb'))['X'].shape[1]
             if not '%s_model%s.p'%(name, ''.join(self.ix)) in files:
                 if iprint: print("Model file not found.")
-                self._model = False
+                self.exists_model = False
             else:
-                self._model = True
+                self.exists_model = True
             self._me = True
         
         # look for FIM results
@@ -124,13 +129,40 @@ class MESolution():
         h, J = self.parameters()
 
         model = Coupling3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
-        pickle.dump(model.__get_state__(),
-                    open('cache/c_elegans/%s_model%s.p'%(self.name, ''.join(self.ix)),'wb'), -1)
+        dill.dump(model.__get_state__(),
+                  open('cache/c_elegans/%s_model%s.p'%(self.name, ''.join(self.ix)),'wb'), -1)
         # this pickle can be loaded using utils.load_Coupling3 as shown in self.model()
+    
+    def X(self):
+        """Return sample on which model was solved.
+
+        Parameters
+        ----------
+
+        Returns
+        -------
+        ndarray
+            Dimensions of (n_samples, n_neurons).
+        """
+
+        fname = f"{self.DEFAULT_DR}/{self.name}_soln{''.join(self.ix[:-1])}.p"
+        if os.path.isfile(fname):
+            return pickle.load(open(fname, 'rb'))['X']
+        raise Exception(f"Solution file {self.DEFAULT_DR}/{self.name}_soln{''.join(self.ix[:-1])}.p does not exist.")
 
     def model(self):
-        from .utils import load_Coupling3
-        return load_Coupling3('%s/%s_model%s.p'%(self.DEFAULT_DR, self.name, ''.join(self.ix)))
+        if not self.exists_model:
+            raise Exception("Model file not found.")
+
+        if not '_model' in self.__dict__.keys():
+            from .utils import load_Coupling3
+            self._model = load_Coupling3('%s/%s_model%s.p'%(self.DEFAULT_DR, self.name, ''.join(self.ix)))
+        return self._model
+
+    def sisj(self):
+        if not '_model' in self.__dict__.keys():
+            self.model();
+        return self._model.sisj
 
     def fim(self):
         """
