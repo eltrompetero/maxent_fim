@@ -3,6 +3,7 @@
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 from .utils import *
+from scipy.special import binom
 
 
 
@@ -47,6 +48,41 @@ def block_subspace_eig(hess, remove_n_modes=0):
         blockeigval.append(u)
         blockeigvec.append(v)
     return blockeigval, blockeigvec
+
+def subspace_eig(hess, compix):
+    """Spectral analysis of subspaces corresponding to indicated components.
+
+    Parameters
+    ----------
+    hess : ndarray
+    ix : list
+
+    Returns
+    -------
+    list of ndarray
+        Eigenvalue spectrum.
+    list of ndarray
+        Eigenvectors.
+    """
+    
+    n = (1+np.sqrt(1+4*hess.shape[0])) / 2
+    assert int(n)==n, "Cannot be reshaped into n,n pairwise matrix with zeroed diagonal."
+    n = int(n)
+    k = n-1
+
+    # obtain corresponding indices in FIM
+    rowix = []
+    for ix in compix:
+        rowix += list(range(ix*k,(ix+1)*k))
+    
+    # calculate spectrum and sort by eigenvalue
+    subspaceHess = hess[rowix][:,rowix]
+    u, v = np.linalg.eig(subspaceHess)
+    sortix = np.argsort(u)[::-1]
+    u = u[sortix]
+    v = v[:,sortix]
+
+    return u, v
 
 def pair_asymmetry(eigvec, rank=0, by_voter=False, eigval=None):
     """Row column asymmetry for "eigenmatrices" for pairwise perturbations. Can calculate
@@ -132,3 +168,4 @@ def norm_entropy(X):
     assert np.isclose(s.sum(), 1)
 
     return -np.nansum( s * np.log(s) )
+

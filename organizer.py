@@ -11,7 +11,6 @@ import dill
 
 class MESolution():
     DEFAULT_DR = 'cache/c_elegans'  # default dr where pickles are stored
-    #DEFAULT_DR = "/Volumes/Eddie's SSD/Research/scotus4/py/cache/c_elegans"  # temp dr where pickles are stored
 
     def __init__(self, name, data_ix,
                  soln_ix='a',
@@ -44,16 +43,15 @@ class MESolution():
         # look for maxent soln results
         if not f'{name}_soln{"".join(self.ix[:-1])}.p' in files:
             if iprint: print("Maxent solution file not found.")
-            if not '%s_model%s.p'%(name, ''.join(self.ix)) in files:
+            if not f'{name}_model{"".join(self.ix)}.p' in files:
                 raise Exception("Neither maxent nor model file found.")
             else:
                 self.n = pickle.load(open(f'{self.DEFAULT_DR}/{name}_model{"".join(self.ix)}.p', 'rb'))['n']
                 self.exists_model = True
             self._me = False
         else:
-            self.n = pickle.load(open('%s/%s_soln%s.p'%(self.DEFAULT_DR,
-                                                        name,
-                                                        ''.join(self.ix[:-1])), 'rb'))['X'].shape[1]
+            fname = f'{self.DEFAULT_DR}/{name}_soln{"".join(self.ix[:-1])}.p'
+            self.n = pickle.load(open(fname, 'rb'))['X'].shape[1]
             if not '%s_model%s.p'%(name, ''.join(self.ix)) in files:
                 if iprint: print("Model file not found.")
                 self.exists_model = False
@@ -160,6 +158,13 @@ class MESolution():
         return self._model
 
     def sisj(self):
+        """Observables (means and pairwise correlations) calculated from model.
+
+        Returns
+        -------
+        ndarray
+        """
+
         if not '_model' in self.__dict__.keys():
             self.model();
         return self._model.sisj
@@ -173,4 +178,98 @@ class MESolution():
 
         fname = '%s_fim%s.p'%(self.name, ''.join(self.ix))
         return pickle.load(open('%s/%s'%(self.DEFAULT_DR, fname), 'rb'))['fim']
+
+    def avg_eigvals(self):
+        """Rank ordered eigenvalue spectrum averaged over MC samples used to calculate FIM.
+
+        Returns
+        -------
+        ndarray
+            Average of sorted eigenvalue spectrum.
+        ndarray
+            All sorted eigenvalues by row.
+        """
+        
+        rnumerals = ['i','ii','iii','iv','v','vi','vii','viii','ix','x']
+        vals = []
+
+        # iterate through all available MC samples assuming that they are ordered consecutively
+        counter = 0
+        fname = f'{self.DEFAULT_DR}/{self.name}_fim{"".join(self.ix[:-1])}{rnumerals[counter]}.p'
+        while os.path.isfile(fname):
+            fim = pickle.load(open(fname, 'rb'))['fim']
+
+            v, vec = self.model().hess_eig(fim, iprint=False)
+            vals.append(v)
+
+            counter += 1
+            fname = f'{self.DEFAULT_DR}/{self.name}_fim{"".join(self.ix[:-1])}{rnumerals[counter]}.p'
+
+            assert counter<10
+
+        vals = np.vstack(vals)
+        return vals.mean(0), vals
 #end MESolution
+
+
+
+class FIM():
+    """Class for helping organize types of calculation to be done on FIM.
+    """
+    def __init__(self, n, fim):
+        self.n = n
+        self.fim = fim
+        # perhaps include option to store fim on disk to save memory
+
+    def _sample_subset_eigval(self, n_comp, n_sample):
+        """
+        Parameters
+        ----------
+        n_comp : int
+            Number of components to sample.
+        n_sample : int
+            Number of subsets to try.
+
+        Returns
+        -------
+        ndarray
+        """
+
+        topval = np.zeros(n_sample)
+
+        for i in range(n_sample):
+            val, vec = subspace_eig(self.fim, np.random.choice(range(self.n),
+                                                               size=n_comp, replace=False))
+            topval[i] = val[0]
+
+        return topval
+    
+    def sample_subset_eigval(self, n_subset_range=None, max_subset_size=None):
+        """Calculate eigenvalue spectrum for subspace spanned by random groups of
+        n_comp components.
+        
+        Parameters
+        ----------
+        n_subset_range : ndarray, None
+        max_subset_size : int, 50
+        
+        Returns
+        -------
+        list of ndarray
+            Each ndarray contains top eigenvalue from multiple random subsets. Subsets might repeat.
+        """
+        
+        max_subset_size = max_subset_size or self.n
+        assert max_subset_size>0
+        
+        sampleVal = []
+        if n_subset_range is None:
+            n_subset_range = list(range(1, self.n+1, 5))
+        if type(n_subset_range) is int:
+            n_subset_range = list(range(1, self.n+1, n_subset_range))
+
+        for nComp in n_subset_range:
+            sampleVal.append( self._sample_subset_eigval(nComp, min(int(binom(self.n,nComp)),max_subset_size)) )
+        
+        return sampleVal
+#end FIM
