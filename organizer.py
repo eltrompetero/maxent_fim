@@ -157,17 +157,31 @@ class MESolution():
             self._model = load_Coupling3('%s/%s_model%s.p'%(self.DEFAULT_DR, self.name, ''.join(self.ix)))
         return self._model
 
-    def sisj(self):
+    def sisj(self, source='model'):
         """Observables (means and pairwise correlations) calculated from model.
+        
+        Parameters
+        ----------
+        source : str, 'model'
+            'model' or 'data'
 
         Returns
         -------
         ndarray
+            Means.
+        ndarray
+            Pairwise correlations.
         """
 
         if not '_model' in self.__dict__.keys():
-            self.model();
-        return self._model.sisj
+            self.model()
+
+        if source=='model':
+            return self._model.sisj[:150], self._model.sisj[150:]
+
+        calc_observables = define_potts_helper_functions(3)[1]
+        sisj = calc_observables(self.X()).mean(0)
+        return sisj[:150], sisj[150:]
 
     def fim(self):
         """

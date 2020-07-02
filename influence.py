@@ -3,9 +3,36 @@
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 from .utils import *
+from .organizer import MESolution
 from scipy.special import binom
 
 
+
+def pivotal_by_subspace(name, n_cutoff):
+    """Identify pivotal components by principal subspace eigenvalue.
+    
+    Parameters
+    ----------
+    name : tuple 
+        For loading solution.
+    n_cutoff : int
+        
+    Returns
+    -------
+    ndarray
+        Neuron index.
+    ndarray
+        Principal component eigenvalue.
+    """
+    
+    soln = MESolution(*name)
+    fim = soln.fim()
+    
+    val, vec = block_subspace_eig(fim)
+    v = np.array([v_[0] for v_ in val])
+    sortix = np.argsort(v)[::-1][:n_cutoff]
+    
+    return sortix, v[sortix]
 
 def block_subspace_eig(hess, remove_n_modes=0):
     """Spectral analysis of diagonal blocks in the FIM that correspond to individual
@@ -79,8 +106,8 @@ def subspace_eig(hess, compix):
     subspaceHess = hess[rowix][:,rowix]
     u, v = np.linalg.eig(subspaceHess)
     sortix = np.argsort(u)[::-1]
-    u = u[sortix]
-    v = v[:,sortix]
+    u = u[sortix].real
+    v = v[:,sortix].real
 
     return u, v
 
