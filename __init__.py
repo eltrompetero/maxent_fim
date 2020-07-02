@@ -6,4 +6,4 @@ from .utils import *
 from .influence import *
 from . import fim as pyfim
 from . import large_fim as lpyfim
-from .organizer import MESolution
+from .organizer import MESolution, FIM

@@ -248,7 +248,8 @@ class FIM():
         -------
         ndarray
         """
-
+        
+        from .influence import subspace_eig
         topval = np.zeros(n_sample)
 
         for i in range(n_sample):
