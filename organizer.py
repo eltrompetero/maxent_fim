@@ -190,8 +190,34 @@ class MESolution():
         ndarray
         """
 
-        fname = '%s_fim%s.p'%(self.name, ''.join(self.ix))
-        return pickle.load(open('%s/%s'%(self.DEFAULT_DR, fname), 'rb'))['fim']
+        fname = f'{self.name}_fim{"".join(self.ix)}.p'
+        indata = pickle.load(open(f'{self.DEFAULT_DR}/{fname}', 'rb'))
+        fim = indata['fim']
+
+        # automatically cache eigenvalues and eigenvectors for this fim
+        if not 'eigvec' in indata.keys():
+            indata['eigval'], indata['eigvec'] = self.model().hess_eig(fim, iprint=False)
+            pickle.dump(indata, open(f'{self.DEFAULT_DR}/{fname}', 'wb'), -1)
+
+        return fim
+
+    def eig(self):
+        """
+        Returns
+        -------
+        ndarray
+            Eigenvalues.
+        ndarray
+            Eigenvectors.
+        """
+        
+        try:
+            fname = f'{self.name}_fim{"".join(self.ix)}.p'
+            indata = pickle.load(open(f'{self.DEFAULT_DR}/{fname}', 'rb'))
+            return indata['eigval'], indata['eigvec']
+        except KeyError:
+            self.fim()
+            return self.eig()
 
     def avg_eigvals(self):
         """Rank ordered eigenvalue spectrum averaged over MC samples used to calculate FIM.

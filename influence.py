@@ -14,7 +14,7 @@ def pivotal_by_subspace(name, n_cutoff):
     Parameters
     ----------
     name : tuple 
-        For loading solution.
+        For loading specified solution.
     n_cutoff : int
         
     Returns
@@ -33,6 +33,41 @@ def pivotal_by_subspace(name, n_cutoff):
     sortix = np.argsort(v)[::-1][:n_cutoff]
     
     return sortix, v[sortix]
+
+def pivotal_by_colnorm(name, threshold, n_modes):
+    """Identify pivotal components by principal subspace eigenvalue.
+    
+    Parameters
+    ----------
+    name : tuple 
+        For loading specified solution.
+    threshold : int
+    n_modes : int
+        
+    Returns
+    -------
+    ndarray
+        Neuron index.
+    ndarray
+        Principal component eigenvalue.
+    """
+    
+    soln = MESolution(*name)
+    eigvec = soln.eig()[1]
+
+    # in the top 10 eigenvectors, what are the most "important" neurons
+    neuronix = []
+    colweight = np.zeros((n_modes, 50))
+
+    for i in range(n_modes):
+        mat = vec2mat(eigvec[:,i])
+        colweight[i] = np.linalg.norm(mat, axis=0)
+
+    # extract those neurons for calculating sensitivity to them specifically
+    ix = np.unique(np.concatenate([np.where(colweight[i]>threshold)[0]
+                                   for i in range(colweight.shape[0])]))
+    
+    return ix
 
 def block_subspace_eig(hess, remove_n_modes=0):
     """Spectral analysis of diagonal blocks in the FIM that correspond to individual
