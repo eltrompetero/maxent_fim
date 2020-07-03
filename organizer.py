@@ -287,4 +287,32 @@ class FIM():
             sampleVal.append( self._sample_subset_eigval(nComp, min(int(binom(self.n,nComp)),max_subset_size)) )
         
         return sampleVal
+
+    def eig(self, tol=1e-7):
+        """Wrapper for np.linalg.eig that takes the real part, throws away small
+        eigenvalue components, and sorts the results by eigenvalue.
+        
+        Parameters
+        ----------
+        tol : float, 1e-7
+        
+        Returns
+        -------
+        ndarray
+            Eigenvalues.
+        ndarray
+            Eigenvectors by col.
+        """
+
+        val, vec = np.linalg.eig(self.fim)
+        
+        nonzeroix = val.real>tol
+        val = val[nonzeroix]
+        vec = vec[:,nonzeroix]
+
+        sortix = np.argsort(val.real)[::-1]
+        val = val[sortix].real
+        vec = vec[:,sortix].real
+
+        return val, vec
 #end FIM

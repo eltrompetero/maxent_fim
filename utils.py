@@ -17,6 +17,44 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def p_k(X, weights=None):
+    """From sample of k=3 Potts states, calculate probability distribution over
+    coarse-graining of unique state counts.
+
+    Parameters
+    ----------
+    X : ndarray
+    weights : ndarray, None
+
+    Returns
+    -------
+    ndarray
+        Probability of seeing a particular binned breakdown.
+    ndarray
+        Bins.
+    """
+
+    assert set(np.unique(X)) <= frozenset((0,1,2))
+   
+    counts = np.zeros((len(X), 3), dtype=int)
+    for k in range(3):
+        counts[:,k] = (X==k).sum(1)
+    # sort by order so that the only thing that distinguishes rows is the total
+    # no. in each bin
+    counts = np.sort(counts, axis=1)[:,::-1]
+
+    if weights is None:
+        bins, p = np.unique(counts, axis=0, return_counts=True)
+        p = p / p.sum()
+    else:
+        bins, ix, p = np.unique(counts, axis=0, return_counts=True, return_inverse=True)
+        summedWeights = np.zeros(p.size)
+        for i in range(ix.max()+1):
+            summedWeights[i] += weights[ix==i].sum() / (ix==i).sum()
+        p = p * summedWeights / p.dot(summedWeights)
+
+    return p, bins
+
 def count_unique_splits(n):
     """Count number of unique binnings of neurons for k=3 Potts model.
 
