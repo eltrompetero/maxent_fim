@@ -2485,7 +2485,8 @@ class Coupling3(Coupling):
                  J=None,
                  eps=1e-7,
                  precompute=True,
-                 n_cpus=None):
+                 n_cpus=None,
+                 iprint=True):
         """
         Parameters
         ----------
@@ -2495,9 +2496,9 @@ class Coupling3(Coupling):
         eps : float, 1e-7
         precompute : bool, True
         n_cpus : int, None
+        iprint : bool, True
         """
         
-        raise NotImplementedError
         from coniii.utils import xpotts_states
 
         assert n>1 and 0<eps<1e-2
@@ -2509,14 +2510,19 @@ class Coupling3(Coupling):
         self.eps = eps
         self.hJ = np.concatenate((h,J))
         self.n_cpus = n_cpus
+        self.iprint = iprint
 
         self.ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_potts'%n)
         self.sisj = self.ising.calc_observables(self.hJ)
         self.p = self.ising.p(self.hJ)
         kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
-                          xpotts_states(n,self.kStates)))
+                          xpotts_states(n, self.kStates)))
         #self.majdivisions, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
+        #self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
+        kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
+                          xpotts_states(n, self.kStates)))
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
+        self.coarseUix = np.unique(self.coarseInvix)
         
         if precompute:
             # cache triplet and quartet products
@@ -2525,7 +2531,7 @@ class Coupling3(Coupling):
             if self.iprint: print("Done.")
 
             if iprint: print("Computing dJ...")
-            self.compute_dJ()
+            self.dJ = self.compute_dJ()
             if iprint: print("Done.")
         else:
             self.dJ = None
@@ -2638,8 +2644,8 @@ class Coupling3(Coupling):
         siNew = si.copy()
         sisjNew = sisj.copy()
         
-        for i_,a_,eps_ in zip(i,a,eps):
-            jit_observables_after_perturbation_minus(n, siNew, sisjNew, i_, a_, eps_)
+        for i_, a_, eps_ in zip(i, a, eps):
+            jit_observables_after_perturbation_Coupling3(n, siNew, sisjNew, i_, a_, eps_)
 
         return np.concatenate((siNew, sisjNew)), True
    
@@ -2898,8 +2904,7 @@ class Coupling3(Coupling):
                                        sisj=None,
                                        full_output=False,
                                        eps=None,
-                                       check_stability=True,
-                                       disp=False):
+                                       check_stability=True):
         """Consider a perturbation to a single spin to make it more likely be in a
         particular state. Remember that this assumes that the fields for the first state
         are set to zero to remove the translation symmetry.
@@ -2942,36 +2947,37 @@ class Coupling3(Coupling):
         C, perturb_up = self.observables_after_perturbation(iStar, kStar, eps=eps)
         errflag = 0
         
-        # mean constraints (remember that A does not include changes in first set of fields)
+        # mean constraints (remember that A does not include changes in last set of fields)
         for i in range(kStates*n):
-            for j in range(n,kStates*n):
+            for j in range((kStates-1) * n):
                 if i==j:
-                    A[i,j-n] = si[i] - C[i]*si[j]
+                    A[i,j] = si[i] - C[i]*si[j]
                 # if they're in different states but the same spin
                 elif (i%n)==(j%n):
-                    A[i,j-n] = -C[i]*si[j]
+                    A[i,j] = -C[i]*si[j]
                 else:
                     if (i%n)<(j%n):
-                        A[i,j-n] = self.pairs[(i//n,i%n,j//n,j%n)].dot(p) - C[i]*si[j]
+                        A[i,j] = self.pairs[(i//n,i%n,j//n,j%n)].dot(p) - C[i]*si[j]
                     else:
-                        A[i,j-n] = self.pairs[(j//n,j%n,i//n,i%n)].dot(p) - C[i]*si[j]
+                        A[i,j] = self.pairs[(j//n,j%n,i//n,i%n)].dot(p) - C[i]*si[j]
 
-            for klcount,(k,l) in enumerate(combinations(range(n),2)):
+            for klcount, (k,l) in enumerate(combinations(range(n), 2)):
                 A[i,(kStates-1)*n+klcount] = self.triplets[(i//n,i%n,k,l)].dot(p) - C[i]*sisj[klcount]
         
         # pair constraints
-        for ijcount,(i,j) in enumerate(combinations(range(n),2)):
+        for ijcount, (i,j) in enumerate(combinations(range(n), 2)):
             for k in range(kStates*n):
                 A[kStates*n+ijcount,k-n] = (self.triplets[(k//n,k%n,i,j)].dot(p) -
-                                            C[kStates*n+ijcount]*si[k])
-            for klcount,(k,l) in enumerate(combinations(range(n),2)):
+                                            C[kStates*n + ijcount]*si[k])
+            for klcount, (k,l) in enumerate(combinations(range(n), 2)):
                 A[kStates*n+ijcount,(kStates-1)*n+klcount] = (self.quartets[(i,j,k,l)].dot(p) -
                                                               C[kStates*n+ijcount]*sisj[klcount])
         C -= self.sisj
         # factor out linear dependence on eps
         dJ = np.linalg.lstsq(A, C, rcond=None)[0]/eps
         # put back in fields that we've fixed
-        dJ = np.concatenate((np.zeros(n), dJ))
+        #dJ = np.concatenate((np.zeros(n), dJ))
+        dJ = np.insert(dJ, (kStates-1)*n, np.zeros(n))
 
         if check_stability:
             # double epsilon and make sure solution does not change by a large amount
@@ -2983,7 +2989,7 @@ class Coupling3(Coupling):
             # print if relative change is more than .1% for any entry
             relerr = np.log10(np.abs(dJ[n:]-dJtwiceEps[n:]))-np.log10(np.abs(dJ[n:]))
             if (relerr>-3).any():
-                if disp:
+                if self.iprint:
                     print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
                 errflag = 2
         
@@ -3199,6 +3205,30 @@ def jit_observables_after_perturbation_minus(n, si, sisj, i, a, eps):
             else:
                 jaix = unravel_index((a,j),n)
             sisj[ijix] = sisj[ijix] - eps*(sisj[ijix] + osisj[jaix])
+
+@njit
+def jit_observables_after_perturbation_Coupling3(n, si, sisj, i, a, eps):
+    osi = si.copy()
+    osisj = sisj.copy()
+
+    # mimic average magnetization
+    for k in range(3):
+        si[i+k*n] = osi[i+k*n] - eps*(osi[i+k*n] - osi[a+k*n])
+
+    for j in delete(list(range(n)),i):
+        if i<j:
+            ijix = unravel_index((i,j),n)
+        else:
+            ijix = unravel_index((j,i),n)
+
+        if j==a:
+            sisj[ijix] = osisj[ijix] - eps*(osisj[ijix] - 1)
+        else:
+            if j<a:
+                jaix = unravel_index((j,a),n)
+            else:
+                jaix = unravel_index((a,j),n)
+            sisj[ijix] = osisj[ijix] - eps*(osisj[ijix] - osisj[jaix])
 
 @njit
 def jit_observables_after_perturbation_plus_field(n, si, sisj, i, eps):

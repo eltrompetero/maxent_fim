@@ -72,3 +72,38 @@ def test_Coupling3(n=5, disp=True, time=False):
         print()
     assert relErrMax<relErrTol, relErrMax
     print("Test passed: Hessian checked with numdifftools.")
+
+    # consistency check with fim.Coupling3 ===============================================
+    np.random.seed(0)
+
+    h = np.concatenate((np.random.normal(size=n*2, scale=.1), np.zeros(n)))
+    J = np.random.normal(size=n*(n-1)//2, scale=.1)
+    
+    from .fim import Coupling3 as fCoupling3
+    lfmodel = Coupling3(n, h, J, n_samples=1_000_000, iprint=False)
+    fmodel = fCoupling3(n, h, J, iprint=False)
+
+    assert np.array_equal(fmodel.coarseUix, lfmodel.coarseUix)
+    assert np.array_equal(fmodel.coarseInvix, lfmodel.coarseInvix)
+    print("Test passed: coarse-graining agrees.")
+
+    fsisj = fmodel.observables_after_perturbation(0, 1, eps=.1)[0]
+    lfsisj = lfmodel.observables_after_perturbation(0, 1, eps=.1)[0]
+    assert np.abs(fsisj - lfsisj).max() < 2e-3  # roughly within sampling errors
+    print("Test passed: correlations agree.")
+
+    for a in range(1, 3):
+        fsisj = fmodel.observables_after_perturbation(0, a, eps=.1)[0]
+        lfsisj = lfmodel.observables_after_perturbation(0, a, eps=.1)[0]
+        assert np.abs(fsisj - lfsisj).max() < 2e-3  # roughly within sampling errors
+    print("Test passed: perturbed parameters agree closely.")
+    
+    mx = np.linalg.norm(lfmodel.dJ - fmodel.dJ, axis=1).max()
+    assert mx < .074, mx
+    print("Test passed: parameter directions agree.")
+
+    ffim = fmodel.maj_curvature(iprint=False)
+    lffim = lfmodel.maj_curvature(iprint=False)
+    # error per entry
+    assert (np.linalg.norm(ffim - lffim) / ffim.size)<1e-3
+    print("Test passed: small error on FIM per entry.")

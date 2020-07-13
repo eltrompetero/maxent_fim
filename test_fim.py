@@ -198,7 +198,7 @@ def test_IsingSpinReplacementFIM(n=4, disp=True, time=False):
 #    assert (np.abs((hessNdt-hessToCheck)/hessToCheck)<1e-5).all(), (
 #            np.abs((hessNdt-hessToCheck)/hessToCheck).max())
 
-def test_TernaryCoupling(n=3, disp=True, time=False):
+def test_Coupling3(n=3, disp=True, time=False):
     """Tests for TernaryCoupling."""
     
     # Setup test
@@ -206,7 +206,7 @@ def test_TernaryCoupling(n=3, disp=True, time=False):
     k = 3  # three-state Potts model
     hJ = rng.normal(scale=.05, size=n*(n-1)//2+k*n)
     hJ[:n*k] -= np.tile(hJ[:n],k)
-    isingdkl = TernaryCoupling(n, k, h=hJ[:n*k], J=hJ[k*n:])
+    isingdkl = Coupling3(n, h=hJ[:n*k], J=hJ[k*n:])
 
     # test 1
     for ijix,(i,j) in enumerate(combinations(range(n),2)):
