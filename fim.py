@@ -2987,13 +2987,13 @@ class Coupling3(Coupling):
                                                                       eps=eps/2,
                                                                       check_stability=False)
             # print if relative change is more than .1% for any entry
-            relerr = np.log10(np.abs(dJ[n:]-dJtwiceEps[n:]))-np.log10(np.abs(dJ[n:]))
-            if (relerr>-3).any():
+            relerr = np.log10(np.abs(dJ[n:]-dJtwiceEps[n:])) - np.log10(np.abs(dJ[n:]))
+            if (relerr > -3).any():
                 if self.iprint:
                     print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
                 errflag = 2
         
-        if np.linalg.cond(A)>1e15:
+        if np.linalg.cond(A) > 1e15:
             warn("A is badly conditioned.")
             # this takes precedence over relerr over threshold
             errflag = 1

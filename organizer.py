@@ -234,18 +234,17 @@ class MESolution():
         vals = []
 
         # iterate through all available MC samples assuming that they are ordered consecutively
-        counter = 0
-        fname = f'{self.DEFAULT_DR}/{self.name}_fim{"".join(self.ix[:-1])}{rnumerals[counter]}.p'
-        while os.path.isfile(fname):
-            fim = pickle.load(open(fname, 'rb'))['fim']
-
-            v, vec = self.model().hess_eig(fim, iprint=False)
-            vals.append(v)
-
-            counter += 1
-            fname = f'{self.DEFAULT_DR}/{self.name}_fim{"".join(self.ix[:-1])}{rnumerals[counter]}.p'
-
-            assert counter<10
+        for num in rnumerals:
+            try:
+                soln = MESolution(self.name, self.data_ix,
+                                  soln_ix=self.soln_ix, 
+                                  mc_ix=num,
+                                  subset_ix=self.subset_ix, 
+                                  iprint=False)
+                if soln._fim:
+                    vals.append(soln.eig()[0])
+            except Exception:
+                pass
 
         vals = np.vstack(vals)
         return vals.mean(0), vals
@@ -276,6 +275,11 @@ class FIM():
         """
         
         from .influence import subspace_eig
+        from scipy.special import binom
+
+        # check that given number of samples does not exceed max number of possible subsets
+        assert n_sample <= int(binom(self.n, n_comp))
+
         topval = np.zeros(n_sample)
 
         for i in range(n_sample):
@@ -298,6 +302,7 @@ class FIM():
         -------
         list of ndarray
             Each ndarray contains top eigenvalue from multiple random subsets. Subsets might repeat.
+            TODO: do not repeat subsets
         """
         
         max_subset_size = max_subset_size or self.n
