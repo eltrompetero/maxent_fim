@@ -10,6 +10,7 @@ from .utils import *
 from .fim import *
 
 
+
 def pivotal_blocs(X, component_names=None, solve_inverse_kw={}):
     """Solve pairwise maxent model and calculate Fisher information matrix and pivotal
     bloc analysis as in paper.

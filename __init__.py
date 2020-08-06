@@ -2,6 +2,7 @@
 # Information geometry of social and biological networks.
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
+from . import coarse_grain as cg
 from .utils import *
 from .influence import *
 from . import fim as pyfim

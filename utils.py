@@ -1,5 +1,5 @@
 # ====================================================================================== #
-# Quick access to useful modules from SCOTUS project.
+# Quick access to useful modules for pivotal components projects.
 # Author : Eddie Lee, edlee@alumni.princeton.edu
 # ====================================================================================== #
 import numpy as np
@@ -97,102 +97,6 @@ def match_mismatched_p(*args, bins=None):
     
     assert all([np.isclose(p.sum(), 1) for p in newp])
     return newp, bins
-
-def p_k(X, weights=None):
-    """From sample of k=3 Potts states, calculate probability distribution over
-    coarse-graining of unique state counts. This is what is used in large_fim.Coupling3.
-
-    Parameters
-    ----------
-    X : ndarray
-    weights : ndarray, None
-        Relative weights for each element given in X. This does not have to be normalized
-        to one.
-
-    Returns
-    -------
-    ndarray
-        Probability of seeing a particular binned breakdown.
-    ndarray
-        Bins.
-    """
-
-    assert set(np.unique(X)) <= frozenset((0,1,2))
-   
-    counts = np.zeros((len(X), 3), dtype=int)
-    for k in range(3):
-        counts[:,k] = (X==k).sum(1)
-    # sort by order so that the only thing that distinguishes rows is the total
-    # no. in each bin
-    counts = np.sort(counts, axis=1)[:,::-1]
-
-    if weights is None:
-        bins, p = np.unique(counts, axis=0, return_counts=True)
-        p = p / p.sum()
-    else:
-        bins, ix, p = np.unique(counts, axis=0, return_counts=True, return_inverse=True)
-        summedWeights = np.zeros(p.size)
-        for i in range(ix.max()+1):
-            summedWeights[i] += weights[ix==i].sum() / (ix==i).sum()
-        p = p * summedWeights / p.dot(summedWeights)
-
-    return p, bins
-
-def enumerate_unique_splits(n):
-    """Iterate through unique binnings of neurons for k=3 Potts model. See
-    count_unique_splits() for more details.
-
-    Parameters
-    ----------
-    n : int
-
-    Returns
-    -------
-    ndarray
-    """
-    
-    splits = np.zeros((count_unique_splits(n), 3), dtype=int)
-    s = 0  # keep track of arrangements as we iterate through them
-    for i in range(n, n//3-(n%3)==0, -1):
-        n1 = min(n - i, i)
-        for j in range(n1, n1//2-1, -1):
-            k = n - i - j
-            if k<=j:
-                splits[s] = i, j, k
-                s += 1
-    return splits
- 
-def count_unique_splits(n):
-    """Count number of unique binnings of neurons for k=3 Potts model.
-
-    Imagine binning the neurons into 3 groups. The only thing that matters is how many are
-    in each group. Obviously, only the number of neurons in each group matters, not which
-    neuron is in which group. Furthermore, we only care about the numbers in each
-    partition, and not the order in which the partitions are lined up.
-    
-    Thus, we can imagine taking the largest plurality first. This must be equal to or
-    larger than N/3. Then, the second group must be equal to or larger than the last
-    group. So we must iterate through N-i down to (N-i)/2. The number in the last
-    partition is given by the previous two partitions.
-    
-    Parameters
-    ----------
-    n : int
-
-    Returns
-    -------
-    int
-    """
-
-    s = 0  # keep track of arrangements as we iterate through them
-    for i in range(n, n//3-(n%3)==0, -1):
-        n1 = min(n - i, i)
-        for j in range(n1, n1//2-1, -1):
-            k = n - i - j
-            if k<=j:
-                s += 1
-
-    return s
 
 def vec2mat(vec):
     """Reshape eigenvector detailing results of pairwise perturbations into a matrix. This
