@@ -19,50 +19,14 @@ np.seterr(divide='ignore')
 # ========= #
 def p_k(X, weights=None):
     """From sample of k=3 Potts states, calculate probability distribution over
-    coarse-graining of unique state counts.
+    coarse-graining of unique state counts. This is what is used in large_fim.Coupling3.
 
     Parameters
     ----------
     X : ndarray
     weights : ndarray, None
-
-    Returns
-    -------
-    ndarray
-        Probability of seeing a particular binned breakdown.
-    ndarray
-        Bins.
-    """
-
-    assert set(np.unique(X)) <= frozenset((0,1,2))
-   
-    counts = np.zeros((len(X), 3), dtype=int)
-    for k in range(3):
-        counts[:,k] = (X==k).sum(1)
-    # sort by order so that the only thing that distinguishes rows is the total
-    # no. in each bin
-    counts = np.sort(counts, axis=1)[:,::-1]
-
-    if weights is None:
-        bins, p = np.unique(counts, axis=0, return_counts=True)
-        p = p / p.sum()
-    else:
-        bins, ix, p = np.unique(counts, axis=0, return_counts=True, return_inverse=True)
-        summedWeights = np.zeros(p.size)
-        for i in range(ix.max()+1):
-            summedWeights[i] += weights[ix==i].sum() / (ix==i).sum()
-        p = p * summedWeights / p.dot(summedWeights)
-
-    return p, bins
-
-def p_k(X, weights=None):
-    """From sample of k=3 Potts states, calculate probability distribution over
-    coarse-graining of unique state counts.
-
-    Parameters
-    ----------
-    X : ndarray
-    weights : ndarray, None
+        Relative weights for each element given in X. This does not have to be normalized
+        to one.
 
     Returns
     -------
