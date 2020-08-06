@@ -17,6 +17,74 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def match_mismatched_p(bins1, p1, bins2, p2):
+    """Align two probability distributions that are over different states.
+
+    Parameters
+    ----------
+    bins1 : ndarray
+        Unique states to which each probability in p1 corresponds to.
+    p1 : ndarray
+        First probability distribution to compare with second.
+    bins2 : ndarray
+    p2 : ndarray
+
+    Returns
+    -------
+    ndarray
+        new_bins1
+    ndarray
+        new_p1
+    ndarray
+        new_p2
+    """
+    
+    if bins1.ndim==1:
+        bins, ix = np.unique(np.concatenate((bins1, bins2)), return_inverse=True)
+        ix1 = ix[:bins1.size]
+        ix2 = ix[bins1.size:]
+
+        newp1 = np.zeros(bins.size)
+        newp2 = np.zeros(bins.size)
+
+        for b in bins:
+            matchix = b==bins1
+            if matchix.any():
+                newp1[matchix] = p1[matchix]
+
+            matchix = b==bins2
+            if matchix.any():
+                newp2[matchix] = p2[matchix]
+
+    elif bins1.ndim==2:
+        assert bins2.ndim==2
+        assert bins1.shape[0]==p1.size
+        assert bins2.shape[0]==p2.size
+
+        bins, ix = np.unique(np.concatenate((bins1, bins2), axis=0),
+                             return_inverse=True, axis=0)
+        ix1 = ix[:bins1.shape[0]]
+        ix2 = ix[bins1.shape[0]:]
+
+        newp1 = np.zeros(bins.shape[0])
+        newp2 = np.zeros(bins.shape[0])
+
+        for i, b in enumerate(bins):
+            matchix = (b[None,:]==bins1).all(1)
+            if matchix.any():
+                newp1[i] = p1[matchix]
+
+            matchix = (b[None,:]==bins2).all(1)
+            if matchix.any():
+                newp2[i] = p2[matchix]
+
+    else:
+        raise NotImplementedError
+    
+    assert np.isclose(newp1.sum(), 1)
+    assert np.isclose(newp2.sum(), 1)
+    return bins, newp1, newp2
+
 def p_k(X, weights=None):
     """From sample of k=3 Potts states, calculate probability distribution over
     coarse-graining of unique state counts. This is what is used in large_fim.Coupling3.
