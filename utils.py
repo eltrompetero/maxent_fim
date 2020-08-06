@@ -17,29 +17,30 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
-def match_mismatched_p(bins1, p1, bins2, p2):
+def match_mismatched_p(*args, bins=None):
     """Align two probability distributions that are over different states.
 
     Parameters
     ----------
-    bins1 : ndarray
-        Unique states to which each probability in p1 corresponds to.
-    p1 : ndarray
-        First probability distribution to compare with second.
-    bins2 : ndarray
-    p2 : ndarray
+    twople of (bins, p)
+        bins : ndarray
+            Unique states to which each probability in p1 corresponds to.
+        p : ndarray
+            First probability distribution to compare with second.
+    bins : ndarray, None
+        Option to pass in bins into which to bin probabilities. Assertion error will be
+        thrown if it does not contain all possibilities aggregated across given bins.
 
     Returns
     -------
+    list of ndarray
+        New probability distributions.
     ndarray
-        new_bins1
-    ndarray
-        new_p1
-    ndarray
-        new_p2
+        New bins.
     """
     
-    if bins1.ndim==1:
+    if args[0][0].ndim==1:
+        raise NotImplementedError
         bins, ix = np.unique(np.concatenate((bins1, bins2)), return_inverse=True)
         ix1 = ix[:bins1.size]
         ix2 = ix[bins1.size:]
@@ -56,34 +57,46 @@ def match_mismatched_p(bins1, p1, bins2, p2):
             if matchix.any():
                 newp2[matchix] = p2[matchix]
 
-    elif bins1.ndim==2:
-        assert bins2.ndim==2
-        assert bins1.shape[0]==p1.size
-        assert bins2.shape[0]==p2.size
+    elif args[0][0].ndim==2:
+        n = []
+        for b, p in args:
+            assert b.ndim==2
+            assert b.shape[0]==p.size
+            n.append(p.size)
+        
+        if bins is None:
+            bins, ix = np.unique(np.concatenate([b for b, p in args], axis=0),
+                                 return_inverse=True, axis=0)
 
-        bins, ix = np.unique(np.concatenate((bins1, bins2), axis=0),
-                             return_inverse=True, axis=0)
-        ix1 = ix[:bins1.shape[0]]
-        ix2 = ix[bins1.shape[0]:]
+            ncum = np.cumsum(n)
+            ix = [ix[ncum[i]:ncum[i+1]] for i in range(len(args)-1)]
+            ix.insert(0, 0)
+        else:
+            # TODO: a very slow looping method could be sped up?
+            assert bins.ndim==2
+            # assuming that bins consists of unique elements, we can use hash lookup to
+            # speed up the search
+            binsdict = dict([(tuple(b.tolist()), i) for i, b in enumerate(bins)])
 
-        newp1 = np.zeros(bins.shape[0])
-        newp2 = np.zeros(bins.shape[0])
+            ix = []
+            for i, (b, p) in enumerate(args):
+                ix.append(np.zeros(p.size, dtype=int))
+                for j, x in enumerate(b):
+                    ix[i][j] = binsdict[tuple(x.tolist())]
 
-        for i, b in enumerate(bins):
-            matchix = (b[None,:]==bins1).all(1)
-            if matchix.any():
-                newp1[i] = p1[matchix]
+        newp = [np.zeros(bins.shape[0]) for i in range(len(args))]
 
-            matchix = (b[None,:]==bins2).all(1)
-            if matchix.any():
-                newp2[i] = p2[matchix]
+        for i, b in enumerate(bins):  # iterate thru each element in concat bins
+            for j, (oldbins, oldp) in enumerate(args):  # fill in values for expanded prob distributions
+                matchix = (b[None,:]==oldbins).all(1)
+                if matchix.any():
+                    newp[j][i] = oldp[matchix]
 
     else:
         raise NotImplementedError
     
-    assert np.isclose(newp1.sum(), 1)
-    assert np.isclose(newp2.sum(), 1)
-    return bins, newp1, newp2
+    assert all([np.isclose(p.sum(), 1) for p in newp])
+    return newp, bins
 
 def p_k(X, weights=None):
     """From sample of k=3 Potts states, calculate probability distribution over
@@ -125,6 +138,30 @@ def p_k(X, weights=None):
 
     return p, bins
 
+def enumerate_unique_splits(n):
+    """Iterate through unique binnings of neurons for k=3 Potts model. See
+    count_unique_splits() for more details.
+
+    Parameters
+    ----------
+    n : int
+
+    Returns
+    -------
+    ndarray
+    """
+    
+    splits = np.zeros((count_unique_splits(n), 3), dtype=int)
+    s = 0  # keep track of arrangements as we iterate through them
+    for i in range(n, n//3-(n%3)==0, -1):
+        n1 = min(n - i, i)
+        for j in range(n1, n1//2-1, -1):
+            k = n - i - j
+            if k<=j:
+                splits[s] = i, j, k
+                s += 1
+    return splits
+ 
 def count_unique_splits(n):
     """Count number of unique binnings of neurons for k=3 Potts model.
 
@@ -148,7 +185,6 @@ def count_unique_splits(n):
     """
 
     s = 0  # keep track of arrangements as we iterate through them
-    n = 50
     for i in range(n, n//3-(n%3)==0, -1):
         n1 = min(n - i, i)
         for j in range(n1, n1//2-1, -1):

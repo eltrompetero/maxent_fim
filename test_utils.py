@@ -1,9 +1,11 @@
 # ============================================================================================ #
-# Author : Eddie Lee, edlee@alumni.princeton.edu
+# Test module for utils.py
+# Author : Eddie Lee, edlee@santafe.edu
 # ============================================================================================ # 
 from .utils import *
 from time import perf_counter
 np.random.seed(0)
+
 
 
 def test_coarse_grain():
@@ -46,3 +48,15 @@ def test_remove_principal_mode():
     #print(v)
     assert np.isclose(elnew, el).all(), (elnew, el)
     assert np.isclose(np.abs(vnew.T.dot(v)),np.eye(3)).all(), (vnew, v)
+
+def test_enumerate_unique_splits():
+    for i in range(3, 22, 3):
+        splits = enumerate_unique_splits(i)
+        assert (splits.sum(1)==i).all()
+        print("Test passed: splits add up correctly.")
+
+        assert (np.diff(splits[:,0])<=0).all()
+        print("Test passed: largest group monotonically decreases in specified order.")
+
+        assert (np.diff(splits, axis=1)<=0).all()
+        print("Test passed: Preceding groups are always larger than the next.")
