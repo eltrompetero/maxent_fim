@@ -11,6 +11,11 @@ import dill
 
 class MESolution():
     DEFAULT_DR = 'cache/c_elegans'  # default dr where pickles are stored
+    # seconodary directory when using laptop setup, but hard drive must be connected
+    if not os.path.isdir(DEFAULT_DR):
+        DEFAULT_DR = "/Volumes/Eddie's SSD/Research/scotus4/py/cache/c_elegans"
+        if not os.path.isdir(DEFAULT_DR):
+            raise Exception("No cache found.")
 
     def __init__(self, name, data_ix,
                  soln_ix='a',

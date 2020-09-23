@@ -40,62 +40,49 @@ def match_mismatched_p(*args, bins=None):
     """
     
     if args[0][0].ndim==1:
+        args = [(b[:,None], p) for b, p in args]
+        bins = bins[:,None]
+    elif args[0][0].ndim!=2:
         raise NotImplementedError
-        bins, ix = np.unique(np.concatenate((bins1, bins2)), return_inverse=True)
-        ix1 = ix[:bins1.size]
-        ix2 = ix[bins1.size:]
 
-        newp1 = np.zeros(bins.size)
-        newp2 = np.zeros(bins.size)
-
-        for b in bins:
-            matchix = b==bins1
-            if matchix.any():
-                newp1[matchix] = p1[matchix]
-
-            matchix = b==bins2
-            if matchix.any():
-                newp2[matchix] = p2[matchix]
-
-    elif args[0][0].ndim==2:
-        n = []
-        for b, p in args:
-            assert b.ndim==2
-            assert b.shape[0]==p.size
-            n.append(p.size)
-        
-        if bins is None:
-            bins, ix = np.unique(np.concatenate([b for b, p in args], axis=0),
-                                 return_inverse=True, axis=0)
-
-            ncum = np.cumsum(n)
-            ix = [ix[ncum[i]:ncum[i+1]] for i in range(len(args)-1)]
-            ix.insert(0, 0)
-        else:
-            # TODO: a very slow looping method could be sped up?
-            assert bins.ndim==2
-            # assuming that bins consists of unique elements, we can use hash lookup to
-            # speed up the search
-            binsdict = dict([(tuple(b.tolist()), i) for i, b in enumerate(bins)])
-
-            ix = []
-            for i, (b, p) in enumerate(args):
-                ix.append(np.zeros(p.size, dtype=int))
-                for j, x in enumerate(b):
-                    ix[i][j] = binsdict[tuple(x.tolist())]
-
-        newp = [np.zeros(bins.shape[0]) for i in range(len(args))]
-
-        for i, b in enumerate(bins):  # iterate thru each element in concat bins
-            for j, (oldbins, oldp) in enumerate(args):  # fill in values for expanded prob distributions
-                matchix = (b[None,:]==oldbins).all(1)
-                if matchix.any():
-                    newp[j][i] = oldp[matchix]
-
-    else:
-        raise NotImplementedError
+    n = []
+    for b, p in args:
+        assert b.ndim==2
+        assert b.shape[0]==p.size
+        n.append(p.size)
     
+    if bins is None:
+        bins, ix = np.unique(np.concatenate([b for b, p in args], axis=0),
+                             return_inverse=True, axis=0)
+
+        ncum = np.cumsum(n)
+        ix = [ix[ncum[i]:ncum[i+1]] for i in range(len(args)-1)]
+        ix.insert(0, 0)
+    else:
+        # TODO: a very slow looping method could be sped up?
+        assert bins.ndim==2
+        # assuming that bins consists of unique elements, we can use hash lookup to
+        # speed up the search
+        binsdict = dict([(tuple(b.tolist()), i) for i, b in enumerate(bins)])
+
+        ix = []
+        for i, (b, p) in enumerate(args):
+            ix.append(np.zeros(p.size, dtype=int))
+            for j, x in enumerate(b):
+                ix[i][j] = binsdict[tuple(x.tolist())]
+
+    newp = [np.zeros(bins.shape[0]) for i in range(len(args))]
+
+    for i, b in enumerate(bins):  # iterate thru each element in concat bins
+        for j, (oldbins, oldp) in enumerate(args):  # fill in values for expanded prob distributions
+            matchix = (b[None,:]==oldbins).all(1)
+            if matchix.any():
+                newp[j][i] = oldp[matchix]
+
     assert all([np.isclose(p.sum(), 1) for p in newp])
+    
+    if bins.shape[1]==1:
+        bins = bins.ravel()
     return newp, bins
 
 def vec2mat(vec):
@@ -279,7 +266,8 @@ def fisher_subspace(n, result, rtol=.05):
     return primaryEigval, topVoterEigvals
 
 def multi_info(X, hJ, method, n_boot=10_000, disp=True, **Spoly_kwargs):
-    """
+    """Fraction of multi-information captured.
+
     Parameters
     ----------
     X : ndarray

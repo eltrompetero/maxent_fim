@@ -123,3 +123,36 @@ def count_unique_splits(n, K=3):
                 if k<=j:
                     s += 1
         return s
+
+def p_maj(X, weights=None):
+    """Coarse-grained probability distribution only considering the probability of k votes
+    in the plurality.
+
+    Parameters
+    ----------
+    X : ndarray
+    weights : ndarray, None
+        Relative weights for each element given in X. This does not have to be normalized
+        to one.
+
+    Returns
+    -------
+    ndarray
+        Probability of seeing a particular binned breakdown.
+    ndarray
+        Bins.
+    """
+    
+    counts = np.array([np.bincount(row).max() for row in X])
+
+    if weights is None:
+        bins, p = np.unique(counts, return_counts=True)
+        p = p / p.sum()
+    else:
+        bins, ix, p = np.unique(counts, return_counts=True, return_inverse=True)
+        summedWeights = np.zeros(p.size)
+        for i in range(ix.max()+1):
+            summedWeights[i] += weights[ix==i].sum() / (ix==i).sum()
+        p = p * summedWeights / p.dot(summedWeights)
+
+    return p, bins
