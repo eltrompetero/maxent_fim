@@ -17,6 +17,54 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def disconnected_components(adj):
+    """Identify each independent component using matrix multiplication walk.
+    
+    Parameters
+    ----------
+    adj : ndarray
+        Square matrix.
+    
+    Returns
+    -------
+    list of lists
+    """
+    
+    nodes = list(range(adj.shape[0]))
+    adj = adj.copy()
+    adj[np.diag_indices_from(adj)] = 1
+    walk = np.linalg.matrix_power(adj, adj.shape[0])
+    components = []
+    
+    while nodes:
+        components.append([])
+        
+        start = np.zeros(adj.shape[0])
+        start[nodes[0]] = 1
+        end = walk.dot(start)
+        
+        for n in np.where(end)[0].tolist():
+            components[-1].append(nodes.pop(nodes.index(n)))
+    
+    return components
+
+def largest_component(adj):
+    """Return largest connected component.
+
+    Parameters
+    ----------
+    adj : ndarray
+        Square matrix.
+    
+    Returns
+    -------
+    list
+    """
+
+    components = disconnected_components(adj)
+    ix = np.argmax([len(c) for c in components])
+    return components[ix]
+
 def match_mismatched_p(*args, bins=None):
     """Align two probability distributions that are over different states.
 
