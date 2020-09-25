@@ -75,13 +75,6 @@ class MESolution():
         else:
             self._fim = True
         
-        self.largest_component_only = False
-        if largest_component_only:
-            Jmat = (squareform(self.parameters()[1])!=0).astype(int)
-            component = largest_component(Jmat)
-            self.n -= self.n - len(component)
-            self.largest_component_only = True
-
     def neuron_ix(self):
         """Get indices of neurons solved from original discretized recording.
 
