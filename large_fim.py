@@ -16,6 +16,7 @@ from numba.typed import Dict as nDict
 from tempfile import mkdtemp
 from multiprocess import RawArray
 from threadpoolctl import threadpool_limits
+import socket
 from .utils import *
 from .models import LargeIsing, LargePotts3
 from .fim import *
@@ -1737,8 +1738,12 @@ class Coupling3(Coupling):
             assert np.unique(off_diag_ix, axis=0).shape[0]==len(off_diag_ix)
                 
         # set up multiprocessing
-        # shared memory on drive for FIM temporary results
-        mmfname = '%s/hess.dat'%mkdtemp()
+        # shared memory on drive for FIM temporary results with exceptions for servers
+        # that don't work well with this
+        if 'wheeler' in socket.gethostname():
+            mmfname = '%s/hess.dat'%mkdtemp(dir='/wheeler/scratch/edlee/')
+        else:
+            mmfname = '%s/hess.dat'%mkdtemp()
         mmhess = np.memmap(mmfname,
                            dtype=np.float64,
                            shape=(len(self.dJ),len(self.dJ)),
