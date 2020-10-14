@@ -230,16 +230,19 @@ class MESolution():
             return self.eig()
 
     def avg_eigvals(self):
-        """Rank ordered eigenvalue spectrum averaged over MC samples used to calculate FIM.
+        """Rank-ordered eigenvalue spectrum averaged over MC samples used to calculate FIM.
 
         Returns
         -------
         ndarray
             Average of sorted eigenvalue spectrum.
         ndarray
+            Log standard deviation.
+        ndarray
             All sorted eigenvalues by row.
         """
         
+        #TODO: this is hard-coded, but should be flexible
         rnumerals = ['i','ii','iii','iv','v','vi','vii','viii','ix','x']
         vals = []
 
@@ -258,6 +261,33 @@ class MESolution():
 
         vals = np.vstack(vals)
         return vals.mean(0), vals
+
+    def all_fim(self):
+        """List of all FIM across MC samples.
+
+        Returns
+        -------
+        list of ndarray
+        """
+        
+        #TODO: this is hard-coded, but should be flexible
+        rnumerals = ['i','ii','iii','iv','v','vi','vii','viii','ix','x']
+        fim = []
+
+        # iterate through all available MC samples assuming that they are ordered consecutively
+        for num in rnumerals:
+            try:
+                soln = MESolution(self.name, self.data_ix,
+                                  soln_ix=self.soln_ix, 
+                                  mc_ix=num,
+                                  subset_ix=self.subset_ix, 
+                                  iprint=False)
+                if soln._fim:
+                    fim.append(soln.fim())
+            except Exception:
+                pass
+
+        return fim
 #end MESolution
 
 
@@ -345,7 +375,7 @@ class FIM():
             Eigenvectors by col.
         """
 
-        val, vec = np.linalg.eig(self.fim)
+        val, vec = np.linalg.eigh(self.fim)
         
         nonzeroix = val.real>tol
         val = val[nonzeroix]

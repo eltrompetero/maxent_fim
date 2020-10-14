@@ -199,7 +199,7 @@ def combine_fim_files(*args):
     allGood = True
     
     for i, f in enumerate(args):
-        assert os.path.isfile(f)
+        assert os.path.isfile(f), f'Missing file {f}.'
         thisfim = pickle.load(open(f,'rb'))['fim']
 
         if i==0:
