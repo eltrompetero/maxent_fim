@@ -82,9 +82,9 @@ def block_subspace_eig(hess, remove_n_modes=0):
     Returns
     -------
     list of ndarray
-        Eigenvalue spectrum for each block.
+        Eigenvalue spectrum sorted for each block.
     list of ndarray
-        Eigenvectors for each block.
+        Eigenvectors likewise sorted for each block.
     """
     
     n = (1+np.sqrt(1+4*hess.shape[0])) / 2
@@ -102,7 +102,7 @@ def block_subspace_eig(hess, remove_n_modes=0):
     
     for j in range(len(hess)//k):
         subspaceHess = hess[j*k:(j+1)*k, j*k:(j+1)*k]
-        u, v = np.linalg.eig(subspaceHess)
+        u, v = np.linalg.eigh(subspaceHess)
         sortix = np.argsort(u)[::-1]
         u = u[sortix]
         v = v[:,sortix]
@@ -139,7 +139,7 @@ def subspace_eig(hess, compix):
     
     # calculate spectrum and sort by eigenvalue
     subspaceHess = hess[rowix][:,rowix]
-    u, v = np.linalg.eig(subspaceHess)
+    u, v = np.linalg.eigh(subspaceHess)
     sortix = np.argsort(u)[::-1]
     u = u[sortix].real
     v = v[:,sortix].real

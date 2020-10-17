@@ -1,6 +1,6 @@
 # ====================================================================================== #
 # Quick access to useful modules for pivotal components projects.
-# Author : Eddie Lee, edlee@alumni.princeton.edu
+# Author : Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 import numpy as np
 from numba import njit
@@ -17,6 +17,100 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def sorted_eigh(X):
+    """
+    Parameters
+    ----------
+    X : ndarray
+
+    Returns
+    -------
+    ndarray
+    ndarray
+    """
+
+    val, vec = np.linalg.eigh(X)
+    sortix = np.argsort(val)[::-1]
+    return val[sortix], vec[:,sortix]
+
+def block_mean_fim(n, fim):
+    """Coarse grain FIM by taking averages of blocks that correspond to perturbations
+    focused on particular receiver and target pairs.
+    
+    Parameters
+    ----------
+    n : int
+    fim : ndarray
+    
+    Returns
+    -------
+    ndarray
+        Coarse-grained FIM.
+    """
+    
+    assert n==(fim.shape[0]/(n-1))
+    coarsefim = np.zeros((n,n))
+    
+    # coarse-grain diagonal
+    for i in range(n):
+        coarsefim[i,i] = fim[i*(n-1):(i+1)*(n-1),i*(n-1):(i+1)*(n-1)].mean()
+    # coarse grain off-diagonal elements
+    for i in range(n-1):
+        for j in range(i+1, n):
+            coarsefim[i,j] = coarsefim[j,i] = fim[i*(n-1):(i+1)*(n-1),j*(n-1):(j+1)*(n-1)].mean()
+            
+    return coarsefim
+
+def block_sum_fim(n, fim):
+    """Coarse grain FIM by taking sums of blocks that correspond to perturbations focused
+    on particular receiver and target pairs.
+    
+    Parameters
+    ----------
+    n : int
+    fim : ndarray
+    
+    Returns
+    -------
+    ndarray
+        Coarse-grained FIM.
+    """
+    
+    assert n==(fim.shape[0]/(n-1))
+    coarsefim = np.zeros((n,n))
+    
+    # coarse-grain diagonal
+    for i in range(n):
+        coarsefim[i,i] = fim[i*(n-1):(i+1)*(n-1),i*(n-1):(i+1)*(n-1)].sum()
+    # coarse grain off-diagonal elements
+    for i in range(n-1):
+        for j in range(i+1, n):
+            coarsefim[i,j] = coarsefim[j,i] = fim[i*(n-1):(i+1)*(n-1),j*(n-1):(j+1)*(n-1)].sum()
+            
+    return coarsefim
+
+def missing_fim_files(dr, mnix, mxix):
+    """Display names of files missing in the sequence.
+
+    Parameters
+    ----------
+    dr : str
+    mnix : int
+    mxix : int
+    
+    Returns
+    -------
+    """
+
+    files = os.listdir(dr)
+    nums = sorted([int(f.split('_')[1]) for f in files])
+
+    missingnums = []
+    for i in range(mnix, mxix+1):
+        if not i in nums:
+            missingnums.append(i)
+    return missingnums
+
 def disconnected_components(adj):
     """Identify each independent component using matrix multiplication walk.
     
