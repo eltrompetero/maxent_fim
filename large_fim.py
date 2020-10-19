@@ -515,7 +515,17 @@ class Magnetization():
         return logsumEk
 
     def maj_curvature(self, *args, **kwargs):
-        """Wrapper for _maj_curvature() to find best finite diff step size."""
+        """Wrapper for _maj_curvature() to find best finite diff step size.
+        
+        Returns
+        -------
+        ndarray
+            Calculated Hessian.
+        int
+            Error flag.
+        ndarray
+            Errors.
+        """
 
         import multiprocess as mp
 

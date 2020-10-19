@@ -324,7 +324,8 @@ class FIM():
 
         for i in range(n_sample):
             val, vec = subspace_eig(self.fim, np.random.choice(range(self.n),
-                                                               size=n_comp, replace=False))
+                                                               size=n_comp,
+                                                               replace=False))
             topval[i] = val[0]
 
         return topval
@@ -349,9 +350,9 @@ class FIM():
         assert max_subset_size>0
         
         sampleVal = []
-        if n_subset_range is None:
+        if n_subset_range is None:  # default range
             n_subset_range = list(range(1, self.n+1, 5))
-        if type(n_subset_range) is int:
+        if type(n_subset_range) is int:  # space range out automatically
             n_subset_range = list(range(1, self.n+1, n_subset_range))
 
         for nComp in n_subset_range:

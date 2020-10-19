@@ -1,6 +1,6 @@
 # ====================================================================================== #
 # Pipeline for pivotal voter analysis.
-# Author: Eddie Lee, edlee@alumni.princeton.edu
+# Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 import numpy as np
 import os
