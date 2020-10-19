@@ -5,7 +5,7 @@
 import os
 from .large_fim import Coupling3
 from .utils import *
-import dill
+import dill as pickle
 
 
 
@@ -136,8 +136,8 @@ class MESolution():
         h, J = self.parameters()
         
         model = Coupling3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
-        dill.dump(model.__get_state__(),
-                  open('cache/c_elegans/%s_model%s.p'%(self.name, ''.join(self.ix)),'wb'), -1)
+        pickle.dump(model.__get_state__(),
+                    open('cache/c_elegans/%s_model%s.p'%(self.name, ''.join(self.ix)),'wb'), -1)
         self.exists_model = True
         # this pickle can be loaded using utils.load_Coupling3 as shown in self.model()
     

@@ -1,12 +1,148 @@
 # ====================================================================================== #
-# Analysis of features of FIM that could correspond to measures of "influence."
+# Analysis of features of FIM.
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 from .utils import *
-from .organizer import MESolution
 from scipy.special import binom
 
 
+
+def block_mean(n, X):
+    """Coarse grain matrix by taking averages of blocks that correspond to perturbations
+    focused on particular receiver and target pairs.
+    
+    Parameters
+    ----------
+    n : int
+    X : ndarray
+    
+    Returns
+    -------
+    ndarray
+        Coarse-grained X.
+    """
+    
+    assert n==(X.shape[0]/(n-1))
+    coarseX = np.zeros((n,n))
+    
+    # coarse-grain diagonal
+    for i in range(n):
+        coarseX[i,i] = X[i*(n-1):(i+1)*(n-1),i*(n-1):(i+1)*(n-1)].mean()
+    # coarse grain off-diagonal elements
+    for i in range(n-1):
+        for j in range(i+1, n):
+            coarseX[i,j] = coarseX[j,i] = X[i*(n-1):(i+1)*(n-1),j*(n-1):(j+1)*(n-1)].mean()
+            
+    return coarseX
+
+def block_sum(n, X):
+    """Coarse grain matrix by taking sums of blocks that correspond to perturbations
+    focused on particular receiver and target pairs.
+    
+    Parameters
+    ----------
+    n : int
+    X : ndarray
+    
+    Returns
+    -------
+    ndarray
+        Coarse-grained X.
+    """
+    
+    assert n==(X.shape[0]/(n-1))
+    coarseX = np.zeros((n,n))
+    
+    # coarse-grain diagonal
+    for i in range(n):
+        coarseX[i,i] = X[i*(n-1):(i+1)*(n-1),i*(n-1):(i+1)*(n-1)].sum()
+    # coarse grain off-diagonal elements
+    for i in range(n-1):
+        for j in range(i+1, n):
+            coarseX[i,j] = coarseX[j,i] = X[i*(n-1):(i+1)*(n-1),j*(n-1):(j+1)*(n-1)].sum()
+            
+    return coarseX
+
+def shuffled_entropy(fim, n_iters, n=50):
+    """Shuffle FIM entries and calculate block-averaged entropy.
+    
+    This serves as null for the pivotal neuron structure.
+    
+    Parameters
+    ----------
+    fim : ndarray
+    n_iters : int
+    n : int, 50 
+        Number of spins.
+    
+    Returns
+    -------
+    list of ndarray of length n_iters
+    """
+    
+    S = []
+    diag = fim.diagonal()
+    offdiag = fim[np.triu_indices_from(fim, k=1)]
+    
+    for i in range(n_iters):
+        mixedfim = np.zeros_like(fim)
+        mixedfim[np.triu_indices_from(fim, k=1)] = np.random.permutation(offdiag)
+        mixedfim += mixedfim.T
+        mixedfim[np.diag_indices_from(fim)] = np.random.permutation(diag)
+        
+        val, vec = sorted_eigh(block_mean(n, mixedfim))
+
+        p = vec**2
+        S.append(-(p * np.log2(p)).sum(0))
+
+    return S
+
+def sorted_eigh(X):
+    """
+    Parameters
+    ----------
+    X : ndarray
+
+    Returns
+    -------
+    ndarray
+    ndarray
+    """
+
+    val, vec = np.linalg.eigh(X)
+    sortix = np.argsort(val)[::-1]
+    return val[sortix], vec[:,sortix]
+
+def cfim_entropy(fim, n=50, n_iters=100):
+    """Calculate entropy of the eigenvectors of block-summed FIMs for each specified
+    solution.
+    
+    Entropy is \sum_i v_i^2 * log_2( v_i^2 ).
+    
+    Parameters
+    ----------
+    fim : ndarray
+    n : int, 50
+        Number of spins.
+    n_iters : int, 100
+        Number of random samples to iterate over.
+        
+    Returns
+    -------
+    ndarray
+        Entropy for block-summed FIM.
+    ndarray
+        Entropy for block-summed, shuffled FIM.
+    """
+    
+    cfim = block_sum(n, fim)
+    val, vec = sorted_eigh(cfim)
+
+    p = vec**2
+    S = -(p * np.log2(p)).sum(0)
+    mixedS = shuffled_entropy(fim, n_iters)
+    
+    return S, mixedS
 
 def pivotal_by_subspace(name, n_cutoff):
     """Identify pivotal components by principal subspace eigenvalue.

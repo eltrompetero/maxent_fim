@@ -2,6 +2,7 @@
 # Quick access to useful modules for pivotal components projects.
 # Author : Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
+from .organizer import MESolution
 import numpy as np
 from numba import njit
 from coniii.utils import *
@@ -17,22 +18,6 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
-def sorted_eigh(X):
-    """
-    Parameters
-    ----------
-    X : ndarray
-
-    Returns
-    -------
-    ndarray
-    ndarray
-    """
-
-    val, vec = np.linalg.eigh(X)
-    sortix = np.argsort(val)[::-1]
-    return val[sortix], vec[:,sortix]
-
 def block_mean_fim(n, fim):
     """Coarse grain FIM by taking averages of blocks that correspond to perturbations
     focused on particular receiver and target pairs.
