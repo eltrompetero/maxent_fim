@@ -5,6 +5,7 @@
 import os
 from .large_fim import Coupling3
 from .utils import *
+from .spectral import sorted_eigh
 import dill as pickle
 
 
@@ -206,7 +207,7 @@ class MESolution():
 
         # automatically cache eigenvalues and eigenvectors for this fim
         if not 'eigvec' in indata.keys():
-            indata['eigval'], indata['eigvec'] = self.model().hess_eig(fim, iprint=False)
+            indata['eigval'], indata['eigvec'] = sorted_eigh(fim)
             pickle.dump(indata, open(f'{self.DEFAULT_DR}/{fname}', 'wb'), -1)
 
         return fim
