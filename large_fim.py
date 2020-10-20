@@ -1017,7 +1017,7 @@ class Magnetization():
             voters in the majority decreases by one voter at a time.
         """
         
-        from .influence import block_subspace_eig
+        from .spectral import block_subspace_eig
         from coniii.utils import define_ising_helper_functions
         calc_e, calc_observables, _ = define_ising_helper_functions()
         n = self.n

@@ -11,7 +11,7 @@ import importlib
 from warnings import warn
 from itertools import combinations
 import os
-import pickle, dill
+import dill as pickle
 np.seterr(divide='ignore')
 
 
@@ -254,7 +254,7 @@ def load_Coupling3(fname):
     h = np.concatenate((np.random.normal(size=n*2, scale=.5), np.zeros(n)))
     J = np.random.normal(size=n*(n-1)//2, scale=1/n)
     model = Coupling3(n, h, J, n_samples=100, eps=1e-4, precompute=False, iprint=False)
-    state = dill.load(open(fname,'rb'))
+    state = pickle.load(open(fname,'rb'))
     model.__set_state__(state) 
     n = model.n
     
