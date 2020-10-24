@@ -7,6 +7,32 @@ from scipy.special import binom
 
 
 
+def uniformity(eigvec, axis=0):
+    """Uniformity across either rows or columns of FIM.
+    
+    Parameters
+    ----------
+    eigvec : ndarray
+        Eigenvectors of FIM ordered in the usual way by column.
+    axis : int, 0   
+        Either 0 or 1 corresponding to col or row uniformity.
+
+    Returns
+    -------
+    ndarray
+    """
+    
+    # get number of components for eigenvector of pairwise perturbations
+    from .coarse_grain import count_unique_splits
+    n = (1+np.sqrt(1+4*eigvec.shape[0])) / 2
+    assert int(n)==n, "Cannot be reshaped into n,n pairwise matrix with zeroed diagonal."
+    n = int(n)
+
+    mats = []
+    for i in range(count_unique_splits(n)):
+        mats.append( vec2mat(eigvec[:,i]) )
+    return np.array([(m.sum(axis)**2).sum() for m in mats])
+
 def block_mean(n, X):
     """Coarse grain matrix by taking averages of blocks that correspond to perturbations
     focused on particular receiver and target pairs.

@@ -1,11 +1,12 @@
 # ====================================================================================== #
 # Module for projecting FIM tangent space onto dissenting blocs.
-# Author: Eddie Lee, edlee@alumni.princeton.edu
+# Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 from .utils import *
 from coniii.enumerate import fast_logsumexp
 import os
 calc_e, calc_observables, _ = define_ising_helper_functions()
+
 
 
 class BlocProjection():
@@ -93,3 +94,4 @@ class BlocProjection():
             dlogp[i] = (np.log10(thispplusdE) - np.log10(thispminusdE)) / (2*self.eps)
 
         return logp, dlogp, namesInBlocs
+#end BlocProjection

@@ -195,7 +195,8 @@ class MESolution():
         return sisj[:150], sisj[150:]
 
     def fim(self):
-        """
+        """Return FIM from cache, else calculated it by calling spectral.sorted_eigh().
+
         Returns
         -------
         ndarray
@@ -243,7 +244,7 @@ class MESolution():
             All sorted eigenvalues by row.
         """
         
-        #TODO: this is hard-coded, but should be flexible
+        #TODO: this is hard-coded, but should be flexible?
         rnumerals = ['i','ii','iii','iv','v','vi','vii','viii','ix','x']
         vals = []
 
