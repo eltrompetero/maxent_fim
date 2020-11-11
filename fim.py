@@ -2,19 +2,16 @@
 # Classes for calculating FIM on Ising and Potts models.
 # Author : Eddie Lee, edlee@alumni.princeton.edu
 # ====================================================================================== #
-import numpy as np
-from numba import njit
-from coniii.utils import *
 from .utils import *
+
 import importlib
-from warnings import warn
 from itertools import combinations, product
 from coniii.enumerate import fast_logsumexp, mp_fast_logsumexp
 from coniii.utils import define_ising_helper_functions
 from multiprocess import Pool, cpu_count
-import mpmath as mp
 from scipy.sparse import coo_matrix
 from . import mvm
+
 calc_e, _, _ = define_ising_helper_functions()
 np.seterr(divide='ignore')
 

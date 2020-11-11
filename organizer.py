@@ -2,11 +2,12 @@
 # Module for organizing maxent solutions for neural data.
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
-import os
-from .large_fim import Coupling3
 from .utils import *
-from .spectral import sorted_eigh
+import os
 import dill as pickle
+
+from .large_fim import Coupling3
+from .spectral import sorted_eigh
 
 
 
