@@ -6,7 +6,7 @@ from .utils import *
 import os
 import dill as pickle
 
-from .large_fim import Coupling3
+from .large_fim import Mag3, Coupling3
 from .spectral import sorted_eigh
 
 
@@ -52,18 +52,18 @@ class MESolution():
         files = os.listdir(self.DEFAULT_DR)
 
         # look for maxent soln results
-        if not f'{name}_soln{"".join(self.ix[:-1])}.p' in files:
+        if not self.soln_f() in files:
             if iprint: print("Maxent solution file not found.")
-            if not f'{name}_model{"".join(self.ix)}.p' in files:
+            if not self.model_f() in files:
                 raise Exception("Neither maxent nor model file found.")
             else:
-                self.n = pickle.load(open(f'{self.DEFAULT_DR}/{name}_model{"".join(self.ix)}.p', 'rb'))['n']
+                self.n = pickle.load(open(self.model_f(), 'rb'))['n']
                 self.exists_model = True
             self._me = False
         else:
-            fname = f'{self.DEFAULT_DR}/{name}_soln{"".join(self.ix[:-1])}.p'
+            fname = f'{self.DEFAULT_DR}/{self.soln_f()}'
             self.n = pickle.load(open(fname, 'rb'))['X'].shape[1]
-            if not '%s_model%s.p'%(name, ''.join(self.ix)) in files:
+            if not self.model_f() in files:
                 if iprint: print("Model file not found.")
                 self.exists_model = False
             else:
@@ -71,11 +71,20 @@ class MESolution():
             self._me = True
         
         # look for FIM results
-        if not '%s_fim%s.p'%(name, ''.join(self.ix)) in files:
+        if not self.fim_f() in files:
             if iprint: print("FIM not found.")
             self._fim = False
         else:
             self._fim = True
+
+    def soln_f(self):
+        return f'{self.name}_soln{"".join(self.ix[:-1])}.p'
+
+    def model_f(self):
+        return f"{self.name}_model{''.join(self.ix)}.p"
+
+    def fim_f(self):
+        return f"{self.name}_fim{''.join(self.ix)}.p"
         
     def neuron_ix(self):
         """Get indices of neurons solved from original discretized recording.
@@ -86,10 +95,10 @@ class MESolution():
         """
         
         if self._me:
-            fname = '%s_soln%s.p'%(self.name, ''.join(self.ix[:-1]))
+            fname = self.soln_f()
         else:
-            fname = '%s_model%s.p'%(self.name, ''.join(self.ix[:-1]))
-        indata = pickle.load(open('%s/%s'%(self.DEFAULT_DR, fname), 'rb'))
+            fname = self.model_f()
+        indata = pickle.load(open(f'{self.DEFAULT_DR}/{fname}', 'rb'))
         
         return indata['neuronix']
 
@@ -105,10 +114,10 @@ class MESolution():
         """
         
         if self._me:
-            fname = '%s_soln%s.p'%(self.name, ''.join(self.ix[:-1]))
+            fname = self.soln_f()
         else:
-            fname = '%s_model%s.p'%(self.name, ''.join(self.ix[:-1]))
-        indata = pickle.load(open('%s/%s'%(self.DEFAULT_DR, fname), 'rb'))
+            fname = self.model_f()
+        indata = pickle.load(open(f'{self.DEFAULT_DR}/{fname}', 'rb'))
 
         if 'h' in indata.keys() and 'J' in indata.keys():
             if indata['h'].size==2*self.n:
@@ -139,7 +148,7 @@ class MESolution():
         
         model = Coupling3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
         pickle.dump(model.__get_state__(),
-                    open('cache/c_elegans/%s_model%s.p'%(self.name, ''.join(self.ix)),'wb'), -1)
+                    open(f'{self.DEFAULT_DR}/{self.model_f()}','wb'), -1)
         self.exists_model = True
         # this pickle can be loaded using utils.load_Coupling3 as shown in self.model()
     
@@ -155,10 +164,10 @@ class MESolution():
             Dimensions of (n_samples, n_neurons).
         """
 
-        fname = f"{self.DEFAULT_DR}/{self.name}_soln{''.join(self.ix[:-1])}.p"
+        fname = f'{self.DEFAULT_DR}/{self.soln_f()}'
         if os.path.isfile(fname):
             return pickle.load(open(fname, 'rb'))['X']
-        raise Exception(f"Solution file {self.DEFAULT_DR}/{self.name}_soln{''.join(self.ix[:-1])}.p does not exist.")
+        raise Exception(f"Solution file {fname} does not exist.")
 
     def model(self):
         if not self.exists_model:
@@ -166,7 +175,7 @@ class MESolution():
 
         if not '_model' in self.__dict__.keys():
             from .utils import load_Coupling3
-            self._model = load_Coupling3('%s/%s_model%s.p'%(self.DEFAULT_DR, self.name, ''.join(self.ix)))
+            self._model = load_Coupling3(f'{self.DEFAULT_DR}/{self.model_f()}')
         return self._model
 
     def sisj(self, source='model'):
@@ -203,7 +212,7 @@ class MESolution():
         ndarray
         """
 
-        fname = f'{self.name}_fim{"".join(self.ix)}.p'
+        fname = self.fim_f()
         indata = pickle.load(open(f'{self.DEFAULT_DR}/{fname}', 'rb'))
         fim = indata['fim']
 
@@ -225,7 +234,7 @@ class MESolution():
         """
         
         try:
-            fname = f'{self.name}_fim{"".join(self.ix)}.p'
+            fname = self.fim_f()
             indata = pickle.load(open(f'{self.DEFAULT_DR}/{fname}', 'rb'))
             return indata['eigval'], indata['eigvec']
         except KeyError:
@@ -292,6 +301,52 @@ class MESolution():
 
         return fim
 #end MESolution
+
+
+
+class MagSolution(MESolution):
+    DEFAULT_DR = 'cache/c_elegans/mag3'  # default dr where pickles are stored
+
+    def setup_model(self, n_samples=100_000, eps=1e-4):
+        """Set up large_fim.Mag3 for FIM calculation. Result will be saved into model
+        pickle.
+
+        Parameters
+        ----------
+        n_samples : int, 1e5
+        eps : float, 1e-4
+
+        Returns
+        -------
+        None
+        """
+
+        h, J = self.parameters()
+        
+        model = Mag3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
+        pickle.dump(model.__get_state__(),
+                    open(f'{self.DEFAULT_DR}/{self.model_f()}','wb'), -1)
+        self.exists_model = True
+        # this pickle can be loaded using utils.load_Coupling3 as shown in self.model()
+
+    def setup_fim(self):
+        """Calculate and pickle FIM."""
+        
+        model = self.model()
+        fname = self.fim_f()
+        fim = model.maj_curvature()
+
+        pickle.dump({'fim':fim}, open(f'{self.DEFAULT_DR}/{fname}', 'wb'), -1)
+
+    def model(self):
+        if not self.exists_model:
+            raise Exception("Model file not found.")
+
+        if not '_model' in self.__dict__.keys():
+            from .utils import load_Mag3
+            self._model = load_Mag3(f'{self.DEFAULT_DR}/{self.model_f()}')
+        return self._model
+#end MagSolution
 
 
 

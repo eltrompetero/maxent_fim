@@ -307,9 +307,9 @@ def vec2mat(vec):
 
     return np.insert(vec, range(0, n*n, n), 0).reshape(n,n).T
 
-def load_Coupling3(fname):
+def load_Mag3(fname):
     """Load a model from large_fim that has been pickled. Regular pickling routine does
-    not work form them!
+    not work for them!
 
     Parameters
     ----------
@@ -318,6 +318,35 @@ def load_Coupling3(fname):
 
     Returns
     -------
+    large_fim.Mag3
+    """
+    
+    from .large_fim import Mag3
+    assert os.path.isfile(fname)
+
+    # load model. must initialize a template instance first
+    n = 5
+    h = np.concatenate((np.random.normal(size=n*2, scale=.5), np.zeros(n)))
+    J = np.random.normal(size=n*(n-1)//2, scale=1/n)
+    model = Mag3(n, h, J, n_samples=100, eps=1e-4, precompute=False, iprint=False)
+    state = pickle.load(open(fname, 'rb'))
+    model.__set_state__(state) 
+    n = model.n
+    
+    return model
+
+def load_Coupling3(fname):
+    """Load a model from large_fim that has been pickled. Regular pickling routine does
+    not work for them!
+
+    Parameters
+    ----------
+    fname : str
+        name of pickled file
+
+    Returns
+    -------
+    large_fim.Coupling3
     """
     
     from .large_fim import Coupling3
