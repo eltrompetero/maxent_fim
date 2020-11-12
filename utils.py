@@ -2,16 +2,20 @@
 # Quick access to useful modules for pivotal components projects.
 # Author : Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
-from .organizer import MESolution
 import numpy as np
 from numba import njit
 from coniii.utils import *
-from .fim import Coupling  # for compatibility with old pickles
 import importlib
 from warnings import warn
-from itertools import combinations
+from itertools import combinations, product
 import os
 import dill as pickle
+from threadpoolctl import threadpool_limits
+import mpmath as mp
+
+from .fim import Coupling  # for compatibility with old pickles
+from .organizer import MESolution
+
 np.seterr(divide='ignore')
 
 
@@ -19,6 +23,75 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def perturb_3_spin(p, k,
+                   eps=1e-4,
+                   return_delta=False,
+                   run_checks=False):
+    """Perturb configuration of 3-state spin along the shortest distance in triangular
+    convex hull to target state.
+
+    We use the replacement rule pi -> pi * (1-eps) + eps. The remaining other two
+    probabilities are modified by calculating the projection along the respective
+    probability axes. These axes are given by the shortest distance to the corresponding
+    edge.
+
+    Code was originally written for particular case of perturbaiton towards p[1], but
+    uses rolled axes to consider all other dimensions.
+
+    Parameters
+    ----------
+    p : ndarray
+        Probability as 3-vector.
+    k : int
+        Dimension along which to effect primary perturbation. 0<=k<=2.
+    eps : float, 1e-4
+        Strength of perturbation.
+    return_delta : bool, False
+    run_checks : bool, False
+    
+    Returns
+    -------
+    ndarray
+    """
+    
+    if run_checks: assert np.isclose(p.sum(), 1) and p.size==3 and (p>=0).all()
+    assert 0<=k<=2
+    
+    if k==0:
+        rollno = 2
+    elif k==2:
+        rollno = 1
+    else:
+        rollno = 0
+    p = np.roll(p, -rollno)
+    
+    xy = (p[1] * 2 + p[2]) / np.sqrt(3), p[2]
+    
+    r = np.array([np.linalg.norm(xy),
+                  np.linalg.norm([xy[0]-2/np.sqrt(3), xy[1]]),
+                  np.linalg.norm([xy[0]-1/np.sqrt(3), xy[1]-1])])
+    
+    theta = np.arcsin(p[[2,0,1]]/r)
+    
+    # this can only be the case if the hypotenuse is shorter than a leg!
+    if run_checks: assert ~np.isnan(theta).any()
+
+    deltanorm = eps * (1-p[1]) / np.cos(theta[1]-np.pi/6)
+    delta = np.array([np.cos(np.pi/2-theta[1]),
+                      np.cos(theta[1]-np.pi/6),
+                      np.cos(np.pi/6+theta[1])])
+    
+    if run_checks: assert np.isclose(delta[1] - delta[0] - delta[2], 0), delta
+    
+    if return_delta:
+        d = deltanorm * delta * np.array([-1,1,-1])
+        return np.roll(d, rollno)
+ 
+    newp = p + deltanorm * delta * np.array([-1,1,-1])
+    newp = np.roll(newp, rollno)
+    
+    return newp
+
 def block_mean_fim(n, fim):
     """Coarse grain FIM by taking averages of blocks that correspond to perturbations
     focused on particular receiver and target pairs.

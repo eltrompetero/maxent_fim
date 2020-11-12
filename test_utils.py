@@ -4,11 +4,37 @@
 # ============================================================================================ # 
 from .utils import *
 from time import perf_counter
-np.random.seed(0)
 
 
+
+def test_perturb_3_spin():
+    np.random.seed(0)
+    
+    # check symmetric case
+    p = np.ones(3) / 3
+    for i in range(3):
+        delta = perturb_3_spin(p, i, eps=1e-4, return_delta=True)
+        assert delta[i]>0 and np.isclose(delta[(i+1)%2], delta[(i-1)%2]) and delta[i]!=delta[(i-1)%2]
+        
+        delta = perturb_3_spin(p, i, eps=-1e-4, return_delta=True)
+        assert delta[i]<0 and np.isclose(delta[(i+1)%2], delta[(i-1)%2]) and delta[i]!=delta[(i-1)%2]
+
+    for i in range(100):
+        p = np.random.rand(3)
+        p /= p.sum()
+        
+        for j in range(3):
+            perturb_3_spin(p, j, run_checks=True)
+
+    for i in range(100):
+        p = np.random.rand(3)
+        p /= p.sum()
+        
+        for j in range(3):
+            perturb_3_spin(p, j, run_checks=True, eps=-1e-4)
 
 def test_coarse_grain():
+    np.random.seed(0)
     X = np.random.choice([-1,1], size=(100,3))
     coarseX, groupsix = coarse_grain(X, 3)
     assert np.array_equal(X, coarseX)
@@ -19,17 +45,8 @@ def test_coarse_grain():
     assert np.array_equal(coarseX[:,:2], X[:,:2])
     assert ~np.array_equal(coarseX[:,-1], np.sign(X[:,-2:].sum(1)))
 
-def test_tweak_constraints(n=3):
-    X=np.random.choice([-1,1],(100,n))
-    sisj=pair_corr(X, concat=True)
-    for i in range(n):
-        for j in np.delete(np.arange(n),i):
-            Xdup=X.copy()
-            Xdup[:,i]=X[:,j]
-            assert np.isclose( pair_corr(Xdup, concat=True),
-                               tweak_constraints(sisj, i, j, 1, n) ).all()
-
 def test_remove_principal_mode():
+    np.random.seed(0)
     X = np.corrcoef(np.random.rand(5,5))
     el, v = np.linalg.eig(X)
     sortix = np.argsort(el)[::-1][1:-1]

@@ -1,26 +1,23 @@
 # ====================================================================================== #
-# Classes for calculating FIM on Ising and Potts models for large systems where sampling
-# is necessary.
+# Classes for calculating FIM on Ising and Potts models for large systems where MC
+# sampling is necessary to calculate perturbative quantities.
 # Author : Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
-import numpy as np
+from .utils import *
+
 from numba import njit, prange
-from coniii.utils import *
-from warnings import warn
-from itertools import combinations, product
 from coniii.enumerate import fast_logsumexp, mp_fast_logsumexp
 from multiprocess import Pool, cpu_count, set_start_method
-import mpmath as mp
 from scipy.sparse import coo_matrix
 from numba.typed import Dict as nDict
 from tempfile import mkdtemp
 from multiprocess import RawArray
-from threadpoolctl import threadpool_limits
 import socket
-from .utils import *
+
 from .models import LargeIsing, LargePotts3
-from .fim import *
+
 np.seterr(divide='ignore')
+
 
 
 class Magnetization():
@@ -33,7 +30,7 @@ class Magnetization():
                  eps=1e-7,
                  precompute=True,
                  n_cpus=None,
-                 n_samples=10_000_000):
+                 n_samples=100_000):
         """
         Parameters
         ----------
@@ -1474,8 +1471,9 @@ class Coupling(Magnetization):
 #end Couplings
 
 
-class Coupling3(Coupling):
-    """Pairwise perturbations tweaked for ternary states like C. elegans."""
+
+class Mag3(Coupling):
+    """Single spin mean perturbations for ternary states."""
     def __init__(self, n,
                  h=None,
                  J=None,
@@ -1498,7 +1496,7 @@ class Coupling3(Coupling):
         precompute : bool, True
             Set up and do perturation calculation.
         n_cpus : int, None
-        n_samples : int, 10_000_000
+        n_samples : int, 100_000
             Number of samples for Metropolis sampling.
         rng : np.random.RandomState, None
         iprint : bool, True
@@ -1506,7 +1504,7 @@ class Coupling3(Coupling):
         sampler_kw : dict, {}
         """
 
-        assert n>1 and 0<eps<1e-2
+        assert isinstance(n, int) and n>1 and 0<eps<1e-2
         assert (h[2*n:3*n]==0).all()
         assert h.size==3*n and J.size==n*(n-1)//2
 
@@ -1527,7 +1525,7 @@ class Coupling3(Coupling):
                           self.allStates))
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         self.coarseUix = np.unique(self.coarseInvix)
-    
+
         if precompute:
             # cache triplet and quartet products
             if self.iprint: print("Starting correlations calculation...")
@@ -1550,8 +1548,7 @@ class Coupling3(Coupling):
         return state
 
     def __set_state__(self, state):
-        """Numba typed dicts need to be computed again.
-        """
+        """Numba typed dicts need to be computed again."""
         self.__dict__.update(state) 
         # self._triplets_and_quartets()
 
@@ -1570,7 +1567,7 @@ class Coupling3(Coupling):
         self.quartets = dict(quartets)
 
     def compute_dJ(self, n_cpus=None):
-        """Compute linear change to parameters for small perturbation.
+        """Compute linear change to maxent parameters for perturbation.
         
         Parameters
         ----------
@@ -1585,113 +1582,81 @@ class Coupling3(Coupling):
         n_cpus = n_cpus or self.n_cpus
 
         def wrapper(params):
-            """Make spin i more like spin a."""
+            """Push spin i towards state k"""
             from numba import typed, types
 
-            i, a = params
+            i, k = params
 
             # convert dicts to numba typed dicts for calc_A
             pairs = typed.Dict.empty(types.UniTuple(types.int64, 4), types.float64)
-            for k,v in self.pairs.items():
-                pairs[k] = v
+            for ix, v in self.pairs.items():
+                pairs[ix] = v
             triplets = typed.Dict.empty(types.UniTuple(types.int64, 4), types.float64)
-            for k,v in self.triplets.items():
-                triplets[k] = v
+            for ix, v in self.triplets.items():
+                triplets[ix] = v
             quartets = typed.Dict.empty(types.UniTuple(types.int64, 4), types.float64)
-            for k,v in self.quartets.items():
-                quartets[k] = v
+            for ix, v in self.quartets.items():
+                quartets[ix] = v
             self.pairs, self.triplets, self.quartets = pairs, triplets, quartets
 
-            return self.solve_linearized_perturbation(i, a)[0]
-        
-        # define fun for setting up args to pass into multiprocessing
-        def args():
-            for i in range(self.n):
-                for a in np.delete(range(self.n),i):
-                    yield (i,a)
+            return self.solve_linearized_perturbation(i, k)[0]
         
         # run parallelized approach to solving perturbations
         if n_cpus is None or n_cpus>1:
-            if self.iprint: print("Using multiprocessing...")
+            if self.iprint: print("Multiprocessing to solve for dJ...")
             with threadpool_limits(limits=1, user_api='blas'):
                 with Pool(n_cpus) as pool:
-                    dJ = np.vstack(( pool.map(wrapper, args()) ))
+                    dJ = np.vstack(list( pool.map(wrapper,
+                                                  product(range(self.n), range(self.kStates))) ))
         else:
-            dJ = np.zeros((self.n*(self.n-1), 3*self.n+(self.n-1)*self.n//2))
-            for counter,(i,a) in enumerate(args()):
-                dJ[counter] = wrapper((i,a))
+            dJ = np.zeros((self.n*self.kStates, self.kStates*self.n+(self.n-1)*self.n//2))
+            for counter, (i, k) in enumerate(product(range(self.n), range(self.kStates))):
+                dJ[counter] = wrapper((i, k))
+        print("Done.")
 
         self.dJ = dJ
         return dJ
-
-    def _observables_after_perturbation(self, si, sisj, i, a, eps):
-        """Make spin i more like spin a.
-        """
-        
-        n = self.n
-        osi = si.copy()
-        osisj = sisj.copy()
-        
-        # mimic average magnetization
-        for k in range(self.kStates):
-            si[i+k*n] = osi[i+k*n] - eps*(osi[i+k*n] - osi[a+k*n])
-
-        for j in np.delete(list(range(n)),i):
-            if i<j:
-                ijix = unravel_index((i,j),n)
-            else:
-                ijix = unravel_index((j,i),n)
-
-            if j==a:
-                sisj[ijix] = osisj[ijix] - eps*(osisj[ijix] - 1)
-            else:
-                if j<a:
-                    jaix = unravel_index((j,a),n)
-                else:
-                    jaix = unravel_index((a,j),n)
-                sisj[ijix] = osisj[ijix] - eps*(osisj[ijix] - osisj[jaix])
     
-    def observables_after_perturbation(self, i, a, eps=None):
-        """Make spin index i more like spin a by eps. Perturb the corresponding mean and
-        the correlations with other spins j.
+    def observables_after_perturbation(self, i, k, eps=None):
+        """Push spin i towards state k by eps. Perturb the corresponding mean and the
+        correlations with other spins j.
         
         Parameters
         ----------
         i : int
             Spin being perturbed.
-        a : int
-            Spin to mimic.
+        k : int
         eps : float, None
+            To set custom epsilon parameter.
 
         Returns
         -------
         ndarray
-            Observables <si> and <sisj> after perturbation.
-        bool
-            perturb_up
+            Perturbed observables <si> and <sisj> concatenated.
         """
+
+        from .utils import perturb_3_spin
         
-        if not hasattr(i,'__len__'):
-            i = (i,)
-        if not hasattr(a,'__len__'):
-            a = (a,)
-        for (i_,a_) in zip(i,a):
-            assert i_!=a_
-        if not hasattr(eps,'__len__'):
-            eps = eps or self.eps
-            eps = [eps]*len(i)
+        eps = eps or self.eps
         n = self.n
-        si = self.sisj[:n*3]
-        sisj = self.sisj[3*n:]
+        si = self.sisj[:n*3].copy()
+        sisj = self.sisj[3*n:].copy()
 
-        # observables after perturbations
-        siNew = si.copy()
-        sisjNew = sisj.copy()
+        delta = perturb_3_spin(si[[i,i+n,i+2*n]], k, eps, return_delta=True)
+        # modify this spin's bias
+        si[[i,i+n,i+2*n]] += delta
+
+        # change pairwise correlations with spin i
+        for j in np.delete(list(range(n)), i):
+            if i < j:
+                ijix = unravel_index((i,j), n)
+            else:
+                ijix = unravel_index((j,i), n)
+            
+            for k_ in range(self.kStates):
+                sisj[ijix] += delta[k_] * self.sisj[k_ * n + j]
         
-        for i_,a_,eps_ in zip(i,a,eps):
-            self._observables_after_perturbation(siNew, sisjNew, i_, a_, eps_)
-
-        return np.concatenate((siNew, sisjNew)), True
+        return np.concatenate((si, sisj))
    
     def _maj_curvature(self,
                        epsdJ=1e-7,
@@ -1916,13 +1881,13 @@ class Coupling3(Coupling):
         if check_stability:
             if iprint: print("Checking stability...")
             hess2 = self._maj_curvature(epsdJ=epsdJ/2,
-                                check_stability=False,
-                                iprint=iprint,
-                                calc_diag=calc_diag,
-                                calc_off_diag=calc_off_diag,
-                                off_diag_ix=off_diag_ix)
-            # check stability for entries that have not been set to np.nan (either on purpose or because of
-            # precision problems)
+                                        check_stability=False,
+                                        iprint=iprint,
+                                        calc_diag=calc_diag,
+                                        calc_off_diag=calc_off_diag,
+                                        off_diag_ix=off_diag_ix)
+            # check stability for entries that have not been set to np.nan (either on
+            # purpose or because of precision problems)
             nanix = ~(np.isnan(hess) | np.isnan(hess2))
             err = hess[nanix] - hess2[nanix]
             if (np.abs(err/hess[nanix]) > rtol).any():
@@ -1989,6 +1954,359 @@ class Coupling3(Coupling):
             return ddplus, ddplus-ddminus
         return diag
   
+    def _solve_linearized_perturbation_tester(self, iStar, kStar, full_output=False):
+        """
+        ***FOR DEBUGGING ONLY***
+
+        Parameters
+        ----------
+        iStar : int
+        kStar : int
+
+        Returns
+        -------
+        ndarray
+            Estimated linear change in maxent parameters.
+        """
+        
+        n = self.n
+        k = self.kStates
+        p = self.p
+        C = self.observables_after_perturbation(iStar, kStar)[0]
+        assert k==3, "Only handles k=3."
+
+        from coniii.solvers import Enumerate
+        from coniii.models import Potts3
+        model = Potts3([np.zeros(k*n), np.zeros(n*(n-1)//2)])
+        calc_observables = define_ternary_helper_functions()[1]
+        solver = Enumerate(np.vstack((np.ones(n), -np.ones(n))),
+                           model=model,
+                           calc_observables=calc_observables)
+       
+        # hybr solver seems to work more consistently than default krylov
+        hJ0 = solver.solve(constraints=self.sisj,
+                           initial_guess=self.hJ,
+                           full_output=True,
+                           scipy_solver_kwargs={'method':'hybr', 'tol':1e-12})[0]
+
+        # hybr solver seems to work more consistently than default krylov
+        fullsoln = solver.solve(constraints=C,
+                                initial_guess=self.hJ,
+                                full_output=True,
+                                scipy_solver_kwargs={'method':'hybr', 'tol':1e-12})
+        soln = fullsoln[0]
+
+        # remove translational offset for last set of fields
+        hJ0[:n*k] -= np.tile(hJ0[n*(k-1):n*k], k)
+        soln[:n*k] -= np.tile(soln[n*(k-1):n*k], k)
+        if full_output:
+            return (soln - self.hJ)/(self.eps), fullsoln
+        return (soln - hJ0)/(self.eps)
+
+    def _solve_linearized_perturbation(self, iStar, kStar,
+                                       full_output=False,
+                                       eps=None,
+                                       check_stability=True):
+        """Consider a perturbation to make spin iStar more likely to be in state kStar.
+        
+        Parameters
+        ----------
+        iStar : int
+        kStar : int
+        full_output : bool, False
+        eps : float, None
+        check_stability : bool, True
+
+        Returns
+        -------
+        ndarray
+            dJ
+        int
+            Error flag. Returns 0 by default. 1 means badly conditioned matrix A.
+        tuple (optional)
+            (Aplus, Cplus)
+        float (optional)
+            Relative error to log10.
+        """
+        
+        eps = eps or self.eps
+        n = self.n
+        kStates = self.kStates
+        p = self.p
+        si = self.sisj[:n*kStates]
+        sisj = self.sisj[kStates*n:]
+
+        # matrix that will be multiplied by the vector of correlation perturbations
+        Cplus = self.observables_after_perturbation(iStar, kStar, eps=eps)
+        Cminus = self.observables_after_perturbation(iStar, kStar, eps=-eps)
+        errflag = 0
+        
+        if type(self.pairs) is dict:
+            warn("Using slower version of calc_A.")
+            Aplus = calc_A(n, kStates,
+                           self.allStates, p, si, sisj,
+                           self.pairs, self.triplets, self.quartets,
+                           Cplus)
+            Aminus = calc_A(n, kStates,
+                            self.allStates, p, si, sisj,
+                            self.pairs, self.triplets, self.quartets,
+                            Cminus)
+        else:
+            Aplus = jit_calc_A(n, kStates,
+                               self.allStates, p, si, sisj,
+                               self.pairs, self.triplets, self.quartets,
+                               Cplus)
+            Aminus = jit_calc_A(n, kStates,
+                                self.allStates, p, si, sisj,
+                                self.pairs, self.triplets, self.quartets,
+                                Cminus)
+        Cplus -= self.sisj
+        Cminus -= self.sisj
+        # factor out linear dependence on eps
+        dJ = np.linalg.lstsq(Aplus+Aminus, Cplus-Cminus, rcond=None)[0]/eps
+        # put back in fields that we've fixed to 0 by normalization
+        dJ = np.insert(dJ, (kStates-1)*n, np.zeros(n))
+
+        if check_stability:
+            # double epsilon and make sure solution does not change by a large amount
+            dJtwiceEps, errflag = self._solve_linearized_perturbation(iStar, kStar,
+                                                                      eps=eps/2,
+                                                                      check_stability=False)
+            # print if relative change is more than .1% for any entry excepting zeros
+            # which are set by zeroed fields
+            zeroix = dJ==0
+            relerr = np.log10(np.abs(dJ[~zeroix]-dJtwiceEps[~zeroix])) - np.log10(np.abs(dJ[~zeroix]))
+            if (relerr>-3).any():
+                if self.iprint:
+                    print("Unstable solution. Recommend shrinking eps. Max err=%E"%(10**relerr.max()))
+                errflag = 2
+        
+        if np.linalg.cond(Aplus)>1e15:
+            warn("A is badly conditioned for pair (i, a)=(%d, %d)."%(iStar,kStar))
+            # this takes precedence over relerr over threshold
+            errflag = 1
+
+        if full_output:
+            if check_stability:
+                return dJ, errflag, (Aplus, Cplus), relerr
+            return dJ, errflag, (Aplus, Cplus)
+        return dJ, errflag
+
+    def _dlogpk(self, dJ, eps):
+        """Partitions are determined by unique ones found in the sample and referenced in
+        self.coarseUix and self.coarseInvix.
+        """
+
+        calc_e = self.ising.calc_e
+        n = self.n
+        
+        # calculate change in energy of each observed configuration as we induce
+        # perturbation in both pos and neg directions
+        dE = calc_e(self.allStates, dJ*eps)
+        E = np.log(self.p)
+        pplus = np.exp(E+dE - fast_logsumexp(E+dE)[0])  # modified probability distribution
+        pminus = np.exp(E-dE - fast_logsumexp(E-dE)[0])  # modified probability distribution
+        
+        choosek = self.coarseUix.size
+        pkplusdE = np.zeros(choosek)
+        pkminusdE = np.zeros(choosek)
+        for k in range(choosek):
+            pkplusdE[k] = pplus[self.coarseInvix==k].sum()
+            pkminusdE[k] = pminus[self.coarseInvix==k].sum()
+        dlogp = (np.log2(pkplusdE) - np.log2(pkminusdE)) / (2*eps)
+        return dlogp
+#end Mag3
+
+
+
+class Coupling3(Mag3):
+    """Pairwise perturbations tweaked for ternary states."""
+    def __init__(self, n,
+                 h=None,
+                 J=None,
+                 eps=1e-7,
+                 precompute=True,
+                 n_cpus=None,
+                 n_samples=100_000,
+                 rng=None,
+                 iprint=True,
+                 sampler_kw={}):
+        """
+        Parameters
+        ----------
+        n : int
+        h : ndarray, None
+            Full specification of all 3xN fields.
+        J : ndarray, None
+        eps : float, 1e-7
+            Must be careful to set this relative to the precision of the MC sample.
+        precompute : bool, True
+            Set up and do perturation calculation.
+        n_cpus : int, None
+        n_samples : int, 10_000_000
+            Number of samples for Metropolis sampling.
+        rng : np.random.RandomState, None
+        iprint : bool, True
+            Display info if True.
+        sampler_kw : dict, {}
+        """
+
+        assert n>1 and 0<eps<1e-2
+        assert (h[2*n:3*n]==0).all()
+        assert h.size==3*n and J.size==n*(n-1)//2
+
+        self.n = n
+        self.kStates = 3
+        self.eps = eps
+        self.hJ = np.concatenate((h,J))
+        self.n_cpus = n_cpus
+        self.rng = rng or np.random
+        self.iprint = iprint
+
+        self.ising = LargePotts3((h,J), n_samples, iprint=iprint, rng=self.rng, **sampler_kw)
+        self.sisj = np.concatenate(self.ising.corr[:2])
+        self.p = self.ising.p
+        self.allStates = self.ising.states.astype(np.int8)
+        # determine p(k) as the number of votes in the plurality
+        kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
+                          self.allStates))
+        self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
+        self.coarseUix = np.unique(self.coarseInvix)
+    
+        if precompute:
+            # cache triplet and quartet products
+            if self.iprint: print("Starting correlations calculation...")
+            self._triplets_and_quartets() 
+            if self.iprint: print("Done.")
+
+            if iprint: print("Computing dJ...")
+            self.compute_dJ()
+            if iprint: print("Done.")
+        else:
+            self.dJ = None
+    
+    def _observables_after_perturbation(self, si, sisj, i, a, eps):
+        """Make spin i more like spin a.
+        """
+        
+        n = self.n
+        osi = si.copy()
+        osisj = sisj.copy()
+        
+        # mimic average magnetization
+        for k in range(self.kStates):
+            si[i+k*n] = osi[i+k*n] - eps*(osi[i+k*n] - osi[a+k*n])
+
+        for j in np.delete(list(range(n)),i):
+            if i<j:
+                ijix = unravel_index((i,j),n)
+            else:
+                ijix = unravel_index((j,i),n)
+
+            if j==a:
+                sisj[ijix] = osisj[ijix] - eps*(osisj[ijix] - 1)
+            else:
+                if j<a:
+                    jaix = unravel_index((j,a),n)
+                else:
+                    jaix = unravel_index((a,j),n)
+                sisj[ijix] = osisj[ijix] - eps*(osisj[ijix] - osisj[jaix])
+    
+    def observables_after_perturbation(self, i, a, eps=None):
+        """Make spin index i more like spin a by eps. Perturb the corresponding mean and
+        the correlations with other spins j.
+        
+        Parameters
+        ----------
+        i : int
+            Spin being perturbed.
+        a : int
+            Spin to mimic.
+        eps : float, None
+
+        Returns
+        -------
+        ndarray
+            Observables <si> and <sisj> after perturbation.
+        """
+        
+        if not hasattr(i,'__len__'):
+            i = (i,)
+        if not hasattr(a,'__len__'):
+            a = (a,)
+        for (i_,a_) in zip(i,a):
+            assert i_!=a_
+        if not hasattr(eps,'__len__'):
+            eps = eps or self.eps
+            eps = [eps]*len(i)
+        n = self.n
+        si = self.sisj[:n*3]
+        sisj = self.sisj[3*n:]
+
+        # observables after perturbations
+        siNew = si.copy()
+        sisjNew = sisj.copy()
+        
+        for i_, a_, eps_ in zip(i, a, eps):
+            self._observables_after_perturbation(siNew, sisjNew, i_, a_, eps_)
+
+        return np.concatenate((siNew, sisjNew))
+  
+    def compute_dJ(self, n_cpus=None):
+        """Compute linear change to parameters for small perturbation.
+        
+        Parameters
+        ----------
+        n_cpus : int, None
+
+        Returns
+        -------
+        dJ : ndarray
+            (n_perturbation_parameters, n_maxent_parameters)
+        """
+        
+        n_cpus = n_cpus or self.n_cpus
+
+        def wrapper(params):
+            """Make spin i more like spin a."""
+            from numba import typed, types
+
+            i, a = params
+
+            # convert dicts to numba typed dicts for calc_A
+            pairs = typed.Dict.empty(types.UniTuple(types.int64, 4), types.float64)
+            for k,v in self.pairs.items():
+                pairs[k] = v
+            triplets = typed.Dict.empty(types.UniTuple(types.int64, 4), types.float64)
+            for k,v in self.triplets.items():
+                triplets[k] = v
+            quartets = typed.Dict.empty(types.UniTuple(types.int64, 4), types.float64)
+            for k,v in self.quartets.items():
+                quartets[k] = v
+            self.pairs, self.triplets, self.quartets = pairs, triplets, quartets
+
+            return self.solve_linearized_perturbation(i, a)[0]
+        
+        # define fun for setting up args to pass into multiprocessing
+        def args():
+            for i in range(self.n):
+                for a in np.delete(range(self.n), i):
+                    yield (i, a)
+        
+        # run parallelized approach to solving perturbations
+        if n_cpus is None or n_cpus > 1:
+            if self.iprint: print("Multiprocessing for dJ...")
+            with threadpool_limits(limits=1, user_api='blas'):
+                with Pool(n_cpus) as pool:
+                    dJ = np.vstack(( pool.map(wrapper, args()) ))
+        else:
+            dJ = np.zeros((self.n*(self.n-1), self.kStates*self.n+(self.n-1)*self.n//2))
+            for counter, (i, a) in enumerate(args()):
+                dJ[counter] = wrapper((i, a))
+
+        self.dJ = dJ
+        return dJ
+  
     def _solve_linearized_perturbation_tester(self, iStar, aStar, full_output=False):
         """
         ***FOR DEBUGGING ONLY***
@@ -2007,7 +2325,7 @@ class Coupling3(Coupling):
         n = self.n
         k = self.kStates
         p = self.p
-        C = self.observables_after_perturbation(iStar, aStar)[0]
+        C = self.observables_after_perturbation(iStar, aStar)
         assert k==3, "Only handles k=3."
 
         from coniii.solvers import Enumerate
@@ -2072,8 +2390,8 @@ class Coupling3(Coupling):
         sisj = self.sisj[kStates*n:]
 
         # matrix that will be multiplied by the vector of correlation perturbations
-        Cplus, perturb_up = self.observables_after_perturbation(iStar, aStar, eps=eps)
-        Cminus, perturb_up = self.observables_after_perturbation(iStar, aStar, eps=-eps)
+        Cplus = self.observables_after_perturbation(iStar, aStar, eps=eps)
+        Cminus = self.observables_after_perturbation(iStar, aStar, eps=-eps)
         errflag = 0
         
         if type(self.pairs) is dict:
@@ -2127,30 +2445,6 @@ class Coupling3(Coupling):
                 return dJ, errflag, (Aplus, Cplus), relerr
             return dJ, errflag, (Aplus, Cplus)
         return dJ, errflag
-
-    def _dlogpk(self, dJ, eps):
-        """Partitions are determined by unique ones found in the sample and referenced in
-        self.coarseUix and self.coarseInvix.
-        """
-
-        calc_e = self.ising.calc_e
-        n = self.n
-        
-        # calculate change in energy of each observed configuration as we induce
-        # perturbation in both pos and neg directions
-        dE = calc_e(self.allStates, dJ*eps)
-        E = np.log(self.p)
-        pplus = np.exp(E+dE - fast_logsumexp(E+dE)[0])  # modified probability distribution
-        pminus = np.exp(E-dE - fast_logsumexp(E-dE)[0])  # modified probability distribution
-        
-        choosek = self.coarseUix.size
-        pkplusdE = np.zeros(choosek)
-        pkminusdE = np.zeros(choosek)
-        for k in range(choosek):
-            pkplusdE[k] = pplus[self.coarseInvix==k].sum()
-            pkminusdE[k] = pminus[self.coarseInvix==k].sum()
-        dlogp = (np.log2(pkplusdE) - np.log2(pkminusdE)) / (2*eps)
-        return dlogp
 #end Coupling3
 
 
@@ -2284,6 +2578,28 @@ def jit_pair_combination(n):
             yield i,j
 
 @njit(cache=True)
+def jit_triplets(n, kStates, allStates, p):
+    """Calculate pairwise, triplet correlations.
+    """
+    pairs = dict()
+    triplets = dict()
+
+    # <d_{i,gammai} * d_{j,gammaj}> where i<j
+    for i,j in jit_pair_combination(n):
+        for gammai in range(kStates):
+            for gammaj in range(kStates):
+                pairs[(gammai,i,gammaj,j)] = sum_single_cols(p, allStates, i, gammai, j, gammaj)
+
+    # triplets that matter are when one spin is in a particular state and the
+    # remaining two agree with each other
+    for gamma in range(kStates):
+        for i in range(n):
+            for j,k in jit_pair_combination(n):
+                triplets[(gamma,i,j,k)] = sum_col_pair(p, allStates, i, gamma, j, k)
+
+    return pairs, triplets
+
+@njit(cache=True)
 def jit_triplets_and_quartets(n, kStates, allStates, p):
     """Calculate pairwise, triplet, and quartet correlations.
     """
@@ -2342,7 +2658,8 @@ def jit_calc_A(n, kStates, allStates, p, si, sisj, pairs, triplets, quartets, C)
     A = np.zeros((kStates*n+n*(n-1)//2, (kStates-1)*n+n*(n-1)//2))
 
     # mean constraints corresponding to odd order correlations 
-    # remember that A does not include changes in last set of fields (corresponding to the last Potts state)
+    # remember that A does not include changes in last set of fields (corresponding to the
+    # last Potts state)
     # i is the index of the perturbed spin
     for i in prange(kStates*n):
         for j in prange((kStates-1)*n):
@@ -2366,7 +2683,9 @@ def jit_calc_A(n, kStates, allStates, p, si, sisj, pairs, triplets, quartets, C)
             A[kStates*n+ijcount,k] = triplets[(k//n,k%n,i,j)] - C[kStates*n+ijcount] * si[k]
 
         for klcount,(k,l) in enumerate(jit_pair_combination(n)):
-            A[kStates*n+ijcount,(kStates-1)*n+klcount] = quartets[(i,j,k,l)] - C[kStates*n+ijcount] * sisj[klcount]
+            A[kStates*n+ijcount,(kStates-1)*n+klcount] = (quartets[(i,j,k,l)] -
+                                                          C[kStates*n+ijcount] *
+                                                          sisj[klcount])
     return A
 
 def calc_A(n, kStates, allStates, p, si, sisj, pairs, triplets, quartets, C):
@@ -2398,7 +2717,8 @@ def calc_A(n, kStates, allStates, p, si, sisj, pairs, triplets, quartets, C):
     A = np.zeros((kStates*n+n*(n-1)//2, (kStates-1)*n+n*(n-1)//2))
 
     # mean constraints corresponding to odd order correlations 
-    # remember that A does not include changes in last set of fields (corresponding to the last Potts state)
+    # remember that A does not include changes in last set of fields (corresponding to the
+    # last Potts state)
     # i is the index of the perturbed spin
     for i in prange(kStates*n):
         for j in prange((kStates-1)*n):
@@ -2422,7 +2742,9 @@ def calc_A(n, kStates, allStates, p, si, sisj, pairs, triplets, quartets, C):
             A[kStates*n+ijcount,k] = triplets[(k//n,k%n,i,j)] - C[kStates*n+ijcount] * si[k]
 
         for klcount,(k,l) in enumerate(jit_pair_combination(n)):
-            A[kStates*n+ijcount,(kStates-1)*n+klcount] = quartets[(i,j,k,l)] - C[kStates*n+ijcount] * sisj[klcount]
+            A[kStates*n+ijcount,(kStates-1)*n+klcount] = (quartets[(i,j,k,l)] -
+                                                          C[kStates*n+ijcount] *
+                                                          sisj[klcount])
     return A
 
 @njit("float64(float64[:],int8[:,:],int64,int64,int64,int64)", parallel=True)

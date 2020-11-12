@@ -4,9 +4,40 @@
 # ====================================================================================== # 
 from .utils import *
 from .large_fim import *
+
 from time import perf_counter
 import numdifftools as ndt
+from coniii.models import Potts3
 
+
+
+def test_Mag3(n=5):
+    # Setup test
+    rng = np.random.RandomState(0)
+    h = np.concatenate((rng.normal(size=2*n, scale=.3), np.zeros(n)))
+    J = rng.normal(size=n*(n-1)//2, scale=.1)
+
+    # compare stochastic with analytic solution for each pair of perturbations
+    # analytic solution finds the exact gradient at the specified parameters
+    model = Mag3(n, h, J,
+                 n_samples=10_000,
+                 eps=1e-4,
+                 iprint=False,
+                 rng=rng,
+                 precompute=False)
+
+    for i in range(n):
+        for k in range(3):
+            sisj = model.observables_after_perturbation(i, k)
+            assert all([np.isclose(sisj[[i,i+n,i+2*n]].sum(), 1) for i in range(n)])
+    print("Test passed: All single spin probabilities are normalized after perturbation.")
+
+    model = Mag3(n, h, J,
+                 n_samples=10_000,
+                 eps=1e-4,
+                 iprint=False,
+                 rng=rng)
+    print("Test passed: Successfully precomputes.")
 
 def test_Coupling3(n=5, disp=True, time=False):
     """Tests for Coupling3.
@@ -14,8 +45,6 @@ def test_Coupling3(n=5, disp=True, time=False):
     This test will take a while because of MC sampling.
     """
     
-    from coniii.models import Potts3
-
     # Setup test
     rng = np.random.RandomState(0)
     h = np.concatenate((rng.normal(size=2*n, scale=.3), np.zeros(n)))
