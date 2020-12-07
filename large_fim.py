@@ -530,10 +530,7 @@ class Magnetization():
             kwargs['epsdJ'] = 1e-4
         if not 'check_stability' in kwargs.keys():
             kwargs['check_stability'] = True
-        if 'full_output' in kwargs.keys():
-            full_output = kwargs['full_output']
-        else:
-            full_output = False
+        full_output = kwargs.get('full_output', False)
         if 'high_prec' in kwargs.keys():
             high_prec = kwargs['high_prec']
             del kwargs['high_prec']
@@ -1058,6 +1055,7 @@ class Magnetization():
                       n_cpus=state_dict.get('n_cpus',None))
         self.dJ = state_dict['dJ']
 #end Magnetization
+
 
 
 class MagnetizationConstant(Magnetization):
@@ -1612,7 +1610,6 @@ class Mag3(Coupling):
             dJ = np.zeros((self.n*self.kStates, self.kStates*self.n+(self.n-1)*self.n//2))
             for counter, (i, k) in enumerate(product(range(self.n), range(self.kStates))):
                 dJ[counter] = wrapper((i, k))
-        print("Done.")
 
         self.dJ = dJ
         return dJ
@@ -2446,6 +2443,60 @@ class Coupling3(Mag3):
             return dJ, errflag, (Aplus, Cplus)
         return dJ, errflag
 #end Coupling3
+
+
+
+class CanonicalMag3(Mag3):
+    """Perturbation of fields."""
+    def compute_dJ(self, n_cpus=None):
+        """Compute linear change to parameters for small perturbation. These are trivial
+        for the canonical case because each field is simply moved by a unit amount.
+        
+        Parameters
+        ----------
+        n_cpus : int, None
+
+        Returns
+        -------
+        dJ : ndarray
+            (n_perturbation_parameters, n_maxent_parameters)
+        """
+        
+        n_cpus = n_cpus or self.n_cpus
+        n = self.n
+        
+        dJ = np.hstack((np.eye(3*n), np.zeros((3*n, n*(n-1)//2))))
+        self.dJ = dJ
+
+        return dJ
+#end CanonicalMag3
+
+
+
+class CanonicalCoupling3(Coupling3):
+    """Perturbation of fields."""
+    def compute_dJ(self, n_cpus=None):
+        """Compute linear change to parameters for small perturbation. These are trivial
+        for the canonical case because each field is simply moved by a unit amount.
+        
+        Parameters
+        ----------
+        n_cpus : int, None
+
+        Returns
+        -------
+        dJ : ndarray
+            (n_perturbation_parameters, n_maxent_parameters)
+        """
+        
+        n_cpus = n_cpus or self.n_cpus
+        n = self.n
+        
+        dJ = np.hstack((np.zeros((n*(n-1)//2, n*3)), np.eye(n*(n-1)//2)))
+        self.dJ = dJ
+
+        return dJ
+#end CanonicalCoupling3
 
 
 

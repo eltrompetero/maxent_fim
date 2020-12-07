@@ -6,7 +6,7 @@ from .utils import *
 import os
 import dill as pickle
 
-from .large_fim import Mag3, Coupling3
+from .large_fim import Mag3, Coupling3, CanonicalMag3, CanonicalCoupling3
 from .spectral import sorted_eigh
 
 
@@ -261,11 +261,11 @@ class MESolution():
         # iterate through all available MC samples assuming that they are ordered consecutively
         for num in rnumerals:
             try:
-                soln = MESolution(self.name, self.data_ix,
-                                  soln_ix=self.soln_ix, 
-                                  mc_ix=num,
-                                  subset_ix=self.subset_ix, 
-                                  iprint=False)
+                soln = self.__class__(self.name, self.data_ix,
+                                      soln_ix=self.soln_ix, 
+                                      mc_ix=num,
+                                      subset_ix=self.subset_ix, 
+                                      iprint=False)
                 if soln._fim:
                     vals.append(soln.eig()[0])
             except Exception:
@@ -347,6 +347,96 @@ class MagSolution(MESolution):
             self._model = load_Mag3(f'{self.DEFAULT_DR}/{self.model_f()}')
         return self._model
 #end MagSolution
+
+
+
+class CanonicalMagSolution(MESolution):
+    DEFAULT_DR = 'cache/c_elegans/can_mag3'  # default dr where pickles are stored
+
+    def setup_model(self, n_samples=100_000, eps=1e-4):
+        """Set up large_fim.Mag3 for FIM calculation. Result will be saved into model
+        pickle.
+
+        Parameters
+        ----------
+        n_samples : int, 1e5
+        eps : float, 1e-4
+
+        Returns
+        -------
+        None
+        """
+
+        h, J = self.parameters()
+        
+        model = CanonicalMag3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
+        pickle.dump(model.__get_state__(),
+                    open(f'{self.DEFAULT_DR}/{self.model_f()}','wb'), -1)
+        self.exists_model = True
+
+    def setup_fim(self):
+        """Calculate and pickle FIM."""
+        
+        model = self.model()
+        fname = self.fim_f()
+        fim = model.maj_curvature()
+
+        pickle.dump({'fim':fim}, open(f'{self.DEFAULT_DR}/{fname}', 'wb'), -1)
+
+    def model(self):
+        if not self.exists_model:
+            raise Exception("Model file not found.")
+
+        if not '_model' in self.__dict__.keys():
+            from .utils import load_CanonicalMag3
+            self._model = load_CanonicalMag3(f'{self.DEFAULT_DR}/{self.model_f()}')
+        return self._model
+#end CanonicalMagSolution
+
+
+
+class CanonicalCouplingSolution(MESolution):
+    DEFAULT_DR = 'cache/c_elegans/can_coup3'  # default dr where pickles are stored
+
+    def setup_model(self, n_samples=100_000, eps=1e-4):
+        """Set up large_fim.CanonicalCoupling3 for FIM calculation. Result will be saved
+        into model pickle.
+
+        Parameters
+        ----------
+        n_samples : int, 1e5
+        eps : float, 1e-4
+
+        Returns
+        -------
+        None
+        """
+
+        h, J = self.parameters()
+        
+        model = CanonicalCoupling3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
+        pickle.dump(model.__get_state__(),
+                    open(f'{self.DEFAULT_DR}/{self.model_f()}','wb'), -1)
+        self.exists_model = True
+
+    def setup_fim(self):
+        """Calculate and pickle FIM."""
+        
+        model = self.model()
+        fname = self.fim_f()
+        fim = model.maj_curvature()
+
+        pickle.dump({'fim':fim}, open(f'{self.DEFAULT_DR}/{fname}', 'wb'), -1)
+
+    def model(self):
+        if not self.exists_model:
+            raise Exception("Model file not found.")
+
+        if not '_model' in self.__dict__.keys():
+            from .utils import load_CanonicalCoupling3
+            self._model = load_CanonicalCoupling3(f'{self.DEFAULT_DR}/{self.model_f()}')
+        return self._model
+#end CanonicalCouplingSolution
 
 
 

@@ -335,6 +335,62 @@ def load_Mag3(fname):
     
     return model
 
+def load_CanonicalMag3(fname):
+    """Load a model from large_fim that has been pickled. Regular pickling routine does
+    not work for them!
+
+    Parameters
+    ----------
+    fname : str
+        name of pickled file
+
+    Returns
+    -------
+    large_fim.CanonicalMag3
+    """
+    
+    from .large_fim import CanonicalMag3
+    assert os.path.isfile(fname)
+
+    # load model. must initialize a template instance first
+    n = 5
+    h = np.concatenate((np.random.normal(size=n*2, scale=.5), np.zeros(n)))
+    J = np.random.normal(size=n*(n-1)//2, scale=1/n)
+    model = CanonicalMag3(n, h, J, n_samples=100, eps=1e-4, precompute=False, iprint=False)
+    state = pickle.load(open(fname, 'rb'))
+    model.__set_state__(state) 
+    n = model.n
+    
+    return model
+
+def load_CanonicalCoupling3(fname):
+    """Load a model from large_fim that has been pickled. Regular pickling routine does
+    not work for them!
+
+    Parameters
+    ----------
+    fname : str
+        name of pickled file
+
+    Returns
+    -------
+    large_fim.CanonicalCoupling3
+    """
+    
+    from .large_fim import CanonicalCoupling3
+    assert os.path.isfile(fname)
+
+    # load model. must initialize a template instance first
+    n = 5
+    h = np.concatenate((np.random.normal(size=n*2, scale=.5), np.zeros(n)))
+    J = np.random.normal(size=n*(n-1)//2, scale=1/n)
+    model = CanonicalCoupling3(n, h, J, n_samples=100, eps=1e-4, precompute=False, iprint=False)
+    state = pickle.load(open(fname, 'rb'))
+    model.__set_state__(state) 
+    n = model.n
+    
+    return model
+
 def load_Coupling3(fname):
     """Load a model from large_fim that has been pickled. Regular pickling routine does
     not work for them!
