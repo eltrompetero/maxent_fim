@@ -241,8 +241,12 @@ class MESolution():
             self.fim()
             return self.eig()
 
-    def avg_eigvals(self):
+    def avg_eigvals(self, return_eigvecs=False):
         """Rank-ordered eigenvalue spectrum averaged over MC samples used to calculate FIM.
+
+        Parameters
+        ----------
+        return_eigvecs : bool, False
 
         Returns
         -------
@@ -252,11 +256,14 @@ class MESolution():
             Log standard deviation.
         ndarray
             All sorted eigenvalues by row.
+        list of ndarray
+            All eigenvectors.
         """
         
         #TODO: this is hard-coded, but should be flexible?
         rnumerals = ['i','ii','iii','iv','v','vi','vii','viii','ix','x']
         vals = []
+        vecs = []
 
         # iterate through all available MC samples assuming that they are ordered consecutively
         for num in rnumerals:
@@ -267,11 +274,15 @@ class MESolution():
                                       subset_ix=self.subset_ix, 
                                       iprint=False)
                 if soln._fim:
-                    vals.append(soln.eig()[0])
+                    e = soln.eig()
+                    vals.append(e[0])
+                    vecs.append(e[1])
             except Exception:
                 pass
 
         vals = np.vstack(vals)
+        if return_eigvecs:
+            return vals.mean(0), vals, vecs
         return vals.mean(0), vals
 
     def all_fim(self):

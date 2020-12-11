@@ -630,9 +630,10 @@ class Magnetization():
                  n=self.n, E=E, logZ=logZ, allStates=self.allStates):
             # round eps step to machine precision
             mxix = np.abs(dJ[i]).argmax()
-            newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
-            epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
+            newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ  # tilde parameters
+            epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]  # eps
             if np.isnan(epsdJ_): return 0.
+            # change in effective k majority energy is sum over micro states
             correction = calc_e(allStates, dJ[i]*epsdJ_)
             correction = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
                                    for ix in range(uix.size)])
@@ -1566,6 +1567,9 @@ class Mag3(Coupling):
 
     def compute_dJ(self, n_cpus=None):
         """Compute linear change to maxent parameters for perturbation.
+
+        For each spin, push into each of k possible states such that perturbations are
+        grouped into triplets.
         
         Parameters
         ----------
@@ -2465,6 +2469,7 @@ class CanonicalMag3(Mag3):
         n_cpus = n_cpus or self.n_cpus
         n = self.n
         
+        # alter each field in sequence
         dJ = np.hstack((np.eye(3*n), np.zeros((3*n, n*(n-1)//2))))
         self.dJ = dJ
 
@@ -2530,7 +2535,7 @@ def fast_sum_ternary(J, s):
 
 @njit("float64[:](int64,int64,int8[:,:],float64[:])")
 def calc_all_energies(n, k, states, params):
-    """Calculate all the energies for the states given.
+    """Calculate all the energies for the states given. Can be used for Potts.
     
     Parameters
     ----------
@@ -2604,7 +2609,8 @@ def fast_sum(J,s):
 
 @njit("float64[:](int8[:,:],float64[:])")
 def calc_e(s, params):
-    """
+    """Energy of Ising model.
+
     Parameters
     ----------
     s : 2D ndarray

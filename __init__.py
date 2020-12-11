@@ -7,4 +7,4 @@ from .utils import *
 from .spectral import *
 from . import fim as pyfim
 from . import large_fim as lpyfim
-from .organizer import MESolution, MagSolution, MESolutionLargeComponent, FIM
+from .organizer import MESolution, MagSolution, CanonicalMagSolution, CanonicalCouplingSolution, FIM
