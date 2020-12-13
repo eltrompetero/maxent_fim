@@ -2013,7 +2013,9 @@ class Mag3(Coupling):
         Parameters
         ----------
         iStar : int
+            Index of spin.
         kStar : int
+            Configuration into which to fix spin iStar with small probability.
         full_output : bool, False
         eps : float, None
         check_stability : bool, True

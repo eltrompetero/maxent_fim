@@ -130,7 +130,7 @@ class MESolution():
         else:
             raise Exception("Could not find parameters in data pickle.")
     
-    def setup_model(self, n_samples=100_000, eps=1e-4):
+    def setup_model(self, *, n_samples=100_000, eps=1e-4):
         """Set up large_fim.Coupling3 for FIM calculation. Result will be saved into model
         pickle.
 

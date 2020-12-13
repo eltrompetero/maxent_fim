@@ -52,6 +52,8 @@ def perturb_3_spin(p, k,
     Returns
     -------
     ndarray
+        Either new probabilities of configurations after perturbation or the delta that
+        needs to be added to each element of old probability vector.
     """
     
     if run_checks: assert np.isclose(p.sum(), 1) and p.size==3 and (p>=0).all()
@@ -71,7 +73,14 @@ def perturb_3_spin(p, k,
                   np.linalg.norm([xy[0]-2/np.sqrt(3), xy[1]]),
                   np.linalg.norm([xy[0]-1/np.sqrt(3), xy[1]-1])])
     
-    theta = np.arcsin(p[[2,0,1]]/r)
+    # account for special case where one of the states as p=1
+    if (r==0).any():
+        zeroix = np.where(r==0)[0][0]
+        r[zeroix] = 1
+        theta = np.arcsin(p[[2,0,1]]/r)
+        theta[zeroix] = np.pi/6
+    else:
+        theta = np.arcsin(p[[2,0,1]]/r)
     
     # this can only be the case if the hypotenuse is shorter than a leg!
     if run_checks: assert ~np.isnan(theta).any()
