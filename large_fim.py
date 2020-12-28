@@ -1768,19 +1768,23 @@ class Mag3(Coupling):
             allStates = np.frombuffer(rAllStates, dtype=np.int8).reshape(shapesDict['allStates'])
             uix = np.frombuffer(rcoarseUix, dtype=np.int64)
             invix = np.frombuffer(rcoarseInvix, dtype=np.int64)
-
-            # round eps step to machine precision
-            mxix = np.abs(dJ[i]).argmax()
-            newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
-            epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
-            if np.isnan(epsdJ_): return 0.
-            correction = calc_all_energies(n, kStates, allStates, dJ[i]*epsdJ_)
-            correction = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
-                                   for ix in range(len(uix))])
-            num = ((correction.dot(pk) - correction)**2).dot(pk)
-            dd = num / np.log(2) / epsdJ_**2
-            if iprint and np.isnan(dd):
-                print('nan for diag', i, epsdJ_)
+            
+            # check for degeneracies
+            if not np.isfinite(dJ[i][0]):
+                dd = 0.
+            else:
+                # round eps step to machine precision
+                mxix = np.abs(dJ[i]).argmax()
+                newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
+                epsdJ_ = (newhJ-hJ[mxix]) / dJ[i][mxix]
+                if np.isnan(epsdJ_): return 0.
+                correction = calc_all_energies(n, kStates, allStates, dJ[i]*epsdJ_)
+                correction = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
+                                       for ix in range(len(uix))])
+                num = ((correction.dot(pk) - correction)**2).dot(pk)
+                dd = num / np.log(2) / epsdJ_**2
+                if iprint and np.isnan(dd):
+                    print('nan for diag', i, epsdJ_)
             
             # write result to memmap
             mmhessEntry = np.memmap(mmfname,
@@ -1806,29 +1810,33 @@ class Mag3(Coupling):
             allStates = np.frombuffer(rAllStates, dtype=np.int8).reshape(shapesDict['allStates'])
             uix = np.frombuffer(rcoarseUix, dtype=np.int64)
             invix = np.frombuffer(rcoarseInvix, dtype=np.int64)
+            
+            # check for degenerate entries
+            if not (np.isfinite(dJ[i][0]) and np.isfinite(dJ[j][0])):
+                dd = 0.
+            else:
+                # round eps step to machine precision
+                mxix = np.abs(dJ[i]).argmax()
+                newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
+                epsdJi = (newhJ - hJ[mxix])/dJ[i][mxix]/2
+                if np.isnan(epsdJi): return 0.
+                correction = calc_all_energies(n, kStates, allStates, dJ[i]*epsdJi)
+                correctioni = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
+                                        for ix in range(len(uix))])
 
-            # round eps step to machine precision
-            mxix = np.abs(dJ[i]).argmax()
-            newhJ = hJ[mxix] + dJ[i][mxix]*epsdJ
-            epsdJi = (newhJ - hJ[mxix])/dJ[i][mxix]/2
-            if np.isnan(epsdJi): return 0.
-            correction = calc_all_energies(n, kStates, allStates, dJ[i]*epsdJi)
-            correctioni = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
-                                    for ix in range(len(uix))])
+                # round eps step to machine precision
+                mxix = np.abs(dJ[j]).argmax()
+                newhJ = hJ[mxix] + dJ[j][mxix]*epsdJ
+                epsdJj = (newhJ - hJ[mxix])/dJ[j][mxix]/2
+                if np.isnan(epsdJj): return 0.
+                correction = calc_all_energies(n, kStates, allStates, dJ[j]*epsdJj)
+                correctionj = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
+                                        for ix in range(len(uix))])
 
-            # round eps step to machine precision
-            mxix = np.abs(dJ[j]).argmax()
-            newhJ = hJ[mxix] + dJ[j][mxix]*epsdJ
-            epsdJj = (newhJ - hJ[mxix])/dJ[j][mxix]/2
-            if np.isnan(epsdJj): return 0.
-            correction = calc_all_energies(n, kStates, allStates, dJ[j]*epsdJj)
-            correctionj = np.array([correction[invix==ix].dot(p[invix==ix])/p[invix==ix].sum()
-                                    for ix in range(len(uix))])
-
-            num = ((correctioni.dot(pk) - correctioni)*(correctionj.dot(pk) - correctionj)).dot(pk)
-            dd = num / np.log(2) / (epsdJi * epsdJj)
-            if iprint and np.isnan(dd):
-                print('nan for off diag', args, epsdJi, epsdJj)
+                num = ((correctioni.dot(pk) - correctioni)*(correctionj.dot(pk) - correctionj)).dot(pk)
+                dd = num / np.log(2) / (epsdJi * epsdJj)
+                if iprint and np.isnan(dd):
+                    print('nan for off diag', args, epsdJi, epsdJj)
             
             # write result to memmap
             mmhessEntry = np.memmap(mmfname,
@@ -2008,7 +2016,7 @@ class Mag3(Coupling):
                                        full_output=False,
                                        eps=None,
                                        check_stability=True):
-        """Consider a perturbation to make spin iStar more likely to be in state kStar.
+        """Consider a perturbation to match spin iStar to state kStar.
         
         Parameters
         ----------
@@ -2025,7 +2033,8 @@ class Mag3(Coupling):
         ndarray
             dJ
         int
-            Error flag. Returns 0 by default. 1 means badly conditioned matrix A.
+            Error flag. Returns 0 by default. 1 means badly conditioned matrix A. 2 means
+            that the solution was unstable and probably untrustworthy.
         tuple (optional)
             (Aplus, Cplus)
         float (optional)
@@ -2038,6 +2047,14 @@ class Mag3(Coupling):
         p = self.p
         si = self.sisj[:n*kStates]
         sisj = self.sisj[kStates*n:]
+
+        # check if spin iStar is perfect magnetized, in which case dJ should be infinite
+        tol = 2 / self.ising.sample_size
+        if si[iStar]>=(1-tol) or si[iStar+n]>=(1-tol) or si[iStar+2*n]>=(1-tol):
+            dJ = np.zeros(si.size+sisj.size) + np.inf
+            if check_stability:
+                return dJ, 0, np.zeros(1)
+            return dJ, 0
 
         # matrix that will be multiplied by the vector of correlation perturbations
         Cplus = self.observables_after_perturbation(iStar, kStar, eps=eps)
