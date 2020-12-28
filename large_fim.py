@@ -3,17 +3,15 @@
 # sampling is necessary to calculate perturbative quantities.
 # Author : Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
-from .utils import *
-
 from numba import njit, prange
 from coniii.enumerate import fast_logsumexp, mp_fast_logsumexp
-from multiprocess import Pool, cpu_count, set_start_method
 from scipy.sparse import coo_matrix
 from numba.typed import Dict as nDict
 from tempfile import mkdtemp
 from multiprocess import RawArray
 import socket
 
+from .utils import *
 from .models import LargeIsing, LargePotts3
 
 np.seterr(divide='ignore')
@@ -524,8 +522,6 @@ class Magnetization():
             Errors.
         """
 
-        import multiprocess as mp
-
         if not 'epsdJ' in kwargs.keys():
             kwargs['epsdJ'] = 1e-4
         if not 'check_stability' in kwargs.keys():
@@ -778,7 +774,6 @@ class Magnetization():
             Norm difference between hessian with step size eps and eps/2.
         """
         
-        import mpmath as mp
         mp.mp.dps = dps
 
         mplog2_ = lambda x:mp.log(x)/mp.log(2)
@@ -1482,7 +1477,8 @@ class Mag3(Coupling):
                  n_samples=100_000,
                  rng=None,
                  iprint=True,
-                 sampler_kw={}):
+                 sampler_kw={},
+                 coarse_grain_type=1):
         """
         Parameters
         ----------
@@ -1501,7 +1497,10 @@ class Mag3(Coupling):
         iprint : bool, True
             Display info if True.
         sampler_kw : dict, {}
+        coarse_grain_type : int, 1
         """
+        
+        from .utils import coarse_grain_potts3
 
         assert isinstance(n, int) and n>1 and 0<eps<1e-2
         assert (h[2*n:3*n]==0).all()
@@ -1514,14 +1513,15 @@ class Mag3(Coupling):
         self.n_cpus = n_cpus
         self.rng = rng or np.random
         self.iprint = iprint
+        self.coarseGrainType = coarse_grain_type
 
         self.ising = LargePotts3((h,J), n_samples, iprint=iprint, rng=self.rng, **sampler_kw)
         self.sisj = np.concatenate(self.ising.corr[:2])
         self.p = self.ising.p
         self.allStates = self.ising.states.astype(np.int8)
-        # determine p(k) as the number of votes in the plurality
-        kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
-                          self.allStates))
+
+        # coarse graining to collective statistics
+        kVotes = coarse_grain_potts3(self.allStates, coarse_grain_type)
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         self.coarseUix = np.unique(self.coarseInvix)
 
@@ -2150,7 +2150,8 @@ class Coupling3(Mag3):
                  n_samples=100_000,
                  rng=None,
                  iprint=True,
-                 sampler_kw={}):
+                 sampler_kw={},
+                 coarse_grain_type=1):
         """
         Parameters
         ----------
@@ -2169,7 +2170,10 @@ class Coupling3(Mag3):
         iprint : bool, True
             Display info if True.
         sampler_kw : dict, {}
+        coarse_grain_type : int, 1
         """
+
+        from .utils import coarse_grain_potts3
 
         assert n>1 and 0<eps<1e-2
         assert (h[2*n:3*n]==0).all()
@@ -2182,14 +2186,13 @@ class Coupling3(Mag3):
         self.n_cpus = n_cpus
         self.rng = rng or np.random
         self.iprint = iprint
+        self.coarseGrainType = coarse_grain_type
 
         self.ising = LargePotts3((h,J), n_samples, iprint=iprint, rng=self.rng, **sampler_kw)
         self.sisj = np.concatenate(self.ising.corr[:2])
         self.p = self.ising.p
         self.allStates = self.ising.states.astype(np.int8)
-        # determine p(k) as the number of votes in the plurality
-        kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
-                          self.allStates))
+        kVotes = coarse_grain_potts3(self.allStates, coarse_grain_type)
         self.coarseUix, self.coarseInvix = np.unique(kVotes, return_inverse=True, axis=0)
         self.coarseUix = np.unique(self.coarseInvix)
     

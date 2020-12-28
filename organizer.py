@@ -24,7 +24,7 @@ class MESolution():
                  mc_ix='i',
                  subset_ix='A',
                  iprint=True,
-                 largest_component_only=True):
+                 coarse_grain_type=1):
         """
         Parameters
         ----------
@@ -37,9 +37,7 @@ class MESolution():
             Monte Carlo sample index.
         subset_ix : str, 'A'
             Subset index of neurons.
-        largest_component_only : bool, True
-            If True, only consider largest connected component in calculations on maxent
-            model.
+        coarse_grain_type : int, 1
         """
         
         self.name = name
@@ -48,7 +46,9 @@ class MESolution():
         self.soln_ix = soln_ix
         self.mc_ix = mc_ix
         self.ix = (subset_ix, str(data_ix), soln_ix, mc_ix)
+        self.coarse_grain_type = coarse_grain_type
         
+        self.DEFAULT_DR += f'/{coarse_grain_type}/'
         files = os.listdir(self.DEFAULT_DR)
 
         # look for maxent soln results
@@ -146,7 +146,11 @@ class MESolution():
 
         h, J = self.parameters()
         
-        model = Coupling3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
+        model = Coupling3(self.n, h, J,
+                          n_samples=n_samples,
+                          eps=eps,
+                          precompute=True,
+                          coarse_grain_type=self.coarse_grain_type)
         pickle.dump(model.__get_state__(),
                     open(f'{self.DEFAULT_DR}/{self.model_f()}','wb'), -1)
         self.exists_model = True
@@ -320,7 +324,7 @@ CoupSolution = MESolution
 class MagSolution(MESolution):
     DEFAULT_DR = 'cache/c_elegans/mag3'  # default dr where pickles are stored
 
-    def setup_model(self, n_samples=100_000, eps=1e-4):
+    def setup_model(self, *, n_samples=100_000, eps=1e-4):
         """Set up large_fim.Mag3 for FIM calculation. Result will be saved into model
         pickle.
 
@@ -366,7 +370,7 @@ class MagSolution(MESolution):
 class CanonicalMagSolution(MESolution):
     DEFAULT_DR = 'cache/c_elegans/can_mag3'  # default dr where pickles are stored
 
-    def setup_model(self, n_samples=100_000, eps=1e-4):
+    def setup_model(self, *, n_samples=100_000, eps=1e-4):
         """Set up large_fim.Mag3 for FIM calculation. Result will be saved into model
         pickle.
 
@@ -411,7 +415,7 @@ class CanonicalMagSolution(MESolution):
 class CanonicalCouplingSolution(MESolution):
     DEFAULT_DR = 'cache/c_elegans/can_coup3'  # default dr where pickles are stored
 
-    def setup_model(self, n_samples=100_000, eps=1e-4):
+    def setup_model(self, *, n_samples=100_000, eps=1e-4):
         """Set up large_fim.CanonicalCoupling3 for FIM calculation. Result will be saved
         into model pickle.
 
@@ -550,125 +554,3 @@ class FIM():
         return val, vec
 #end MESolution
 
-
-
-class MESolutionLargeComponent(MESolution):
-    def __init__(self, name, data_ix,
-                 soln_ix='a',
-                 mc_ix='i',
-                 subset_ix='A',
-                 iprint=True,
-                 largest_component_only=True):
-        """
-        Parameters
-        ----------
-        name : str
-        data_ix : int
-            Sample index for a given data set.
-        soln_ix : 'a'
-            Solution method index.
-        mc_ix : 'i'
-            Monte Carlo sample index.
-        subset_ix : str, 'A'
-            Subset index of neurons.
-        largest_component_only : bool, True
-            If True, only consider largest connected component in calculations on maxent
-            model.
-        """
-        
-        self.name = name
-        self.subset_ix = subset_ix
-        self.data_ix = data_ix
-        self.soln_ix = soln_ix
-        self.mc_ix = mc_ix
-        self.ix = (subset_ix, str(data_ix), soln_ix, mc_ix)
-        
-        files = os.listdir(self.DEFAULT_DR)
-
-        # look for maxent soln results
-        if not f'{name}_soln{"".join(self.ix[:-1])}.p' in files:
-            if iprint: print("Maxent solution file not found.")
-            if not f'{name}_model{"".join(self.ix)}.p' in files:
-                raise Exception("Neither maxent nor model file found.")
-            else:
-                self.n = pickle.load(open(f'{self.DEFAULT_DR}/{name}_model{"".join(self.ix)}.p', 'rb'))['n']
-                self.exists_model = True
-            self._me = False
-        else:
-            fname = f'{self.DEFAULT_DR}/{name}_soln{"".join(self.ix[:-1])}.p'
-            self.n = pickle.load(open(fname, 'rb'))['X'].shape[1]
-            if not '%s_model%s.p'%(name, ''.join(self.ix)) in files:
-                if iprint: print("Model file not found.")
-                self.exists_model = False
-            else:
-                self.exists_model = True
-            self._me = True
-        
-        # look for FIM results
-        if not '%s_fim%s.p'%(name, ''.join(self.ix)) in files:
-            if iprint: print("FIM not found.")
-            self._fim = False
-        else:
-            self._fim = True
-        
-        self.largest_component_only = False
-        self.fulln = self.n
-        if largest_component_only:
-            adj = (squareform(self.parameters()[1])!=0).astype(int)
-            component = largest_component(adj)
-            self.n -= self.n - len(component)
-            self.largest_component_only = True
-
-    def parameters(self):
-        """Get maxent solution for specified data set.
-
-        Returns
-        -------
-        ndarray
-            Fields. All n * 3 of them.
-        ndarray
-            Couplings.
-        """
-        
-        if not self.largest_component_only: super().parameters()
-
-        if self._me:
-            fname = '%s_soln%s.p'%(self.name, ''.join(self.ix[:-1]))
-        else:
-            fname = '%s_model%s.p'%(self.name, ''.join(self.ix[:-1]))
-        indata = pickle.load(open('%s/%s'%(self.DEFAULT_DR, fname), 'rb'))
-
-        if 'h' in indata.keys() and 'J' in indata.keys():
-            if indata['h'].size==2*self.fulln:
-                h = np.concatenate((indata['h'], np.zeros(self.fulln)))
-                J = indata['J']
-            else:
-                h = indata['h']
-                J = indata['J']
-        elif 'hJ' in indata.keys():
-            if indata['hJ'].size==(self.fulln*3 + self.fulln*(self.fulln-1)//2):
-                h = indata['hJ'][:3*self.fulln]
-                J = indata['hJ'][3*self.fulln:]
-            else:
-                h = np.concatenate((indata['hJ'][:2*self.fulln], np.zeros(self.fulln)))
-                J = indata['hJ'][2*self.fulln:]
-        else:
-            raise Exception("Could not find parameters in data pickle.")
-        return self._truncate_parameters(h, J)
-
-    def _truncate_parameters(self, h, J):
-        """Extract parameters corresponding to largest component."""
-        
-        # construct adjacency matrix
-        Jmat = squareform(J)
-        adj = (Jmat!=0).astype(int)
-        component = largest_component(adj)
-        component = np.array(component)
-
-        # set new parameters
-        Jmat = Jmat[component,:][:,component]
-        J = squareform(Jmat)
-        h = np.concatenate((h[component], h[component+self.fulln], h[component+2*self.fulln]))
-
-        return h, J
- #end MESolutionLargeComponent
