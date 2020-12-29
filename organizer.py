@@ -257,10 +257,8 @@ class MESolution():
         ndarray
             Average of sorted eigenvalue spectrum.
         ndarray
-            Log standard deviation.
-        ndarray
             All sorted eigenvalues by row.
-        list of ndarray
+        list of ndarray (optional)
             All eigenvectors.
         """
         
@@ -276,7 +274,8 @@ class MESolution():
                                       soln_ix=self.soln_ix, 
                                       mc_ix=num,
                                       subset_ix=self.subset_ix, 
-                                      iprint=False)
+                                      iprint=False,
+                                      coarse_grain_type=self.coarse_grain_type)
                 if soln._fim:
                     e = soln.eig()
                     vals.append(e[0])
