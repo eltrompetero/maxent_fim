@@ -25,6 +25,31 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def fields_vec2mat(h, K=3):
+    """Take vector of fields organized as N fields at a time (for each state), into a
+    matrix of K columns.
+
+    Parameters
+    ----------
+    h : ndarray
+    K : int, 3
+
+    Returns
+    -------
+    ndarray
+    """
+
+    assert h.ndim==1
+    N = h.size//K
+    assert h.size/K==N
+    
+    hmat = np.zeros((N, K))
+    for i in range(N):
+        for k in range(K):
+            hmat[i,k] = h[i+N*k]
+
+    return hmat
+
 def coarse_grain_potts3(all_states, no):
     """Function for coarse-graining 3-state Potts spins. 
 
