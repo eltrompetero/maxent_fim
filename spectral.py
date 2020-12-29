@@ -3,7 +3,6 @@
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 from .utils import *
-import numpy as np
 from scipy.special import binom
 
 

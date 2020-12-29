@@ -4,14 +4,16 @@
 # ====================================================================================== #
 import numpy as np
 from numba import njit
-from coniii.utils import *
 import importlib
 from warnings import warn
 from itertools import combinations, product
 import os
 import dill as pickle
 from threadpoolctl import threadpool_limits
+from multiprocess import Pool, cpu_count, set_start_method
 import mpmath as mp
+
+from coniii.utils import *
 
 from .fim import Coupling  # for compatibility with old pickles
 from .organizer import MESolution
@@ -23,6 +25,37 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def coarse_grain_potts3(all_states, no):
+    """Function for coarse-graining 3-state Potts spins. 
+
+    Parameters
+    ----------
+    all_states : ndarray
+        (n_samples, n_spins)
+    no : int
+        Number of coarse-graining function to employ.
+        1) Number of spins in each of the three possible states (without regard for the
+        number for any particular state). This means that four spins partitioned into
+        occupancy numbers (0,2,2) is the same as (2,2,0).
+        2) Number of spins in the plurality only. 
+
+    Returns
+    -------
+    ndarray
+        Number of votes in each respective state ordered from max to min.
+    """
+    
+    if no==1:
+        kVotes = list(map(lambda x:np.sort(np.bincount(x, minlength=3))[::-1],
+                          all_states))
+    elif no==2:
+        kVotes = list(map(lambda x:np.bincount(x).max(),
+                          all_states))
+    else:
+        raise NotImplementedError
+
+    return np.vstack(kVotes)
+
 def perturb_3_spin(p, k,
                    eps=1e-4,
                    return_delta=False,
