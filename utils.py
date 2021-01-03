@@ -453,7 +453,7 @@ def load_CanonicalCoupling3(fname):
     J = np.random.normal(size=n*(n-1)//2, scale=1/n)
     model = CanonicalCoupling3(n, h, J, n_samples=100, eps=1e-4, precompute=False, iprint=False)
     state = pickle.load(open(fname, 'rb'))
-    model.__set_state__(state) 
+    model.__set_state__(state)
     n = model.n
     
     return model

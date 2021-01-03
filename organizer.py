@@ -339,7 +339,11 @@ class MagSolution(MESolution):
 
         h, J = self.parameters()
         
-        model = Mag3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
+        model = Mag3(self.n, h, J,
+                     n_samples=n_samples,
+                     eps=eps,
+                     precompute=True,
+                     coarse_grain_type=self.coarse_grain_type)
         pickle.dump(model.__get_state__(),
                     open(f'{self.DEFAULT_DR}/{self.model_f()}','wb'), -1)
         self.exists_model = True
@@ -385,7 +389,11 @@ class CanonicalMagSolution(MESolution):
 
         h, J = self.parameters()
         
-        model = CanonicalMag3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
+        model = CanonicalMag3(self.n, h, J,
+                              n_samples=n_samples,
+                              eps=eps,
+                              precompute=True,
+                              coarse_grain_type=self.coarse_grain_type)
         pickle.dump(model.__get_state__(),
                     open(f'{self.DEFAULT_DR}/{self.model_f()}','wb'), -1)
         self.exists_model = True
@@ -430,7 +438,11 @@ class CanonicalCouplingSolution(MESolution):
 
         h, J = self.parameters()
         
-        model = CanonicalCoupling3(self.n, h, J, n_samples=n_samples, eps=eps, precompute=True)
+        model = CanonicalCoupling3(self.n, h, J,
+                                   n_samples=n_samples,
+                                   eps=eps,
+                                   precompute=True,
+                                   coarse_grain_type=self.coarse_grain_type)
         pickle.dump(model.__get_state__(),
                     open(f'{self.DEFAULT_DR}/{self.model_f()}','wb'), -1)
         self.exists_model = True
@@ -552,4 +564,3 @@ class FIM():
 
         return val, vec
 #end MESolution
-
