@@ -12,6 +12,7 @@ import dill as pickle
 from threadpoolctl import threadpool_limits
 from multiprocess import Pool, cpu_count, set_start_method
 import mpmath as mp
+from scipy.optimize import minimize
 
 from coniii.utils import *
 
@@ -25,6 +26,56 @@ np.seterr(divide='ignore')
 # ========= #
 # Functions #
 # ========= #
+def fit_decay_power_law(y, auto_upper_cutoff=0.):
+    """Fit an exponentially truncated power law.
+    
+    Parameters
+    ----------
+    y : ndarray
+        Rank-ordered eigenvalues.
+    auto_upper_cutoff : float, 0.
+        If nonzero, then fit does not account for points at tail that decrease faster than
+        this value.
+        
+    Returns
+    -------
+    lambda fcn
+    dict
+        As is returned from scipy.optimize.minimize
+    """
+    
+    # setup
+    assert (np.diff(y)<=0).all(), "Eigenvalues should be rank-ordered."
+    assert auto_upper_cutoff<=0
+
+    if auto_upper_cutoff:
+        x = np.arange(1, y.size+1)
+
+        # find the first point from the end that doesn't violate cutoff
+        slope = np.diff(np.log(y))/np.diff(np.log(x))
+        ix = np.argmax(slope[::-1]>auto_upper_cutoff)
+
+        if ix!=0:
+            assert ix<(y.size-1), ix
+            y = y[:-ix]
+            x = np.arange(1, y.size+1)
+    
+    # define log cost
+    def cost(params):
+        c, alpha, el = params  # offset, pow law exp, cutoff scale
+        return np.linalg.norm(np.log(c) -alpha * np.log(x) - np.exp(el) * x - np.log(y))
+    
+    # find optimal parameters (this may need some adjusting if fit is not good)
+    soln = minimize(cost, [y[0], 1.2, 20],
+                    bounds=[(1, np.inf), (1, 4), (-np.inf,np.inf)])
+    
+    # determine plotting function
+    c, alpha, el = soln['x']
+    el = np.exp(el)
+    fit_fun = lambda x, c=c, alpha=alpha, el=el: c * x**-alpha * np.exp(-el * x)
+
+    return fit_fun, soln
+
 def fields_vec2mat(h, K=3):
     """Take vector of fields organized as N fields at a time (for each state), into a
     matrix of K columns.
