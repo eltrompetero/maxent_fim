@@ -9,3 +9,4 @@ from . import fim as pyfim
 from . import large_fim as lpyfim
 from .organizer import MESolution, CoupSolution, MagSolution
 from .organizer import CanonicalMagSolution, CanonicalCouplingSolution, FIM
+from . import plot as pplt
