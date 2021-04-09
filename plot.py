@@ -116,7 +116,7 @@ def grid4_J(ax, base_name, coarse_grain_type,
             y = avgvals[nonzeroix]
             x = np.arange(1, y.size+1)
             fit_fun = fit_decay_power_law(y, auto_upper_cutoff=-3.)[0]
-            ax[i].loglog(x, fit_fun(x), 'k-')
+            ax[i].loglog(x, fit_fun(x), 'k--')
         
         # plotting
         if iprint: print(f"Plotting subset {subset} can pert.")

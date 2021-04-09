@@ -2,9 +2,8 @@
 # Module for projecting FIM tangent space onto dissenting blocs.
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
-from .utils import *
 from coniii.enumerate import fast_logsumexp
-import os
+from .utils import *
 calc_e, calc_observables, _ = define_ising_helper_functions()
 
 

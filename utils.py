@@ -1,5 +1,6 @@
 # ====================================================================================== #
 # Quick access to useful modules for pivotal components projects.
+# 
 # Author : Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 import numpy as np
@@ -67,7 +68,7 @@ def fit_decay_power_law(y, auto_upper_cutoff=0.):
     
     # find optimal parameters (this may need some adjusting if fit is not good)
     soln = minimize(cost, [y[0], 1.2, 20],
-                    bounds=[(1, np.inf), (1, 4), (-np.inf,np.inf)])
+                    bounds=[(1, np.inf), (.2, 4), (-np.inf,np.inf)])
     
     # determine plotting function
     c, alpha, el = soln['x']

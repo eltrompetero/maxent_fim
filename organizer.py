@@ -1,13 +1,11 @@
 # ====================================================================================== #
 # Module for organizing maxent solutions for neural data.
+# 
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
-from .utils import *
-import os
-import dill as pickle
-
 from .large_fim import Mag3, Coupling3, CanonicalMag3, CanonicalCoupling3
 from .spectral import sorted_eigh
+from .utils import *
 
 
 
@@ -53,7 +51,7 @@ class MESolution():
 
         # look for maxent soln results
         if not self.soln_f() in files:
-            if iprint: print("Maxent solution file not found.")
+            if iprint: print(f"Maxent solution file {self.soln_f()} not found.")
             if not self.model_f() in files:
                 raise Exception("Neither maxent nor model file found.")
             else:
@@ -64,7 +62,7 @@ class MESolution():
             fname = f'{self.DEFAULT_DR}/{self.soln_f()}'
             self.n = pickle.load(open(fname, 'rb'))['X'].shape[1]
             if not self.model_f() in files:
-                if iprint: print("Model file not found.")
+                if iprint: print(f"Model file {self.model_f()} not found.")
                 self.exists_model = False
             else:
                 self.exists_model = True
@@ -72,7 +70,7 @@ class MESolution():
         
         # look for FIM results
         if not self.fim_f() in files:
-            if iprint: print("FIM not found.")
+            if iprint: print(f"FIM file {self.fim_f()} not found.")
             self._fim = False
         else:
             self._fim = True
