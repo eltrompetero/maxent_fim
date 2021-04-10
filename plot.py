@@ -104,13 +104,16 @@ def grid4_J(ax, base_name, coarse_grain_type,
         if iprint: print(f"Plotting subset {subset} corr pert.")
         soln = CoupSolution(base_name, 0, 'a', 'i', subset,
                             coarse_grain_type=coarse_grain_type)
-        avgvals, vals = soln.avg_eigvals()
-        nonzeroix = avgvals>1e-7
-        for v in vals:
-            ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '.',
-                         c=mc, alpha=.2, mew=0)
-        h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '.',
-                              c=mc, mew=0)[0])
+        try: 
+            avgvals, vals = soln.avg_eigvals()
+            nonzeroix = avgvals>1e-7
+            for v in vals:
+                ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '.',
+                             c=mc, alpha=.2, mew=0)
+            h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '.',
+                                  c=mc, mew=0)[0])
+        except ValueError:
+            pass
         # power law fit
         if show_fit:
             y = avgvals[nonzeroix]
@@ -122,13 +125,16 @@ def grid4_J(ax, base_name, coarse_grain_type,
         if iprint: print(f"Plotting subset {subset} can pert.")
         soln = CanonicalCouplingSolution(base_name, 0, 'a', 'i', subset,
                                          coarse_grain_type=coarse_grain_type)
-        avgvals, vals = soln.avg_eigvals()
-        nonzeroix = avgvals>1e-7
-        for v in vals:
-            ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '^',
-                         c=mc, alpha=.2, mew=0)
-        h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '^',
-                              c=mc, mew=0)[0])
+        try: 
+            avgvals, vals = soln.avg_eigvals()
+            nonzeroix = avgvals>1e-7
+            for v in vals:
+                ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '^',
+                             c=mc, alpha=.2, mew=0)
+            h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '^',
+                                  c=mc, mew=0)[0])
+        except ValueError:
+            pass
         # power law fit
         if show_fit:
             y = avgvals[nonzeroix]
