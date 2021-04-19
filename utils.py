@@ -549,11 +549,15 @@ def combine_fim_files(*args):
     Returns
     -------
     ndarray
+        FIM.
     bool
         True if everything works out fine.
     """
+    
+    if not len(args):
+        return np.zeros((0,0)), False
 
-    allGood = True
+    success = True
     
     for i, f in enumerate(args):
         assert os.path.isfile(f), f'Missing file {f}.'
@@ -565,20 +569,20 @@ def combine_fim_files(*args):
             count = (fim[thisfim!=0]!=0).sum()
             if count>fim.shape[0]: 
                 warn("%d off-diagonal entries appear twice."%count)
-                allGood = False
+                success = False
             if not np.array_equal(thisfim.diagonal(), fim.diagonal()):
                 err = np.linalg.norm(thisfim.diagonal() - fim.diagonal())
                 warn("Diagonals do not match. Mismatch error of %f with file %s."%(err,f))
-                allGood = False
+                success = False
             
             # copy in elements
             fim[thisfim!=0] = thisfim[thisfim!=0]
     
     if (fim==0).any():
         warn("Not every entry filled.")
-        allGood = False
+        success = False
 
-    return fim, allGood
+    return fim, success
 
 def refine_maxent_solution(n, sisj, J0,
                            full_output=True,
@@ -611,21 +615,21 @@ def refine_maxent_solution(n, sisj, J0,
     ising = importlib.import_module('coniii.ising_eqn.ising_eqn_%d_sym'%n)
     
     counter = 0
-    errHistory = [1]
-    while counter<max_iter and errHistory[-1]>tol:
+    err_history = [1]
+    while counter<max_iter and err_history[-1]>tol:
         dhJ = ising.calc_observables(hJ)[n:] - sisj
-        errHistory.append(np.linalg.norm(dhJ))
+        err_history.append(np.linalg.norm(dhJ))
         hJ[n:] -= dhJ*multiplier
         counter += 1
-    errHistory.pop(0)
+    err_history.pop(0)
 
-    if errHistory[-1]<tol:
+    if err_history[-1]<tol:
         errflag = 0
     else:
         errflag = 1
     
     if full_output:
-        return hJ[n:], errflag, errHistory
+        return hJ[n:], errflag, err_history
     return hJ[n:]
 
 def fisher_subspace(n, result, rtol=.05):
