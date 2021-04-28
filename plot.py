@@ -11,7 +11,8 @@ from .organizer import *
 def grid4_h(ax, base_name, coarse_grain_type,
             mc='k',
             plot_kw={'ylim':(1e-4,2e2)},
-            show_fit=False):
+            show_fit=False,
+            iprint=False):
     """
     Parameters
     ----------
@@ -21,6 +22,7 @@ def grid4_h(ax, base_name, coarse_grain_type,
     mc : str, 'k'
     plot_kw : dict, {'ylim':(1e-4,2e2)}
     show_fit : bool, False
+    iprint : bool, False
     
     Returns
     -------
@@ -31,6 +33,7 @@ def grid4_h(ax, base_name, coarse_grain_type,
 
     for i, subset in enumerate(['A','B','C','D']):
         # plotting
+        if iprint: print(f"Plotting subset {subset} corr pert.")
         soln = MagSolution(base_name, 0, 'a', 'i', subset,
                            coarse_grain_type=coarse_grain_type)
         avgvals, vals = soln.avg_eigvals()
@@ -47,6 +50,7 @@ def grid4_h(ax, base_name, coarse_grain_type,
             fit_fun = fit_decay_power_law(y, auto_upper_cutoff=-3.)[0]
             ax[i].loglog(x, fit_fun(x), 'k--')
  
+        if iprint: print(f"Plotting subset {subset} can pert.")
         soln = CanonicalMagSolution(base_name, 0, 'a', 'i', subset,
                                     coarse_grain_type=coarse_grain_type)
         avgvals, vals = soln.avg_eigvals()

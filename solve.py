@@ -1,11 +1,13 @@
 # ====================================================================================== #
 # Module for solving maxent problem on C elegans data set.
+# 
 # Author : Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
 from .utils import *
 from scipy.optimize import minimize
 from scipy.special import logsumexp
 from scipy.stats import multinomial
+from scipy.interpolate import interp1d
 
 
 
@@ -47,9 +49,19 @@ def _indpt(X):
 
 
 class Independent3():
-    def __init__(self, X=None):
+    def __init__(self, X=None, alpha=2.):
+        """
+        Parameters
+        ----------
+        X : ndarray
+            Data.
+        alpha : float, 2.
+            Cost exponent.
+        """
+
         if not X is None:
             self.set_data(X)
+        self.alpha = alpha
 
     def set_data(self, X):
         """
@@ -131,9 +143,9 @@ class Independent3():
         """
 
         logpdf = multinomial.logpmf(n, n=n.sum(), p=self.p_ind(h))
-        return -logpdf / n.sum() + (h**2).sum() / 2 / s**2
+        return -logpdf / n.sum() + (np.abs(h)**self.alpha).sum() / 2 / s**self.alpha
 
-    def cost_with_s(self, s_range):
+    def cost_with_s(self, s_range, n_cpus=None):
         """Optimal cost as a function of the prior width. There will be a separate set of
         values for each spin.
         
@@ -147,12 +159,50 @@ class Independent3():
             (n_spins, s_range.size)
         """
         
-        c = np.zeros((self.X.shape[1], s_range.size))
+        if n_cpus==1:
+            c = np.zeros((self.X.shape[1], s_range.size))
 
-        for i, s in enumerate(s_range):
-            soln = self.solve(s=s, full_output=True)[1]
-            c[:,i] = [s['fun'] for s in soln]
-
+            for i, s in enumerate(s_range):
+                soln = self.solve(s=s, full_output=True)[1]
+                c[:,i] = [s['fun'] for s in soln]
+        else:
+            def loop_wrapper(s):
+                soln = self.solve(s=s, full_output=True)[1]
+                return [s['fun'] for s in soln]
+            
+            with threadpool_limits(limits=1, user_api='blas'):
+                with Pool() as pool:
+                    c = np.vstack(list(pool.map(loop_wrapper, s_range))).T
         return c
+
+    def optimize_s(self, prior_range=None, n_interp=32):
+        """Find midpoint of hyperparameter s, the width of the prior.
+
+        Parameters
+        ----------
+        prior_range : ndarray, None
+            By default set to 10^-1 and 10^-2.5
+        n_interp : int, 32
+
+        Returns
+        -------
+        float
+        """
+        
+        if prior_range is None:
+            prior_range = np.logspace(-1, 2.5, n_interp)
+
+        logl = self.cost_with_s(prior_range).mean(0)
+
+        # interpolate
+        spline = interp1d(np.log(prior_range), logl, kind='cubic', bounds_error=False)
+
+        # get the middle point
+        midval = (logl[0] + logl[-1])/2
+        smid = np.exp(minimize(lambda x: (spline(x) - midval)**2,
+                               np.log(prior_range[prior_range.size//2]),
+                               bounds=[np.log(prior_range[[0,-1]])])['x'])
+        
+        return smid
 #end Independent3
 

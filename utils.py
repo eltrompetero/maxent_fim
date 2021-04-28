@@ -29,6 +29,8 @@ np.seterr(divide='ignore')
 # ========= #
 def fit_decay_power_law(y, auto_upper_cutoff=0.):
     """Fit an exponentially truncated power law.
+
+    C * x^-alpha * exp(-l * x)
     
     Parameters
     ----------
@@ -43,6 +45,7 @@ def fit_decay_power_law(y, auto_upper_cutoff=0.):
     lambda fcn
     dict
         As is returned from scipy.optimize.minimize
+        Parameters correspond to  C, alpha, log(l)
     """
     
     # setup
