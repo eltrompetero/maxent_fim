@@ -1,9 +1,11 @@
 # ====================================================================================== #
 # Analysis of features of FIM.
+# 
 # Author: Eddie Lee, edlee@santafe.edu
 # ====================================================================================== #
-from .utils import *
 from scipy.special import binom
+
+from .utils import *
 
 
 
@@ -297,7 +299,7 @@ def subspace_eig(hess, compix):
     # obtain corresponding indices in FIM
     rowix = []
     for ix in compix:
-        rowix += list(range(ix*k,(ix+1)*k))
+        rowix += list(range(ix*k, (ix+1)*k))
     
     # calculate spectrum and sort by eigenvalue
     subspaceHess = hess[rowix][:,rowix]

@@ -35,8 +35,10 @@ def grid4_h(ax, base_name, coarse_grain_type,
         # plotting
         if iprint: print(f"Plotting subset {subset} corr pert.")
         soln = MagSolution(base_name, 0, 'a', 'i', subset,
-                           coarse_grain_type=coarse_grain_type)
+                           coarse_grain_type=coarse_grain_type,
+                           iprint=False)
         avgvals, vals = soln.avg_eigvals()
+        if iprint and len(vals)<4: print("Missing some sims.")
         nonzeroix = avgvals>1e-7
         for v in vals:
             ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '.',
@@ -52,8 +54,10 @@ def grid4_h(ax, base_name, coarse_grain_type,
  
         if iprint: print(f"Plotting subset {subset} can pert.")
         soln = CanonicalMagSolution(base_name, 0, 'a', 'i', subset,
-                                    coarse_grain_type=coarse_grain_type)
+                                    coarse_grain_type=coarse_grain_type,
+                                    iprint=False)
         avgvals, vals = soln.avg_eigvals()
+        if iprint and len(vals)<4: print("Missing some sims.")
         nonzeroix = avgvals>1e-7
         for v in vals:
             ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '^',
@@ -107,9 +111,11 @@ def grid4_J(ax, base_name, coarse_grain_type,
         # plotting
         if iprint: print(f"Plotting subset {subset} corr pert.")
         soln = CoupSolution(base_name, 0, 'a', 'i', subset,
-                            coarse_grain_type=coarse_grain_type)
+                            coarse_grain_type=coarse_grain_type,
+                            iprint=False)
         try: 
             avgvals, vals = soln.avg_eigvals()
+            if iprint and len(vals)<4: print("Missing some sims.")
             nonzeroix = avgvals>1e-7
             for v in vals:
                 ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '.',
@@ -128,9 +134,11 @@ def grid4_J(ax, base_name, coarse_grain_type,
         # plotting
         if iprint: print(f"Plotting subset {subset} can pert.")
         soln = CanonicalCouplingSolution(base_name, 0, 'a', 'i', subset,
-                                         coarse_grain_type=coarse_grain_type)
+                                         coarse_grain_type=coarse_grain_type,
+                                         iprint=False)
         try: 
             avgvals, vals = soln.avg_eigvals()
+            if iprint and len(vals)<4: print("Missing some sims.")
             nonzeroix = avgvals>1e-7
             for v in vals:
                 ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '^',
