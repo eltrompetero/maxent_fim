@@ -1719,7 +1719,7 @@ class Mag3(Coupling):
         if 'wheeler' in socket.gethostname():
             mmfname = '%s/hess.dat'%mkdtemp(dir='/wheeler/scratch/edlee/')
         elif not os.getenv('DATA') is None:
-            mmfname = f"{os.getenv('DATA')}/{mkdtemp()}/hess.dat"
+            mmfname = f"{mkdtemp(dir=os.getenv('DATA'))}/hess.dat"
         else:
             mmfname = '%s/hess.dat'%mkdtemp()
         mmhess = np.memmap(mmfname,

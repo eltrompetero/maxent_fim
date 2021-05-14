@@ -541,13 +541,14 @@ def load_Coupling3(fname):
     
     return model
 
-def combine_fim_files(*args):
+def combine_fim_files(*args, use_pickle5=True):
     """Combine calculations of FIM from multiple different files.
 
     Parameters
     ----------
     *args : str
         Each the name of a pickle with an 'fim' variable.
+    use_pickle5 : bool, True
 
     Returns
     -------
@@ -559,6 +560,8 @@ def combine_fim_files(*args):
     
     if not len(args):
         return np.zeros((0,0)), False
+    if use_pickle5:
+        import pickle5 as pickle
 
     success = True
     
