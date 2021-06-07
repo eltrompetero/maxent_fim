@@ -246,6 +246,8 @@ class MESolution():
     def avg_eigvals(self, return_eigvecs=False):
         """Rank-ordered eigenvalue spectrum averaged over MC samples used to calculate FIM.
 
+        Special exception for permuted entries.
+
         Parameters
         ----------
         return_eigvecs : bool, False
@@ -260,28 +262,53 @@ class MESolution():
             All eigenvectors.
         """
         
-        #TODO: this is hard-coded, but should be flexible?
-        rnumerals = ['i','ii','iii','iv','v','vi','vii','viii','ix','x']
-        vals = []
-        vecs = []
+        if 'permute' in self.name:
+            #TODO: this is hard-coded, but should be flexible?
+            soln_ix = ['a','b','c','d','e','f','g','h','j','k']
+            vals = []
+            vecs = []
 
-        # iterate through all available MC samples assuming that they are ordered consecutively
-        for num in rnumerals:
-            try:
-                soln = self.__class__(self.name, self.data_ix,
-                                      soln_ix=self.soln_ix, 
-                                      mc_ix=num,
-                                      subset_ix=self.subset_ix, 
-                                      iprint=False,
-                                      coarse_grain_type=self.coarse_grain_type)
-                if soln._fim:
-                    e = soln.eig()
-                    vals.append(e[0])
-                    vecs.append(e[1])
-            except Exception:
-                pass
+            # iterate through all available MC samples assuming that they are ordered consecutively
+            for ix in soln_ix:
+                try:
+                    soln = self.__class__(self.name, self.data_ix,
+                                          soln_ix=ix,
+                                          mc_ix='i',
+                                          subset_ix=self.subset_ix, 
+                                          iprint=False,
+                                          coarse_grain_type=self.coarse_grain_type)
+                    if soln._fim:
+                        e = soln.eig()
+                        vals.append(e[0])
+                        vecs.append(e[1])
+                except Exception:
+                    pass
 
-        vals = np.vstack(vals)
+            vals = np.vstack(vals)
+ 
+        else:
+            #TODO: this is hard-coded, but should be flexible?
+            rnumerals = ['i','ii','iii','iv','v','vi','vii','viii','ix','x']
+            vals = []
+            vecs = []
+
+            # iterate through all available MC samples assuming that they are ordered consecutively
+            for num in rnumerals:
+                try:
+                    soln = self.__class__(self.name, self.data_ix,
+                                          soln_ix=self.soln_ix, 
+                                          mc_ix=num,
+                                          subset_ix=self.subset_ix, 
+                                          iprint=False,
+                                          coarse_grain_type=self.coarse_grain_type)
+                    if soln._fim:
+                        e = soln.eig()
+                        vals.append(e[0])
+                        vecs.append(e[1])
+                except Exception:
+                    pass
+
+            vals = np.vstack(vals)
         if return_eigvecs:
             return vals.mean(0), vals, vecs
         return vals.mean(0), vals
@@ -494,13 +521,21 @@ class FIM():
         # check that given number of samples does not exceed max number of possible subsets
         assert n_sample <= int(binom(self.n, n_comp))
 
-        topval = np.zeros(n_sample)
-
-        for i in range(n_sample):
+        def loop_wrapper(n_sample):
             val, vec = subspace_eig(self.fim, np.random.choice(range(self.n),
                                                                size=n_comp,
                                                                replace=False))
-            topval[i] = val[0]
+            return val[0]
+        with threadpool_limits(user_api='blas', limits=1):
+            with Pool() as pool:
+                topval = np.array(list(pool.map(loop_wrapper, range(n_sample))))
+
+        #topval = np.zeros(n_sample)
+        #for i in range(n_sample):
+        #    val, vec = subspace_eig(self.fim, np.random.choice(range(self.n),
+        #                                                       size=n_comp,
+        #                                                       replace=False))
+        #    topval[i] = val[0]
 
         return topval
     

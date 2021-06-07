@@ -24,10 +24,12 @@ def uniformity(eigvec, axis=0):
     ndarray
     """
     
-    # get number of components for eigenvector of pairwise perturbations
     from .coarse_grain import count_unique_splits
+    from .utils import vec2mat
+
+    # get number of components for eigenvector of pairwise perturbations
     n = (1+np.sqrt(1+4*eigvec.shape[0])) / 2
-    assert int(n)==n, "Cannot be reshaped into n,n pairwise matrix with zeroed diagonal."
+    assert int(n)==n, "Cannot be reshaped into (n,n) pairwise matrix with zeroed diagonal."
     n = int(n)
 
     mats = []
@@ -189,7 +191,9 @@ def pivotal_by_subspace(name, n_cutoff):
         Principal component eigenvalue.
     """
     
-    soln = MESolution(*name)
+    from .organizer import CoupSolution
+
+    soln = CoupSolution(*name)
     fim = soln.fim()
     
     val, vec = block_subspace_eig(fim)
