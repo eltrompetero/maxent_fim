@@ -18,7 +18,6 @@ from scipy.optimize import minimize
 from coniii.utils import *
 
 from .fim import Coupling  # for compatibility with old pickles
-from .organizer import MESolution
 
 np.seterr(divide='ignore')
 

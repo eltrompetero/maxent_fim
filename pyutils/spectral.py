@@ -1,7 +1,7 @@
 # ====================================================================================== #
 # Analysis of features of FIM.
 # 
-# Author: Eddie Lee, edlee@santafe.edu
+# Author: Eddie Lee, edlee@csh.ac.at
 # ====================================================================================== #
 from scipy.special import binom
 
@@ -174,14 +174,48 @@ def cfim_entropy(fim, n=50, n_iters=100):
     
     return S, mixedS
 
-def pivotal_by_subspace(name, n_cutoff):
-    """Identify pivotal components by principal subspace eigenvalue.
+def pivotal_by_subspace(name, n_cutoff=50, **soln_kw):
+    """Identify pivotal components by principal subspace eigenvalue. Subspace corresponds
+    to the diagonal block matrix where the neuron of interest is a matcher.
     
     Parameters
     ----------
     name : tuple 
         For loading specified solution.
-    n_cutoff : int
+    n_cutoff : int, 50
+    **soln_kw
+        
+    Returns
+    -------
+    ndarray
+        Neuron index sorted by subspace eigenvalue.
+    ndarray
+        Principal component eigenvalue.
+    """
+    
+    soln = CoupSolution(*name, **soln_kw)
+    fim = soln.fim()
+    
+    val, vec = block_subspace_eig(fim)
+    v = np.array([v_[0] for v_ in val])
+    sortix = np.argsort(v)[::-1][:n_cutoff]
+    
+    return sortix, v[sortix]
+
+def pivotal_by_colnorm(name, threshold, n_modes,
+                       measure='sq norm'):
+    """Identify pivotal components by principal subspace eigenvalue.
+    
+    Parameters
+    ----------
+    name : tuple 
+        For loading specified solution using CoupSolution.
+    threshold : int
+        Column weight threshold calculated from the sum of squares.
+    n_modes : int
+        Max rank to consider.
+    measure : str, 'sq norm'
+        'sq norm' for sum of squares, 'uniformity' for uniformity measure
         
     Returns
     -------
@@ -192,44 +226,23 @@ def pivotal_by_subspace(name, n_cutoff):
     """
     
     from .organizer import CoupSolution
+    assert measure in ['sq norm','uniformity']
 
     soln = CoupSolution(*name)
-    fim = soln.fim()
-    
-    val, vec = block_subspace_eig(fim)
-    v = np.array([v_[0] for v_ in val])
-    sortix = np.argsort(v)[::-1][:n_cutoff]
-    
-    return sortix, v[sortix]
-
-def pivotal_by_colnorm(name, threshold, n_modes):
-    """Identify pivotal components by principal subspace eigenvalue.
-    
-    Parameters
-    ----------
-    name : tuple 
-        For loading specified solution.
-    threshold : int
-    n_modes : int
-        
-    Returns
-    -------
-    ndarray
-        Neuron index.
-    ndarray
-        Principal component eigenvalue.
-    """
-    
-    soln = MESolution(*name)
     eigvec = soln.eig()[1]
 
-    # in the top 10 eigenvectors, what are the most "important" neurons
+    # in the top eigenvectors, what are the most "important" neurons
     neuronix = []
     colweight = np.zeros((n_modes, 50))
-
-    for i in range(n_modes):
-        mat = vec2mat(eigvec[:,i])
-        colweight[i] = np.linalg.norm(mat, axis=0)
+    
+    if measure=='sq norm':
+        for i in range(n_modes):
+            mat = vec2mat(eigvec[:,i])
+            colweight[i] = (mat**2).sum(0)
+    else:
+        for i in range(n_modes):
+            mat = vec2mat(eigvec[:,i])
+            colweight[i] = (mat.sum(0))**2
 
     # extract those neurons for calculating sensitivity to them specifically
     ix = np.unique(np.concatenate([np.where(colweight[i]>threshold)[0]

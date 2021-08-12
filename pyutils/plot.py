@@ -12,6 +12,7 @@ def grid4_h(ax, base_name, coarse_grain_type,
             mc='k',
             plot_kw={'ylim':(1e-4,2e2)},
             show_fit=False,
+            show_detail=True,
             iprint=False):
     """
     Parameters
@@ -22,6 +23,8 @@ def grid4_h(ax, base_name, coarse_grain_type,
     mc : str, 'k'
     plot_kw : dict, {'ylim':(1e-4,2e2)}
     show_fit : bool, False
+    show_detail : bool, True
+        If True, show each individual subsample instead of error bars.
     iprint : bool, False
     
     Returns
@@ -40,18 +43,25 @@ def grid4_h(ax, base_name, coarse_grain_type,
         avgvals, vals = soln.avg_eigvals()
         if iprint and len(vals)<4: print("Missing some sims.")
         nonzeroix = avgvals>1e-7
-        for v in vals:
-            ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '.',
-                         c=mc, alpha=.2, mew=0)
-        h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '.',
-                              c=mc, mew=0)[0])
+        if show_detail:
+            for v in vals:
+                ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '.',
+                             c=mc, alpha=.2, mew=0)
+            h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '.',
+                                  c=mc, mew=0)[0])
+        else:
+            h.append(ax[i].errorbar(range(1,nonzeroix.sum()+1), avgvals[nonzeroix],
+                                    yerr=np.vstack(vals).std(0,ddof=1)[nonzeroix],
+                                    fmt='.',
+                                    c=mc, mew=0)[0])
         # power law fit
         if show_fit:
             y = avgvals[nonzeroix]
             x = np.arange(1, y.size+1)
             fit_fun = fit_decay_power_law(y, auto_upper_cutoff=-3.)[0]
             ax[i].loglog(x, fit_fun(x), 'k--')
- 
+
+
         if iprint: print(f"Plotting subset {subset} can pert.")
         soln = CanonicalMagSolution(base_name, 0, 'a', 'i', subset,
                                     coarse_grain_type=coarse_grain_type,
@@ -59,11 +69,17 @@ def grid4_h(ax, base_name, coarse_grain_type,
         avgvals, vals = soln.avg_eigvals()
         if iprint and len(vals)<4: print("Missing some sims.")
         nonzeroix = avgvals>1e-7
-        for v in vals:
-            ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '^',
-                         c=mc, alpha=.2, mew=0)
-        h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '^',
-                              c=mc, mew=0)[0])
+        if show_detail:
+            for v in vals:
+                ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '^',
+                             c=mc, alpha=.2, mew=0)
+            h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '^',
+                                  c=mc, mew=0)[0])
+        else:
+            h.append(ax[i].errorbar(range(1,nonzeroix.sum()+1), avgvals[nonzeroix],
+                                    yerr=np.vstack(vals).std(0,ddof=1)[nonzeroix],
+                                    fmt='^',
+                                    c=mc, mew=0)[0])
         # power law fit
         if show_fit:
             y = avgvals[nonzeroix]
@@ -73,13 +89,13 @@ def grid4_h(ax, base_name, coarse_grain_type,
  
         # labels and formatting
         if i==0:
-            ax[i].set(ylabel='eigenval')
+            ax[i].set(ylabel='eigenvalue')
         elif i==1:
            pass
         elif i==2:
-            ax[i].set(xlabel='eigenval rank', ylabel='eigenval')
+            ax[i].set(xlabel='rank', ylabel='eigenvalue')
         else:
-            ax[i].set(xlabel='eigenval rank')
+            ax[i].set(xlabel='rank')
     ax[0].set(**plot_kw)
 
     return h
@@ -88,6 +104,7 @@ def grid4_J(ax, base_name, coarse_grain_type,
             mc='k',
             plot_kw={'ylim':(1e-4,2e2)},
             show_fit=False,
+            show_detail=False,
             iprint=False):
     """
     Parameters
@@ -98,6 +115,7 @@ def grid4_J(ax, base_name, coarse_grain_type,
     mc : str, 'k'
     plot_kw : dict, {'ylim':(1e-4,2e2)}
     show_fit : bool, False
+    show_detail : bool, False
     iprint : bool, False
     
     Returns
@@ -117,11 +135,17 @@ def grid4_J(ax, base_name, coarse_grain_type,
             avgvals, vals = soln.avg_eigvals()
             if iprint and len(vals)<4: print("Missing some sims.")
             nonzeroix = avgvals>1e-7
-            for v in vals:
-                ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '.',
-                             c=mc, alpha=.2, mew=0)
-            h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '.',
-                                  c=mc, mew=0)[0])
+            if show_detail:
+                for v in vals:
+                    ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '.',
+                                 c=mc, alpha=.2, mew=0)
+                h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '.',
+                                      c=mc, mew=0)[0])
+            else:
+                h.append(ax[i].errorbar(range(1,nonzeroix.sum()+1), avgvals[nonzeroix],
+                                        yerr=np.vstack(vals).std(0,ddof=1)[nonzeroix],
+                                        fmt='.',
+                                        c=mc, mew=0)[0])
         except ValueError:
             pass
         # power law fit
@@ -130,6 +154,7 @@ def grid4_J(ax, base_name, coarse_grain_type,
             x = np.arange(1, y.size+1)
             fit_fun = fit_decay_power_law(y, auto_upper_cutoff=-3.)[0]
             ax[i].loglog(x, fit_fun(x), 'k--')
+
         
         # plotting
         if iprint: print(f"Plotting subset {subset} can pert.")
@@ -140,11 +165,17 @@ def grid4_J(ax, base_name, coarse_grain_type,
             avgvals, vals = soln.avg_eigvals()
             if iprint and len(vals)<4: print("Missing some sims.")
             nonzeroix = avgvals>1e-7
-            for v in vals:
-                ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '^',
-                             c=mc, alpha=.2, mew=0)
-            h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '^',
-                                  c=mc, mew=0)[0])
+            if show_detail:
+                for v in vals:
+                    ax[i].loglog(range(1,nonzeroix.sum()+1), v[nonzeroix], '^',
+                                 c=mc, alpha=.2, mew=0)
+                h.append(ax[i].loglog(range(1,nonzeroix.sum()+1), avgvals[nonzeroix], '^',
+                                      c=mc, mew=0)[0])
+            else:
+                h.append(ax[i].errorbar(range(1,nonzeroix.sum()+1), avgvals[nonzeroix],
+                                        yerr=np.vstack(vals).std(0,ddof=1)[nonzeroix],
+                                        fmt='^',
+                                        c=mc, mew=0)[0])
         except ValueError:
             pass
         # power law fit
