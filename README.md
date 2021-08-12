@@ -5,3 +5,7 @@ Code to accompany preprint "Discovering sparse control strategies in C. elegans"
 Computation for even modestly sized systems is expensive and best done on a large
 computing cluster. Cached results from computations are plotted in the accompanying
 Jupyter notebook.
+
+Given the number of calculations done, the code includes a wrapper defined in
+`organizer.py` to set of cache directories that are assumed to exist. These should be
+located in the relative directory `./cache/c_elegans`.
