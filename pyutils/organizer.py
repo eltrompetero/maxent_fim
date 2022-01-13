@@ -540,8 +540,8 @@ class FIM():
         return topval
     
     def sample_subset_eigval(self, n_subset_range=None, max_subset_size=None):
-        """Calculate eigenvalue spectrum for subspace spanned by random groups of
-        n_comp components.
+        """Calculate eigenvalue spectrum for subspace spanned by random groups
+        of n_comp components.
         
         Parameters
         ----------
@@ -551,7 +551,8 @@ class FIM():
         Returns
         -------
         list of ndarray
-            Each ndarray contains top eigenvalue from multiple random subsets. Subsets might repeat.
+            Each ndarray contains top eigenvalue from multiple random subsets.
+            Subsets might repeat.
             TODO: do not repeat subsets
         """
         

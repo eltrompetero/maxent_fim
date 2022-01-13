@@ -193,6 +193,7 @@ def pivotal_by_subspace(name, n_cutoff=50, **soln_kw):
         Principal component eigenvalue.
     """
     
+    from .organizer import CoupSolution
     soln = CoupSolution(*name, **soln_kw)
     fim = soln.fim()
     
