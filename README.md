@@ -2,11 +2,12 @@
 
 ## Overview
 Code to accompany preprint "Discovering sparse control strategies in C. elegans" 
-(<http://arxiv.org/abs/2108.00837>) by Edward D. Lee, Xiaowen Chen and Bryan C. Daniels.
+(<http://arxiv.org/abs/2108.00837>) by Edward D. Lee, Xiaowen Chen, and Bryan C. Daniels.
 
 Jupyter notebook "plotting.ipynb" contains publication figures. The notebook generates
 figures using calculations that have been pickled. At the moment, these must be requested
 from the author.
+
 
 ## Additional notes
 Computation for even modestly sized systems is expensive and best done on a large
