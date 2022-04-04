@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/395367093.svg)](https://zenodo.org/badge/latestdoi/395367093)
+
 # Information geometry of maxent models
 
 ## Overview
